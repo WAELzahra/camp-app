@@ -60,7 +60,7 @@ class NewPasswordController extends Controller
     // }
 
 
-    public function store(Request $request): RedirectResponse
+ public function store(Request $request): \Illuminate\Http\JsonResponse
 {
     $request->validate([
         'token' => ['required'],
@@ -80,11 +80,10 @@ class NewPasswordController extends Controller
         }
     );
 
-    // Si le mot de passe a été réinitialisé avec succès, afficher un message de succès
     return $status == Password::PASSWORD_RESET
-                ? redirect()->route('login')->with('status', 'Your password has been successfully changed.')
-                : back()->withInput($request->only('email'))
-                        ->withErrors(['email' => __($status)]);
+        ? response()->json(['message' => 'Mot de passe réinitialisé avec succès.'])
+        : response()->json(['message' => __($status)], 400);
 }
+
 
 }
