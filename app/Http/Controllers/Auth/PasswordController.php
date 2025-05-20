@@ -13,17 +13,18 @@ class PasswordController extends Controller
     /**
      * Update the user's password.
      */
-    public function update(Request $request): RedirectResponse
-    {
-        $validated = $request->validateWithBag('updatePassword', [
-            'current_password' => ['required', 'current_password'],
-            'password' => ['required', Password::defaults(), 'confirmed'],
-        ]);
+   public function update(Request $request): \Illuminate\Http\JsonResponse
+{
+    $validated = $request->validate([
+        'current_password' => ['required', 'current_password'],
+        'password' => ['required', Password::defaults(), 'confirmed'],
+    ]);
 
-        $request->user()->update([
-            'password' => Hash::make($validated['password']),
-        ]);
+    $request->user()->update([
+        'password' => Hash::make($validated['password']),
+    ]);
 
-        return back()->with('status', 'password-updated');
-    }
+    return response()->json(['message' => 'Mot de passe mis à jour avec succès.']);
+}
+
 }

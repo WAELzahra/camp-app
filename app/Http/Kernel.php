@@ -26,6 +26,8 @@ class Kernel extends HttpKernel
     protected $routeMiddleware = [
     // autres middlewares
     'active' => \App\Http\Middleware\CheckIfUserIsActive::class,
+    'admin' => \App\Http\Middleware\AdminMiddleware::class,
+
 ];
 
 
@@ -45,7 +47,7 @@ class Kernel extends HttpKernel
             
         ],
         
-
+        
         'api' => [
             // \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,
             \Illuminate\Routing\Middleware\ThrottleRequests::class.':api',

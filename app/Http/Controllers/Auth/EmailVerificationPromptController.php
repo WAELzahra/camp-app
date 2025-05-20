@@ -4,19 +4,25 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Providers\RouteServiceProvider;
-use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\View\View;
 
 class EmailVerificationPromptController extends Controller
 {
-    /**
-     * Display the email verification prompt.
-     */
-    public function __invoke(Request $request): RedirectResponse|View
+    public function __invoke(Request $request)
     {
-        return $request->user()->hasVerifiedEmail()
-                    ? redirect()->intended(RouteServiceProvider::HOME)
-                    : view('auth.verify-email');
+        if ($request->user()->hasVerifiedEmail()) {
+            // Si email vérifié, retourne statut succès JSON (ou message, ou URL front)
+            return response()->json([
+                'verified' => true,
+                'redirect_to' => RouteServiceProvider::HOME,
+            ]);
+        } else {
+            // Sinon, demande de vérification d'email
+            return response()->json([
+                'verified' => false,
+                'message' => 'Veuillez vérifier votre adresse email.',
+            ], 401); // 401 Unauthorized ou 403 Forbidden selon cas
+        }
     }
 }
+

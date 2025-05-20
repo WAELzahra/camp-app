@@ -1,50 +1,58 @@
 <?php
 
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\Auth\AuthenticatedSessionController;
-use App\Http\Controllers\ProfileController;
+
+
+
+
 use App\Http\Controllers\Auth\RegisteredUserController;
-use App\Http\Controllers\Auth\ConfirmablePasswordController;
-use App\Http\Controllers\Auth\SocialAuthController;
+use App\Http\Controllers\Auth\AuthenticatedSessionController;
+use App\Http\Controllers\Auth\PasswordResetLinkController;
+use App\Http\Controllers\Auth\NewPasswordController;
+use Illuminate\Http\Request;
+use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\AdminUserController;
+use App\Http\Controllers\Auth\PasswordController;
+use App\Http\Controllers\Auth\EmailVerificationPromptController;
+use App\Http\Controllers\Auth\EmailVerificationNotificationController;
+use Illuminate\Foundation\Auth\EmailVerificationRequest;
 
-/*
-|--------------------------------------------------------------------------
-| API Routes
-|--------------------------------------------------------------------------
-|
-| Here is where you can register API routes for your application. These
-| routes are loaded by the RouteServiceProvider and all of them will
-| be assigned to the "api" middleware group. Make something great!
-|
-*/
+// AUTH API (Sanctum)
+Route::post('/register', [RegisteredUserController::class, 'store']);
+Route::post('/login', [AuthenticatedSessionController::class, 'store']);
+Route::post('/logout', [AuthenticatedSessionController::class, 'destroy'])->middleware('auth:sanctum');
+
+Route::middleware('auth:sanctum')->put('/user/password', [PasswordController::class, 'update']);
+Route::middleware('auth:sanctum')->get('/email/verify-prompt', EmailVerificationPromptController::class);
 
 
+Route::post('/forgot-password', [PasswordResetLinkController::class, 'store']);
+Route::post('/reset-password', [NewPasswordController::class, 'store']);
+Route::middleware('auth:sanctum')->post('/email/verification-notification', [EmailVerificationNotificationController::class, 'store']);
 
-// Routes Social Auth API (optionnel)
-Route::get('auth/google', [SocialAuthController::class, 'redirectToGoogle']);
-Route::get('auth/google/callback', [SocialAuthController::class, 'handleGoogleCallback']);
-
-Route::get('auth/facebook', [SocialAuthController::class, 'redirectToFacebook']);
-Route::get('auth/facebook/callback', [SocialAuthController::class, 'handleFacebookCallback']);
-
-// Route pour récupérer l'utilisateur connecté via API token Sanctum
+Route::middleware(['auth:sanctum', 'signed'])->get('/email/verify/{id}/{hash}', function (EmailVerificationRequest $request) {
+    $request->fulfill(); // Mark email as verified
+    return response()->json(['message' => 'Email verified successfully']);
+})->name('verification.verify');
+// Authenticated user
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();
 });
 
-// Routes API protégées par Sanctum
-Route::middleware(['auth:sanctum', 'active'])->group(function () {
-    Route::post('/confirm-password', [ConfirmablePasswordController::class, 'store']);
-
-    Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
-    Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
+Route::middleware(['auth:sanctum'])->group(function () {
+    Route::get('/profile', [ProfileController::class, 'show']);
+    Route::put('/profile', [ProfileController::class, 'update']);
 });
 
 
 
 
+Route::middleware(['auth:sanctum', 'can:isAdmin'])->group(function () {
+    Route::get('/users', [AdminUserController::class, 'index']);
+    Route::get('/users/{id}', [AdminUserController::class, 'show']);
+    Route::put('/users/{id}', [AdminUserController::class, 'update']);
+    Route::delete('/users/{id}', [AdminUserController::class, 'destroy']);
+    Route::put('/users/{id}/toggle-activation', [AdminUserController::class, 'toggleActivation']);
+
+});
 
 
-
-require __DIR__.'/auth.php';
