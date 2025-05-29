@@ -14,8 +14,21 @@ class Annonce extends Model
         "status"
     ];
 
-    public function photo(){
+    public function photos(){
         return $this->hasMany(Photos::class);
     }
+    public function user()
+    {
+        return $this->belongsTo(User::class);
+    }
 
+    protected static function booted()
+    {
+        static::creating(function ($annonce) {
+            if (auth()->check()) {
+                $annonce->user_id = auth()->id();
+            }
+        });
+    }
+    
 }

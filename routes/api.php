@@ -15,6 +15,21 @@ use App\Http\Controllers\Auth\PasswordController;
 use App\Http\Controllers\Auth\EmailVerificationPromptController;
 use App\Http\Controllers\Auth\EmailVerificationNotificationController;
 use Illuminate\Foundation\Auth\EmailVerificationRequest;
+use App\Http\Controllers\AnnonceController;
+
+
+// REST Annonce
+
+Route::middleware(['auth:sanctum', 'can.publish'])->group(function () {
+    Route::get('/annonces/create', [AnnonceController::class, 'create']);
+    Route::post('/annonces', [AnnonceController::class, 'store']);
+    Route::patch('/annonces/update/{id}', [AnnonceController::class, 'update']);
+    Route::get('/annonces/show/{id}', [AnnonceController::class, 'show']);
+    Route::get('/annonces/edit/{id}', [AnnonceController::class, 'edit']);
+    Route::delete('/annonces/destroy/{id}', [AnnonceController::class, 'destroy']);
+});
+
+
 
 // AUTH API (Sanctum)
 Route::post('/register', [RegisteredUserController::class, 'store']);

@@ -1,0 +1,98 @@
+"A datetime string with format `Y-m-d H:i:s`, e.g. `2018-05-23 13:43:32`."
+scalar DateTime @scalar(class: "Nuwave\\Lighthouse\\Schema\\Types\\Scalars\\DateTime")
+
+"Indicates what fields are available at the top level of a query operation."
+type Query {
+    "Find a single user by an identifying attribute."
+    user(
+      "Search by primary key."
+      id: ID @eq @rules(apply: ["prohibits:email", "required_without:email"])
+
+      "Search by email address."
+      email: String @eq @rules(apply: ["prohibits:id", "required_without:id", "email"])
+    ): User @find
+
+    "List multiple users."
+    users(
+      "Filters by name. Accepts SQL LIKE wildcards `%` and `_`."
+      name: String @where(operator: "like")
+    ): [User!]! @paginate(defaultCount: 10)
+}
+
+type Mutation {
+  createAnnonce(
+    description: String! @rules(apply: ["required", "string"])
+    path_to_image: String! @rules(apply: ["string"])
+  ): Annonce @field(resolver: "App\\GraphQL\\Mutations\\AnnonceMutator@create") @auth
+
+  updateAnnonce(
+    annonce_id: Int! @rules(apply: ["required"])
+    description: String! @rules(apply: ["string"])
+    path_to_image: String @rules(apply: ["string"])
+  ): Annonce @field(resolver: "App\\GraphQL\\Mutations\\AnnonceMutator@update") @auth
+  deleteAnnonce(
+    annonce_id: Int! @rules(apply: ["required"])
+  ): Boolean @auth @field(resolver: "App\\GraphQL\\Mutations\\AnnonceMutator@delete")
+
+}
+
+
+
+
+"Account of a person who utilizes this application."
+type User {
+    "Unique primary key."
+    id: ID!
+
+    "Non-unique name."
+    name: String!
+
+    "Unique email address."
+    email: String!
+
+    "When the email was verified."
+    email_verified_at: DateTime
+
+    "When the account was created."
+    created_at: DateTime!
+
+    "When the account was last updated."
+    updated_at: DateTime!
+}
+type ProfileFournisseur{
+  id: ID!
+
+  profile_id: User! @belongsTo(relation: "user")
+  
+  intervale_prix: String!
+  
+  product_category: String!
+  annonces: [Annonce!]! @hasMany
+
+}
+
+type Annonce {
+  "Unique primary key."
+  id: ID!
+
+  "Owner of the annonce."
+  user_id: User! @belongsTo(relation: "user_id") 
+
+  "Detailed description of the annonce."
+  description: String!
+
+  "Current status of the annonce."
+  status: AnnonceStatus!
+  photos: [Photo!]! @hasMany
+
+}
+
+type Photo{
+  id: ID!
+  pathToImage : String!
+  annonce_id: Annonce! @belongsTo(relation: "annonce")
+}
+enum AnnonceStatus {
+  up
+  down
+}

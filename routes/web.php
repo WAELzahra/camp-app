@@ -8,6 +8,7 @@ use App\Http\Controllers\Auth\AuthenticatedSessionController;
 
 Route::post('/login', [AuthenticatedSessionController::class, 'store']);
 
+
 // Google
 Route::get('/auth/google/redirect', [SocialAuthController::class, 'redirectToGoogle']);
 Route::get('/auth/google/callback', [SocialAuthController::class, 'handleGoogleCallback']);

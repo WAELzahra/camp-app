@@ -13,12 +13,19 @@ return new class extends Migration
     {
         Schema::create('photos', function (Blueprint $table) {
             $table->id();
-            $table->string('path_to_img');
-            $table->foreignId('user_id')->constrained()->onDelete('cascade')->nullable();
-            $table->foreignId('annonce_id')->constrained('camping_zones')->onDelete('cascade')->nullable();
-            $table->foreignId('materielle_id')->constrained()->onDelete('cascade')->nullable();
+            $table->string('path_to_img')->nullable();
+        
+            $table->unsignedBigInteger('user_id')->nullable();
+            $table->unsignedBigInteger('annonce_id')->nullable();
+            $table->unsignedBigInteger('materielle_id')->nullable();
+        
+            $table->foreign('user_id')->references('id')->on('users')->onDelete('cascade');
+            $table->foreign('annonce_id')->references('id')->on('camping_zones')->onDelete('cascade');
+            $table->foreign('materielle_id')->references('id')->on('materielles')->onDelete('cascade');
+        
             $table->timestamps();
         });
+        
     }
 
     /**
