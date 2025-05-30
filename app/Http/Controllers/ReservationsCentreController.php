@@ -10,18 +10,22 @@ use App\Models\Reservations_centre;
 
 class ReservationsCentreController extends Controller
 {
-    public function index()
+    /**
+     * Display a list of reservation.
+     */
+    public function index(int $idUser)
     {
-        return Reservations_centre::all();
     }
-    // Show a single reservation
-    public function show($id)
+    // display a specific reservation
+    public function show(int $id)
     {
-        return Reservations_centre::findOrFail($id);
     }
+
+    // display the form to make a reservation
     public function create(){
 
     } 
+
     // create a new reservation
     public function store(Request $request)
     {
@@ -86,6 +90,7 @@ class ReservationsCentreController extends Controller
         return response()->json(['message' => 'Reservation cancelled successfully.'], 200);
     }
     
+    // confirm a reservatoin
     public function confirm(Request $request)
     {
         $updated = Reservations_centre::where('user_id', $request->user_id)
@@ -97,6 +102,7 @@ class ReservationsCentreController extends Controller
 
     }
 
+    // reject a reservatoin
     public function reject(Request $request)
     {
         $updated = Reservations_centre::where('user_id', $request->user_id)

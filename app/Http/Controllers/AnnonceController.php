@@ -11,17 +11,33 @@ use App\Models\Photos;
 
 class AnnonceController extends Controller
 {
-    public function index()
+
+
+    /**
+     * Display a list of the posts.
+     */
+    public function index($idUser)
     {
-        $annonces = Annonce::latest()->get();
-        return response()->json($annonces);
+
     }
 
+    // display the form to create a poste
     public function create()
     {
-        //
     }
 
+    // display a specific poste
+    public function show(string $id)
+    {
+    }
+
+    // display the form to edit the post
+    public function edit(string $id)
+    {
+    }
+
+
+    // store the post
     public function store(Request $request)
     {
         $request->validate([
@@ -59,18 +75,7 @@ class AnnonceController extends Controller
         }
     }
 
-    public function show(string $id)
-    {
-        $annonce = Annonce::findOrFail($id);
-        return response()->json($annonce);
-    }
-
-    public function edit(string $id)
-    {
-        $annonce = Annonce::findOrFail($id);
-        return response()->json($annonce);
-    }
-
+    // update the post
     public function update(Request $request, string $id)
     {
         $request->validate([
@@ -109,6 +114,7 @@ class AnnonceController extends Controller
         }
     }
 
+    // delete the post
     public function destroy(string $id)
     {
         DB::beginTransaction();
@@ -121,7 +127,6 @@ class AnnonceController extends Controller
                 Storage::delete($annonce->image);
             }
             
-
             $annonce->delete();
 
             DB::commit();

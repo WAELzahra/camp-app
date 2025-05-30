@@ -77,6 +77,7 @@ class Kernel extends HttpKernel
         'can.publish' =>  \App\Http\Middleware\CanPublishAnnonce::class,
         'campeur' => \App\Http\Middleware\UserIsCampeur::class,
         'centre' => \App\Http\Middleware\UserIsCentre::class,
+        'fournisseur' => \App\Http\Middleware\UserIsFournisseur::class,
 
     ];
 }

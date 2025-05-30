@@ -1,25 +1,122 @@
 "A datetime string with format `Y-m-d H:i:s`, e.g. `2018-05-23 13:43:32`."
 scalar DateTime @scalar(class: "Nuwave\\Lighthouse\\Schema\\Types\\Scalars\\DateTime")
 
-"Indicates what fields are available at the top level of a query operation."
-type Query {
-    "Find a single user by an identifying attribute."
-    user(
-      "Search by primary key."
-      id: ID @eq @rules(apply: ["prohibits:email", "required_without:email"])
+"Account of a person who utilizes this application."
+type User @model {
+  id: ID!
+  name: String!
+  email: String!
+  email_verified_at: DateTime
+  created_at: DateTime!
+  updated_at: DateTime!
+}
+type Boutique @model {
+  id: ID!
+  users_id: ID!
+  nom_boutique: String!
+  description: String
+  status: Boolean!
+  created_at: DateTime
+  updated_at: DateTime
+}
+type Reservations_centre @model {
+  user_id: User! @belongsTo(relation: "user")
+  centre_id: User! @belongsTo(relation: "centre")
 
-      "Search by email address."
-      email: String @eq @rules(apply: ["prohibits:id", "required_without:id", "email"])
-    ): User @find
+  date_debut: DateTime!
+  date_fin: DateTime!
+  nbr_place: Int!
+  note: String!
+  type: String!
+  status: ReservationStatus!
 
-    "List multiple users."
-    users(
-      "Filters by name. Accepts SQL LIKE wildcards `%` and `_`."
-      name: String @where(operator: "like")
-    ): [User!]! @paginate(defaultCount: 10)
+  payments_id: Payments! @belongsTo(relation: "payment")
+
+  created_at: DateTime!
+  updated_at: DateTime!
+}
+enum ReservationStatus {
+  pending
+  approved
+  rejected
+  canceled
+}
+type Annonce @model {
+  id: ID!
+  user_id: User! @belongsTo(relation: "user")
+  description: String!
+  status: AnnonceStatus!
+  photos: [Photo!]! @hasMany
 }
 
+enum AnnonceStatus {
+  up
+  down
+}
+
+type Photo @model {
+  id: ID!
+  pathToImage: String!
+  annonce_id: Annonce! @belongsTo(relation: "annonce")
+}
+type Payments @model {
+  id: ID!
+  montant: Float!
+  description: String!
+  status: PaymentStatus!
+  created_at: DateTime!
+  updated_at: DateTime!
+}
+
+enum PaymentStatus {
+  pending
+  done
+  cancel
+}
+input ReservationIdentifierInput {
+  user_id: Int!
+  centre_id: Int!
+  date_debut: DateTime!
+}
+
+type ReservationMutationResponse {
+  success: Boolean!
+  message: String!
+}
+type Query {
+  # Find a single user
+  user(
+    id: ID @eq @rules(apply: ["prohibits:email", "required_without:email"])
+    email: String @eq @rules(apply: ["prohibits:id", "required_without:id", "email"])
+  ): User @find
+
+  # Paginated list of users
+  users(name: String @where(operator: "like")): [User!]! @paginate(defaultCount: 10)
+
+  # Boutique by ID
+  boutique(id: ID!): Boutique @find
+
+  # All Reservations for Centres
+  allReservationsCentre: [Reservations_centre!]! @all(model: "App\\Models\\Reservations_centre")
+
+  # Single Reservation Centre
+  reservationCentre(id: ID!): Reservations_centre @find(model: "App\\Models\\Reservations_centre")
+
+  # Single Reservation
+  reservation(id: ID!): Reservation @find(model: "App\\Models\\Reservation")
+}
 type Mutation {
+  # Boutique management
+  addBoutique(nom_boutique: String!, description: String): Boutique 
+    @field(resolver: "App\\GraphQL\\Mutations\\BoutiqueMutator@add")
+
+  updateBoutique(nom_boutique: String, description: String): String 
+    @field(resolver: "App\\GraphQL\\Mutations\\BoutiqueMutator@update")
+
+  deleteBoutique: String 
+    @field(resolver: "App\\GraphQL\\Mutations\\BoutiqueMutator@destroy")
+
+  # Annonce management
   createAnnonce(
     description: String! @rules(apply: ["required", "string"])
     path_to_image: String! @rules(apply: ["string"])
@@ -35,6 +132,7 @@ type Mutation {
     annonce_id: Int! @rules(apply: ["required"])
   ): Boolean @field(resolver: "App\\GraphQL\\Mutations\\AnnonceMutator@delete") @auth
 
+  # Reservations management
   createReservation(
     centre_id: Int! @rules(apply: ["required", "integer"])
     date_debut: DateTime! @rules(apply: ["required", "date"])
@@ -48,133 +146,16 @@ type Mutation {
     user_id: Int! @rules(apply: ["required", "integer"])
     centre_id: Int! @rules(apply: ["required", "integer"])
     date_debut: DateTime! @rules(apply: ["required", "date"])
-    status: ReservationStatus # Optional update field
+    status: ReservationStatus
   ): Reservations_centre @field(resolver: "App\\GraphQL\\Mutations\\ReservationCentreMutator@destroy") @auth
 
   confirmReservation(
     input: ReservationIdentifierInput!
   ): ReservationMutationResponse! 
-    @field(resolver: "App\\GraphQL\\Mutations\\ReservationCentreMutator@confirm") 
-    @auth
+    @field(resolver: "App\\GraphQL\\Mutations\\ReservationCentreMutator@confirm") @auth
 
   rejectReservation(
     input: ReservationIdentifierInput!
   ): ReservationMutationResponse! 
-    @field(resolver: "App\\GraphQL\\Mutations\\ReservationCentreMutator@reject") 
-    @auth
-}
-
-# Used in confirm/reject mutations
-input ReservationIdentifierInput {
-  user_id: Int!
-  centre_id: Int!
-  date_debut: DateTime!
-}
-
-type ReservationMutationResponse {
-  success: Boolean!
-  message: String!
-}
-
-"Account of a person who utilizes this application."
-type User @model{
-    "Unique primary key."
-    id: ID!
-
-    "Non-unique name."
-    name: String!
-
-    "Unique email address."
-    email: String!
-
-    "When the email was verified."
-    email_verified_at: DateTime
-
-    "When the account was created."
-    created_at: DateTime!
-
-    "When the account was last updated."
-    updated_at: DateTime!
-}
-type ProfileFournisseur @model{
-  id: ID!
-
-  profile_id: User! @belongsTo(relation: "user")
-  
-  intervale_prix: String!
-  
-  product_category: String!
-  annonces: [Annonce!]! @hasMany
-
-}
-
-type Payments @model{
-  id: ID!
-
-  montant: Float!
-
-  description: String!
-  status: PaymentStatus!
-
-  created_at: DateTime!
-  updated_at: DateTime!
-}
-
-enum PaymentStatus{
-  pending
-  done
-  cancel
-}
-
-type Reservations_centre  @model{
-  user_id: User! @belongsTo(relation: "user")
-  centre_id: User! @belongsTo(relation: "centre")
-
-  date_debut: DateTime!
-
-  date_fin: DateTime!
-
-  nbr_place: Int!
-
-  note: String!
-  type: String!
-  status: ReservationStatus!
-
-  payments_id: Payments! @belongsTo(relation: "payment")
-  created_at: DateTime!
-  updated_at: DateTime!
-
-}
-
-enum ReservationStatus{
-  pending
-  approved
-  rejected
-  canceled
-}
-
-type Annonce @model{
-  "Unique primary key."
-  id: ID!
-
-  "Owner of the annonce."
-  user_id: User! @belongsTo(relation: "user") 
-
-  "Detailed description of the annonce."
-  description: String!
-
-  "Current status of the annonce."
-  status: AnnonceStatus!
-  photos: [Photo!]! @hasMany
-
-}
-
-type Photo @model{
-  id: ID!
-  pathToImage : String!
-  annonce_id: Annonce! @belongsTo(relation: "annonce")
-}
-enum AnnonceStatus {
-  up
-  down
+    @field(resolver: "App\\GraphQL\\Mutations\\ReservationCentreMutator@reject") @auth
 }
