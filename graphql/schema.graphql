@@ -27,20 +27,57 @@ type Mutation {
 
   updateAnnonce(
     annonce_id: Int! @rules(apply: ["required"])
-    description: String! @rules(apply: ["string"])
+    description: String @rules(apply: ["string"])
     path_to_image: String @rules(apply: ["string"])
   ): Annonce @field(resolver: "App\\GraphQL\\Mutations\\AnnonceMutator@update") @auth
+
   deleteAnnonce(
     annonce_id: Int! @rules(apply: ["required"])
-  ): Boolean @auth @field(resolver: "App\\GraphQL\\Mutations\\AnnonceMutator@delete")
+  ): Boolean @field(resolver: "App\\GraphQL\\Mutations\\AnnonceMutator@delete") @auth
 
+  createReservation(
+    centre_id: Int! @rules(apply: ["required", "integer"])
+    date_debut: DateTime! @rules(apply: ["required", "date"])
+    date_fin: DateTime! @rules(apply: ["required", "date"])
+    note: String! @rules(apply: ["required", "string"])
+    type: String! @rules(apply: ["required", "string"])
+    nbr_place: Int! @rules(apply: ["required", "integer"])
+  ): Reservations_centre @field(resolver: "App\\GraphQL\\Mutations\\ReservationCentreMutator@create") @auth
+
+  destroyReservation(
+    user_id: Int! @rules(apply: ["required", "integer"])
+    centre_id: Int! @rules(apply: ["required", "integer"])
+    date_debut: DateTime! @rules(apply: ["required", "date"])
+    status: ReservationStatus # Optional update field
+  ): Reservations_centre @field(resolver: "App\\GraphQL\\Mutations\\ReservationCentreMutator@destroy") @auth
+
+  confirmReservation(
+    input: ReservationIdentifierInput!
+  ): ReservationMutationResponse! 
+    @field(resolver: "App\\GraphQL\\Mutations\\ReservationCentreMutator@confirm") 
+    @auth
+
+  rejectReservation(
+    input: ReservationIdentifierInput!
+  ): ReservationMutationResponse! 
+    @field(resolver: "App\\GraphQL\\Mutations\\ReservationCentreMutator@reject") 
+    @auth
 }
 
+# Used in confirm/reject mutations
+input ReservationIdentifierInput {
+  user_id: Int!
+  centre_id: Int!
+  date_debut: DateTime!
+}
 
-
+type ReservationMutationResponse {
+  success: Boolean!
+  message: String!
+}
 
 "Account of a person who utilizes this application."
-type User {
+type User @model{
     "Unique primary key."
     id: ID!
 
@@ -59,7 +96,7 @@ type User {
     "When the account was last updated."
     updated_at: DateTime!
 }
-type ProfileFournisseur{
+type ProfileFournisseur @model{
   id: ID!
 
   profile_id: User! @belongsTo(relation: "user")
@@ -71,12 +108,57 @@ type ProfileFournisseur{
 
 }
 
-type Annonce {
+type Payments @model{
+  id: ID!
+
+  montant: Float!
+
+  description: String!
+  status: PaymentStatus!
+
+  created_at: DateTime!
+  updated_at: DateTime!
+}
+
+enum PaymentStatus{
+  pending
+  done
+  cancel
+}
+
+type Reservations_centre  @model{
+  user_id: User! @belongsTo(relation: "user")
+  centre_id: User! @belongsTo(relation: "centre")
+
+  date_debut: DateTime!
+
+  date_fin: DateTime!
+
+  nbr_place: Int!
+
+  note: String!
+  type: String!
+  status: ReservationStatus!
+
+  payments_id: Payments! @belongsTo(relation: "payment")
+  created_at: DateTime!
+  updated_at: DateTime!
+
+}
+
+enum ReservationStatus{
+  pending
+  approved
+  rejected
+  canceled
+}
+
+type Annonce @model{
   "Unique primary key."
   id: ID!
 
   "Owner of the annonce."
-  user_id: User! @belongsTo(relation: "user_id") 
+  user_id: User! @belongsTo(relation: "user") 
 
   "Detailed description of the annonce."
   description: String!
@@ -87,7 +169,7 @@ type Annonce {
 
 }
 
-type Photo{
+type Photo @model{
   id: ID!
   pathToImage : String!
   annonce_id: Annonce! @belongsTo(relation: "annonce")

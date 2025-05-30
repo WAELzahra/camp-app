@@ -16,10 +16,11 @@ use App\Http\Controllers\Auth\EmailVerificationPromptController;
 use App\Http\Controllers\Auth\EmailVerificationNotificationController;
 use Illuminate\Foundation\Auth\EmailVerificationRequest;
 use App\Http\Controllers\AnnonceController;
+use App\Http\Controllers\ReservationsCentreController;
+
 
 
 // REST Annonce
-
 Route::middleware(['auth:sanctum', 'can.publish'])->group(function () {
     Route::get('/annonces/create', [AnnonceController::class, 'create']);
     Route::post('/annonces', [AnnonceController::class, 'store']);
@@ -27,6 +28,20 @@ Route::middleware(['auth:sanctum', 'can.publish'])->group(function () {
     Route::get('/annonces/show/{id}', [AnnonceController::class, 'show']);
     Route::get('/annonces/edit/{id}', [AnnonceController::class, 'edit']);
     Route::delete('/annonces/destroy/{id}', [AnnonceController::class, 'destroy']);
+});
+
+// REST Reservation centre
+Route::middleware(['auth:sanctum', 'campeur'])->group(function () {
+    Route::get('/reservation/centre/create', [ReservationsCentreController::class, 'create']);
+    Route::post('/reservation/centre', [ReservationsCentreController::class, 'store']);
+    Route::patch('/reservation/centre/destroy', [ReservationsCentreController::class, 'destroy']);
+    Route::get('/reservation/centre/show{id}', [ReservationsCentreController::class, 'show']);
+
+});
+//centre confirm/refuse reservation
+Route::middleware(['auth:sanctum', 'centre'])->group(function () {
+    Route::patch('/reservation/centre/confirm', [ReservationsCentreController::class, 'confirm']);
+    Route::patch('/reservation/centre/reject', [ReservationsCentreController::class, 'reject']);
 });
 
 

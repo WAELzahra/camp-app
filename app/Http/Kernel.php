@@ -75,6 +75,8 @@ class Kernel extends HttpKernel
         'throttle' => \Illuminate\Routing\Middleware\ThrottleRequests::class,
         'verified' => \Illuminate\Auth\Middleware\EnsureEmailIsVerified::class,
         'can.publish' =>  \App\Http\Middleware\CanPublishAnnonce::class,
+        'campeur' => \App\Http\Middleware\UserIsCampeur::class,
+        'centre' => \App\Http\Middleware\UserIsCentre::class,
 
     ];
 }
