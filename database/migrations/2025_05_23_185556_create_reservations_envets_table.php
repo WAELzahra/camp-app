@@ -12,14 +12,15 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('reservations_envets', function (Blueprint $table) {
+            $table->id(); // auto-increment primary key
+            
             $table->foreignId('group_id')->constrained('users')->onDelete('cascade');
             $table->foreignId('user_id')->constrained('users')->onDelete('cascade');
             $table->foreignId('event_id')->constrained()->onDelete('cascade');
             $table->integer('nbr_place')->check('nbr_place > 0');
-            $table->foreignId('payment_id')->constrained()->onDelete('cascade');
+            $table->foreignId('payment_id')->nullable()->constrained()->onDelete('cascade');
 
-
-            $table->primary(['user_id', 'event_id','group_id']);
+            $table->unique(['user_id', 'event_id', 'group_id'], 'reservation_envets_unique');
 
             $table->timestamps();
         });

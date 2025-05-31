@@ -12,20 +12,26 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('reservations_centres', function (Blueprint $table) {
-        $table->foreignId('user_id')->constrained()->onDelete('cascade');
-        $table->foreignId('centre_id')->constrained('users')->onDelete('cascade');
+            $table->id(); // Auto-incrementing primary key
 
-        $table->date('date_debut');
-        $table->date('date_fin');
-        $table->integer('nbr_place')->check('nbr_place > 1');
-        $table->string('note')->nullable();
-        $table->string('type')->nullable();
-        $table->enum('status', ['pending', 'approved', 'rejected', 'canceled'])->default('pending');
-        $table->foreignId('payments_id')->constrained()->onDelete('cascade')->nullable();
+            $table->foreignId('user_id')->constrained()->onDelete('cascade');
+            $table->foreignId('centre_id')->constrained('users')->onDelete('cascade');
 
-        // Composite primary key using existing fields
-        $table->primary(['user_id', 'centre_id', 'date_debut']);
- 
+            $table->date('date_debut');
+            $table->date('date_fin');
+
+            $table->integer('nbr_place')->check('nbr_place > 1');
+            $table->string('note')->nullable();
+            $table->string('type')->nullable();
+
+            $table->enum('status', ['pending', 'approved', 'rejected', 'canceled'])->default('pending');
+
+            $table->foreignId('payments_id')->nullable()->constrained()->onDelete('cascade');
+
+            // Unique constraint on user_id, centre_id, and date_debut
+            $table->unique(['user_id', 'centre_id', 'date_debut'], 'unique_user_centre_date');
+
+            $table->timestamps();
         });
     }
 
