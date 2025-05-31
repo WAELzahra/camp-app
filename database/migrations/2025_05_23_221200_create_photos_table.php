@@ -14,12 +14,15 @@ return new class extends Migration
         Schema::create('photos', function (Blueprint $table) {
             $table->id();
             $table->string('path_to_img');
-            $table->foreignId('user_id')->constrained()->onDelete('cascade')->nullable();
-            $table->foreignId('annonce_id')->constrained('camping_zones')->onDelete('cascade')->nullable();
-            $table->foreignId('materielle_id')->constrained()->onDelete('cascade')->nullable();
+    
+            $table->foreignId('user_id')->nullable()->constrained()->onDelete('cascade');
+            $table->foreignId('annonce_id')->nullable()->constrained('camping_zones')->onDelete('cascade');
+            $table->foreignId('materielle_id')->nullable()->constrained()->onDelete('cascade');
+    
             $table->timestamps();
         });
     }
+    
 
     /**
      * Reverse the migrations.
