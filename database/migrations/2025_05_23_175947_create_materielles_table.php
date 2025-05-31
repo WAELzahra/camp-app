@@ -17,7 +17,6 @@ return new class extends Migration
             $table->foreignId('category_id')->constrained('users')->onDelete('cascade');
             $table->string('nom');
             $table->string('description');
-            $table->string('image');
             $table->float('tarif_nuit')->check('tarif_nuit > 0');
             $table->integer('quantite_dispo');
             $table->integer('quantite_total')->check('quantite_total > 0');
