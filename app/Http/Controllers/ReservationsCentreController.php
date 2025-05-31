@@ -37,26 +37,38 @@ class ReservationsCentreController extends Controller
             'nbr_place' => 'required|integer',
             'note' => 'string',
         ]);
+    
         $userId = Auth::id();
-
+    
+        // Extra verification: check if centre_id is a user with role "centre"
+        $centreUser = \App\Models\User::where('id', $request->centre_id)
+            ->where('role_id', 3)
+            ->first();
+    
+        if (!$centreUser) {
+            return response()->json([
+                'message' => 'The selected centre_id does not belong to a user with the role "centre".'
+            ], 422);
+        }
+    
         DB::beginTransaction();
-
+    
         try {
             $reservationCentre = Reservations_centre::create([
                 'user_id' => $userId,
                 'centre_id' => $request->centre_id,
-                'date_debut' => $request->date_debut,
+                'date_debut' => $request->date_debut, 
                 'date_fin' => $request->date_fin, 
                 'note' => $request->note,
                 'type' => $request->type,
                 'nbr_place' => $request->nbr_place,
                 'status' => 'pending'
             ]);
-
+    
             DB::commit();
-
+    
             return response()->json([
-                'message' => 'reservation added successfully.',
+                'message' => 'Reservation added successfully.',
                 'reservationCentre' => $reservationCentre
             ], 201);
         } catch (\Throwable $e) {
@@ -64,54 +76,56 @@ class ReservationsCentreController extends Controller
     
             return response()->json([
                 'message' => 'Error occurred: ' . $e->getMessage(),
-            ], 500);        
+            ], 500);
         }
-
     }
+    
 
     // cancel a reservation
-    public function destroy(Request $request)
+    public function destroy(int $id)
     {
-        $request->validate([
-            'user_id' => 'required|integer',
-            'centre_id' => 'required|integer',
-            'date_debut' => 'required|date',
-        ]);
+        $reservation = Reservations_centre::findOrFail($id);
     
-        $updated = Reservations_centre::where('user_id', $request->user_id)
-        ->where('centre_id', $request->centre_id)
-        ->where('date_debut', $request->date_debut)
-        ->update(['status' => 'canceled']);
+        $reservation->status = 'canceled';
+        $updated = $reservation->save();
     
         if (!$updated) {
-            return redirect()->back()->withErrors('Reservation not found.');
+            return redirect()->back()->withErrors('Failed to cancel reservation.');
         }
-        
+    
         return response()->json(['message' => 'Reservation cancelled successfully.'], 200);
     }
     
     // confirm a reservatoin
-    public function confirm(Request $request)
+    public function confirm(int $id)
     {
-        $updated = Reservations_centre::where('user_id', $request->user_id)
-        ->where('centre_id', $request->centre_id)
-        ->where('date_debut', $request->date_debut)
-        ->update(['status' => 'approved']);
-        return response()->json([
-            'message' => 'reservation approved successfully.'], 201);
+        $reservation = Reservations_centre::findOrFail($id);
+
+        $reservation->status = 'approved';
+        $updated = $reservation->save();
+    
+        if (!$updated) {
+            return redirect()->back()->withErrors('Failed to approved reservation.');
+        }
+    
+        return response()->json(['message' => 'Reservation approved successfully.'], 200);
 
     }
 
     // reject a reservatoin
-    public function reject(Request $request)
+    public function reject(int $id)
     {
-        $updated = Reservations_centre::where('user_id', $request->user_id)
-        ->where('centre_id', $request->centre_id)
-        ->where('date_debut', $request->date_debut)
-        ->update(['status' => 'rejected']);
-         return response()->json([
-            'message' => 'reservation rejected successfully.'], 201);
+        $reservation = Reservations_centre::findOrFail($id);
 
+        $reservation->status = 'rejected';
+        $updated = $reservation->save();
+    
+        if (!$updated) {
+            return redirect()->back()->withErrors('Failed to rejected reservation.');
+        }
+    
+        return response()->json(['message' => 'Reservation rejected successfully.'], 200);
+    
     }
     
 

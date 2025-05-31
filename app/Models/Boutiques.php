@@ -9,7 +9,7 @@ class Boutiques extends Model
 {
     use HasFactory;
     protected $fillable = [
-        "users_id",
+        "fournisseur_id",
         "nom_boutique",
         "description",
         "status"

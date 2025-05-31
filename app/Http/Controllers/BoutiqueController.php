@@ -38,7 +38,7 @@ class BoutiqueController extends Controller
         $userId = Auth::id();
 
         $boutique = Boutiques::create([
-            'users_id' => $userId,
+            'fournisseur_id' => $userId,
             'nom_boutique' =>  $request->nom_boutique,
             'description' => $request->description,
             'status' => false,
@@ -56,7 +56,7 @@ class BoutiqueController extends Controller
     {
         $userId = Auth::id();
 
-        $updated = Boutiques::where('users_id', $userId)
+        $updated = Boutiques::where('fournisseur_id', $userId)
         ->update([
             'description' => $request->description,
             'nom_boutique' => $request->nom_boutique,
@@ -72,7 +72,7 @@ class BoutiqueController extends Controller
     public function destroy(){
         $userId = Auth::id();
 
-        $delete = Boutiques::where('users_id', $userId)
+        $delete = Boutiques::where('fournisseur_id', $userId)
         ->delete();
         return response()->json([
             'message' => 'boutique removed successfully.',

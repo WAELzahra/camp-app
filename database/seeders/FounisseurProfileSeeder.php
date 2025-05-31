@@ -18,7 +18,7 @@ class FounisseurProfileSeeder extends Seeder
 
         try {
             $profile = Profile::create([
-                'user_id' => 6, // Make sure user with ID 5 exists
+                'user_id' => 4, // Make sure user with ID 5 exists
                 'bio' => 'Fournisseur spécialisé dans les équipements de camping de haute qualité.',
                 'cover_image' => 'cover_fournisseur.jpg',
                 'adresse' => '456 Rue du Fournisseur, Sousse',

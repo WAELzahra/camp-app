@@ -51,14 +51,14 @@ Route::middleware(['auth:sanctum', 'campeur'])->group(function () {
     Route::get('/reservation/centre/{id}', [ReservationsCentreController::class, 'index']);
     Route::get('/reservation/centre/create', [ReservationsCentreController::class, 'create']);
     Route::post('/reservation/centre', [ReservationsCentreController::class, 'store']);
-    Route::patch('/reservation/centre/destroy', [ReservationsCentreController::class, 'destroy']);
+    Route::patch('/reservation/centre/destroy/{id}', [ReservationsCentreController::class, 'destroy']);
     Route::get('/reservation/centre/show{id}', [ReservationsCentreController::class, 'show']);
 
 });
 //centre confirm/refuse reservation
 Route::middleware(['auth:sanctum', 'centre'])->group(function () {
-    Route::patch('/reservation/centre/confirm', [ReservationsCentreController::class, 'confirm']);
-    Route::patch('/reservation/centre/reject', [ReservationsCentreController::class, 'reject']);
+    Route::patch('/reservation/centre/confirm/{id}', [ReservationsCentreController::class, 'confirm']);
+    Route::patch('/reservation/centre/reject/{id}', [ReservationsCentreController::class, 'reject']);
     Route::get('/reservation/centre/{id}', [ReservationsCentreController::class, 'index']);
 
 });

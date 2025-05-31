@@ -16,7 +16,7 @@ return new class extends Migration
             $table->string('path_to_img');
     
             $table->foreignId('user_id')->nullable()->constrained()->onDelete('cascade');
-            $table->foreignId('annonce_id')->nullable()->constrained('camping_zones')->onDelete('cascade');
+            $table->foreignId('annonce_id')->nullable()->constrained()->onDelete('cascade');
             $table->foreignId('materielle_id')->nullable()->constrained()->onDelete('cascade');
     
             $table->timestamps();

@@ -13,7 +13,7 @@ class ProfileCentreSeeder extends Seeder
     {
         // Make sure user with id=3 exists
         $profile = Profile::create([
-            'user_id' => 5,
+            'user_id' => 3,
             'bio' => 'Centre très expérimenté avec une grande capacité.',
             'cover_image' => 'cover_centre.jpg',
             'adresse' => '123 Rue de Camping, Tunis',
