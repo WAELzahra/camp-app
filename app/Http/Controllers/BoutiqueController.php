@@ -17,13 +17,13 @@ class BoutiqueController extends Controller
 
     } 
     // display the form to edit the post
-    public function edit()
+    public function edit(int $boutique_id)
     {
 
     }
 
     // display the shop of a fournisseur
-    public function show()
+    public function show(int $boutique_id)
     {
     }
 

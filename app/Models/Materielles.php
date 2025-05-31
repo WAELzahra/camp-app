@@ -23,6 +23,9 @@ class Materielles extends Model
         return $this->hasOne(Materielles_categories::class);
     }
 
+    public function photos(){
+        return $this->hasMany(Photos::class);
+    }
     public function feedbacks(){
         return $this->hasMany(Feedbacks::class);
     }

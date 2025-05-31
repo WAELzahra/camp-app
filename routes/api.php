@@ -15,6 +15,8 @@ use Illuminate\Foundation\Auth\EmailVerificationRequest;
 use App\Http\Controllers\AnnonceController;
 use App\Http\Controllers\ReservationsCentreController;
 use App\Http\Controllers\BoutiqueController;
+use App\Http\Controllers\MaterielleController;
+
 
 
 // routes for admin 
@@ -69,6 +71,10 @@ Route::middleware(['auth:sanctum', 'fournisseur'])->group(function () {
     Route::post('/boutique/add', [BoutiqueController::class, 'add']);
     Route::patch('/boutique/update', [BoutiqueController::class, 'update']);
     Route::delete('/boutique/destroy', [BoutiqueController::class, 'destroy']);
+    // REST for materielle
+    Route::post('/materielle/store', [MaterielleController::class, 'store']);
+    Route::patch('/materielle/update{id}', [MaterielleController::class, 'update']);
+    Route::delete('/materielle/destroy{id}', [MaterielleController::class, 'destroy']);
 
 });
 // routes accesible for visiters

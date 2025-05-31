@@ -27,12 +27,12 @@ class AnnonceController extends Controller
     }
 
     // display a specific poste
-    public function show(string $id)
+    public function show(string $annonce_id)
     {
     }
 
     // display the form to edit the post
-    public function edit(string $id)
+    public function edit(string $annonce_id)
     {
     }
 
