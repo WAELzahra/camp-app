@@ -12,13 +12,17 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('reservation_guides', function (Blueprint $table) {
+            $table->id(); // auto-increment primary key
+
             $table->foreignId('reserver_id')->constrained('users')->onDelete('cascade');
             $table->foreignId('guide_id')->constrained('users')->onDelete('cascade');
-            $table->foreignId('circuit_id')->constrained()->onDelete('cascade')->nullable();
+            $table->foreignId('circuit_id')->nullable()->constrained()->onDelete('cascade');
+
             $table->date('creation_date');
             $table->string('type');
-            $table->string("discription");
-            $table->primary(['reserver_id', 'guide_id', 'creation_date']);
+            $table->string('discription');
+
+            $table->unique(['reserver_id', 'guide_id', 'creation_date'], 'reservation_guide_unique');
 
             $table->timestamps();
         });

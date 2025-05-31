@@ -12,15 +12,24 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('reservations_materielles', function (Blueprint $table) {
+            $table->id(); // Auto-increment primary key
+
             $table->foreignId('materielle_id')->constrained()->onDelete('cascade');
             $table->foreignId('user_id')->constrained()->onDelete('cascade');
             $table->foreignId('fournisseur_id')->constrained('users')->onDelete('cascade');
+
             $table->date('date_debut');
             $table->date('date_fin');
+
             $table->integer('quantite')->check('quantite > 1');
             $table->float('montant_payer');
 
-            $table->primary(['user_id', 'materielle_id', 'date_debut']);
+            $table->enum('status', ['pending', 'confirmed', 'rejected', 'canceled'])->default('pending');
+
+            $table->foreignId('payments_id')->nullable()->constrained()->onDelete('cascade');
+
+            // Unique constraint on materielle_id, user_id, fournisseur_id, and date_debut
+            $table->unique(['materielle_id', 'user_id', 'fournisseur_id', 'date_debut'], 'unique_materielle_user_fournisseur_date');
 
             $table->timestamps();
         });
