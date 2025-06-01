@@ -11,16 +11,23 @@ use App\Models\Reservations_centre;
 class ReservationsCentreController extends Controller
 {
     /**
-     * Display a list of reservation.
+     * Display the list of reservation for a center.
      */
-    public function index(int $idUser)
+    public function index()
     {
+        $idCentre = Auth::id();
     }
-    // display a specific reservation
-    public function show(int $id)
+    // display the list of reservation that belong to a user
+    public function index_user()
     {
+        $idUser = Auth::id();
     }
 
+    // display a specific reservation
+    public function show(int $idReservation)
+    {
+
+    }
     // display the form to make a reservation
     public function create(){
 

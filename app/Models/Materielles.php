@@ -24,7 +24,7 @@ class Materielles extends Model
     }
 
     public function photos(){
-        return $this->hasMany(Photos::class);
+        return $this->hasMany(Photos::class, 'materielle_id');
     }
     public function feedbacks(){
         return $this->hasMany(Feedbacks::class);

@@ -15,7 +15,8 @@ class Reservations_materielles extends Model
         "date_debut",
         "date_fin",
         "quantite",
-        "montant_payer"
+        "montant_payer",
+        "status"
     ];
 
     public function user(){
