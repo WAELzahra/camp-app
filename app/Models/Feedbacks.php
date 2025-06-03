@@ -13,6 +13,7 @@ class Feedbacks extends Model
         "target_id",
         "event_id",
         "zone_id",
+        'materielle_id',
         "contenu",
         "response",
         "note",
@@ -32,5 +33,8 @@ class Feedbacks extends Model
     }
     public function reservation(){
         return $this->belongsTo(Reservations_centre::class);
+    }
+    public function zone(){
+        return $this->belongsTo(Camping_zones::class);
     }
 }

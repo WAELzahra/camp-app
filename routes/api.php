@@ -17,6 +17,8 @@ use App\Http\Controllers\ReservationsCentreController;
 use App\Http\Controllers\BoutiqueController;
 use App\Http\Controllers\MaterielleController;
 use App\Http\Controllers\ReservationMaterielleController;
+use App\Http\Controllers\FeedbackController;
+
 
 
 
@@ -40,11 +42,9 @@ Route::middleware(['auth:sanctum', 'admin'])->group(function () {
 });
 // REST Annonce
 Route::middleware(['auth:sanctum', 'can.publish'])->group(function () {
-    Route::get('/annonces/{id}', [AnnonceController::class, 'index']);
     Route::get('/annonces/create', [AnnonceController::class, 'create']);
     Route::post('/annonces', [AnnonceController::class, 'store']);
     Route::patch('/annonces/update/{id}', [AnnonceController::class, 'update']);
-    Route::get('/annonces/show/{id}', [AnnonceController::class, 'show']);
     Route::get('/annonces/edit/{id}', [AnnonceController::class, 'edit']);
     Route::delete('/annonces/destroy/{id}', [AnnonceController::class, 'destroy']);
 });
@@ -57,10 +57,15 @@ Route::middleware(['auth:sanctum', 'campeur'])->group(function () {
     Route::patch('/reservation/centre/destroy/{id}', [ReservationsCentreController::class, 'destroy']);
     Route::get('/reservation/centre/show/{id}', [ReservationsCentreController::class, 'show']);
     Route::get('/reservation/centre/index_user', [ReservationsCentreController::class, 'index_user']);
+    Route::get('/reservation/centre/index_user', [ReservationsCentreController::class, 'index_user']);
     //Camper reserve materielle
     Route::post('/reservation/materielle/store', [ReservationMaterielleController::class, 'store']);
     Route::patch('/reservation/materielle/destroy/{id}', [ReservationMaterielleController::class, 'destroy']);
-    Route::get('/materielle/reservation/index_user', [ReservationMaterielleController::class, 'index_user']);
+    Route::get('/reservation/materielle/index_user', [ReservationMaterielleController::class, 'index_user']);
+    // noter service
+    Route::post('/feedback/create', [FeedbackController::class, 'store']);
+    Route::patch('/feedback/update/{id}', [FeedbackController::class, 'update']);
+    Route::delete('/feedback/destroy/{id}', [FeedbackController::class, 'destroy']);
 
 });
 //centre confirm/refuse reservation
@@ -81,10 +86,8 @@ Route::middleware(['auth:sanctum', 'fournisseur'])->group(function () {
     Route::post('/materielle/store', [MaterielleController::class, 'store']);
     Route::patch('/materielle/update/{id}', [MaterielleController::class, 'update']);
     Route::delete('/materielle/destroy/{id}', [MaterielleController::class, 'destroy']);
-    Route::get('/materielle/index/{fournisseur_id}', [MaterielleController::class, 'index']);
     Route::get('/materielle/create', [MaterielleController::class, 'create']);
     Route::get('/materielle/edit/{materielle_id}', [MaterielleController::class, 'edit']);
-    Route::get('/materielle/show/{materielle_id}', [MaterielleController::class, 'show']);
     // REST for reservation materielle
     Route::get('/reservation/materielle/index/{idMaterielle}', [ReservationMaterielleController::class, 'index']);
     Route::get('/reservation/materielle/show', [ReservationMaterielleController::class, 'show']);
@@ -97,9 +100,14 @@ Route::middleware(['auth:sanctum', 'fournisseur'])->group(function () {
 
 });
 // routes accesible for visiters
-Route::get('/boutique/list', [BoutiqueController::class, 'index']);
-Route::get('/boutique/show/{idFournisseur}', [BoutiqueController::class, 'show']);
+Route::get('/boutique', [BoutiqueController::class, 'index']);
+Route::get('/boutique/show/{id}', [BoutiqueController::class, 'show']);
 Route::get('/annonces/list/{id}', [AnnonceController::class, 'index']);
+Route::get('/materielle/compare/{id1}-{id2}', [MaterielleController::class, 'compare']);
+Route::get('/materielle/index/{fournisseur_id}', [MaterielleController::class, 'index']);
+Route::get('/materielle/show/{materielle_id}', [MaterielleController::class, 'show']);
+Route::get('/annonces/index/{id}', [AnnonceController::class, 'index']);
+Route::get('/annonces/show/{id}', [AnnonceController::class, 'show']);
 
 // AUTH API (Sanctum)
 Route::post('/register', [RegisteredUserController::class, 'store']);

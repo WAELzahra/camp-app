@@ -11,134 +11,187 @@ use App\Models\Photos;
 
 class AnnonceController extends Controller
 {
-
-
     /**
-     * Display a list of the posts.
+     * Display a list of annonces for a specific user.
      */
     public function index($idUser)
     {
+        $annonces = Annonce::with('photos')->where('user_id', $idUser)->get();
 
+        return response()->json([
+            'status' => 'success',
+            'annonces' => $annonces
+        ]);
     }
 
-    // display the form to create a poste
+    /**
+     * Display the form to create a new annonce.
+     */
     public function create()
     {
+        return response()->json([
+            'message' => 'Provide description and image to create a new annonce.'
+        ]);
     }
 
-    // display a specific poste
+    /**
+     * Display a specific annonce by ID.
+     */
     public function show(string $annonce_id)
     {
+        $annonce = Annonce::with('photos')->find($annonce_id);
+
+        if (!$annonce) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Annonce not found.'
+            ], 404);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'annonce' => $annonce
+        ]);
     }
 
-    // display the form to edit the post
+    /**
+     * Display the form to edit a specific annonce.
+     */
     public function edit(string $annonce_id)
     {
+        $annonce = Annonce::find($annonce_id);
+
+        if (!$annonce) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Annonce not found.'
+            ], 404);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'You can now edit this annonce.',
+            'annonce' => $annonce
+        ]);
     }
 
-
-    // store the post
+    /**
+     * Store a new annonce with validation and photo creation.
+     */
     public function store(Request $request)
     {
         $request->validate([
             'description' => 'required|string',
-            'image' => 'required|string', // image as string path or URL
+            'image' => 'required|string',
+        ], [
+            'description.required' => 'La description est obligatoire.',
+            'image.required' => 'L\'image est obligatoire.',
         ]);
-    
+
         $userId = Auth::id();
-    
+
         DB::beginTransaction();
-    
         try {
             $annonce = Annonce::create([
                 'user_id' => $userId,
                 'description' => $request->description,
             ]);
-    
+
             Photos::create([
                 'annonce_id' => $annonce->id,
-                'path_to_img' => $request->image,  // just take string from request
+                'path_to_img' => $request->image,
             ]);
-    
+
             DB::commit();
-    
+
             return response()->json([
-                'message' => 'Annonce and image path saved successfully.',
-                'annonce' => $annonce,
+                'status' => 'success',
+                'message' => 'Annonce ajoutée avec succès.',
+                'annonce' => $annonce
             ], 201);
         } catch (\Exception $e) {
             DB::rollBack();
-    
+
             return response()->json([
-                'message' => 'Error occurred: ' . $e->getMessage(),
+                'status' => 'error',
+                'message' => 'Erreur lors de l\'ajout: ' . $e->getMessage()
             ], 500);
         }
     }
 
-    // update the post
+    /**
+     * Update an existing annonce and associated photo.
+     */
     public function update(Request $request, string $id)
     {
         $request->validate([
-            'description' => 'string',
-            'image' => 'required|string', 
+            'description' => 'nullable|string',
+            'image' => 'required|string',
+        ], [
+            'image.required' => 'L\'image est obligatoire pour la mise à jour.',
         ]);
 
         DB::beginTransaction();
-
         try {
             $annonce = Annonce::findOrFail($id);
 
             $annonce->update([
-                'description' => $request->description,
+                'description' => $request->description ?? $annonce->description,
                 'updated_at' => now(),
             ]);
-            $photo = Photos::where('annonce_id', $annonce->id)->first();
 
+            $photo = Photos::where('annonce_id', $annonce->id)->first();
             if ($photo) {
                 $photo->update([
                     'path_to_img' => $request->image,
                 ]);
             }
+
             DB::commit();
 
             return response()->json([
-                'message' => 'Annonce updated successfully.',
-                'annonce' => $annonce,
+                'status' => 'success',
+                'message' => 'Annonce mise à jour avec succès.',
+                'annonce' => $annonce
             ], 200);
         } catch (\Exception $e) {
             DB::rollBack();
 
             return response()->json([
-                'message' => 'Error occurred: ' . $e->getMessage(),
+                'status' => 'error',
+                'message' => 'Erreur lors de la mise à jour: ' . $e->getMessage()
             ], 500);
         }
     }
 
-    // delete the post
+    /**
+     * Delete an annonce and associated image path.
+     */
     public function destroy(string $id)
     {
         DB::beginTransaction();
-
         try {
             $annonce = Annonce::with('photos')->findOrFail($id);
 
-            // Delete related images
-            if ($annonce->image) {
-                Storage::delete($annonce->image);
+            $photo = $annonce->photos->first();
+            if ($photo && $photo->path_to_img) {
+                Storage::delete($photo->path_to_img);
             }
-            
+
             $annonce->delete();
 
             DB::commit();
 
             return response()->json([
-                'message' => 'Annonce and associated images deleted successfully.',
+                'status' => 'success',
+                'message' => 'Annonce supprimée avec succès.'
             ], 200);
         } catch (\Exception $e) {
             DB::rollBack();
 
             return response()->json([
-                'message' => 'Error occurred: ' . $e->getMessage(),
+                'status' => 'error',
+                'message' => 'Erreur lors de la suppression: ' . $e->getMessage()
             ], 500);
         }
     }
