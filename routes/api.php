@@ -73,6 +73,7 @@ Route::middleware(['auth:sanctum', 'centre'])->group(function () {
     Route::patch('/reservation/centre/confirm/{id}', [ReservationsCentreController::class, 'confirm']);
     Route::patch('/reservation/centre/reject/{id}', [ReservationsCentreController::class, 'reject']);
     Route::get('/reservation/centre/index', [ReservationsCentreController::class, 'index']);
+    Route::patch('/reservation/centre/update_status', [ReservationsCentreController::class, 'update_status']);
 
 });
 //REST boutique, reservation materielle

@@ -7,6 +7,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
 
 use App\Models\Reservations_centre;
+use App\Models\ProfileCentre;
+use App\Models\Profile;
 
 class ReservationsCentreController extends Controller
 {
@@ -64,6 +66,58 @@ class ReservationsCentreController extends Controller
     {
         //
     }
+
+    /**
+     * Update the center's availability status based on current reservations.
+     * Marks the center as unavailable if fully booked.
+     */
+    public function update_status()
+    {
+        $idCentre = Auth::id(); // Centre manager's user ID
+
+        // Count the number of confirmed reservations that are still active
+        $nbr_place_vide = Reservations_centre::where('centre_id', $idCentre)
+            ->where('date_fin', '>', now())
+            ->where('status', 'approved')
+            ->count();
+
+        // Get the profile ID linked to this user
+        $profile = Profile::where('user_id', $idCentre)->first();
+
+        if (!$profile) {
+            return response()->json(['message' => 'Profile not found for this user.'], 404);
+        }
+
+        // Get total capacity from profile_centre
+        $profileCentre = ProfileCentre::where('profile_id', $profile->id)->first();
+
+        if (!$profileCentre) {
+            return response()->json(['message' => 'Centre capacity info not found.'], 404);
+        }
+
+        $capacity_total = $profileCentre->capacite;
+
+        // Compare capacity and update disponibilite status
+        if ($nbr_place_vide >= $capacity_total) {
+            // Set disponibilite to false (i.e., centre is full)
+            $profileCentre->disponibilite = false;
+            $profileCentre->save();
+
+            return response()->json([
+                'message' => 'Centre is full. Status updated to unavailable.',
+                'vacant_places' => 0
+            ]);
+        } else {
+            // Centre still has vacant places
+            $vacant = $capacity_total - $nbr_place_vide;
+
+            return response()->json([
+                'message' => 'Centre still has available spots.',
+                'vacant_places' => $vacant
+            ]);
+        }
+    }
+
 
     /**
      * Store a newly created reservation in the database.
