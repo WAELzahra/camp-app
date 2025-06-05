@@ -26,7 +26,6 @@ use App\Http\Controllers\FeedbackController;
 Route::middleware(['auth:sanctum', 'admin'])->group(function () {
     // for annonce
     Route::get('/annonces/create', [AnnonceController::class, 'create']);
-    Route::get('/annonces/show/{id}', [AnnonceController::class, 'show']);
     Route::get('/annonces/edit/{id}', [AnnonceController::class, 'edit']);
     Route::delete('/annonces/destroy/{id}', [AnnonceController::class, 'destroy']);
     // for center reservations
@@ -38,14 +37,22 @@ Route::middleware(['auth:sanctum', 'admin'])->group(function () {
     Route::patch('/boutique/update', [BoutiqueController::class, 'update']);
     Route::delete('/boutique/destroy', [BoutiqueController::class, 'destroy']);
     Route::get('/boutique/create', [BoutiqueController::class, 'create']);
-
+    Route::get('/boutique/edit', [BoutiqueController::class, 'edit']);
+    // for feedback
+    Route::get('/feedback/index_user', [FeedbackController::class, 'index_user']);
+    Route::delete('/feedback/destroy/{id}', [FeedbackController::class, 'destroy']);
+    Route::get('/feedback/show/{id}', [FeedbackController::class, 'show']);
+    Route::delete('/feedback/destroy/{id}', [FeedbackController::class, 'destroy']);
+    Route::post('/feedback/create', [FeedbackController::class, 'create']);
+    Route::post('/feedback/store', [FeedbackController::class, 'store']);
+    Route::get('/feedback/edit/{id}', [FeedbackController::class, 'edit']);
 });
 // REST Annonce
 Route::middleware(['auth:sanctum', 'can.publish'])->group(function () {
     Route::get('/annonces/create', [AnnonceController::class, 'create']);
+    Route::get('/annonces/edit/{id}', [AnnonceController::class, 'edit']);
     Route::post('/annonces', [AnnonceController::class, 'store']);
     Route::patch('/annonces/update/{id}', [AnnonceController::class, 'update']);
-    Route::get('/annonces/edit/{id}', [AnnonceController::class, 'edit']);
     Route::delete('/annonces/destroy/{id}', [AnnonceController::class, 'destroy']);
 });
 
@@ -57,15 +64,17 @@ Route::middleware(['auth:sanctum', 'campeur'])->group(function () {
     Route::patch('/reservation/centre/destroy/{id}', [ReservationsCentreController::class, 'destroy']);
     Route::get('/reservation/centre/show/{id}', [ReservationsCentreController::class, 'show']);
     Route::get('/reservation/centre/index_user', [ReservationsCentreController::class, 'index_user']);
-    Route::get('/reservation/centre/index_user', [ReservationsCentreController::class, 'index_user']);
     //Camper reserve materielle
     Route::post('/reservation/materielle/store', [ReservationMaterielleController::class, 'store']);
     Route::patch('/reservation/materielle/destroy/{id}', [ReservationMaterielleController::class, 'destroy']);
     Route::get('/reservation/materielle/index_user', [ReservationMaterielleController::class, 'index_user']);
     // noter service
-    Route::post('/feedback/create', [FeedbackController::class, 'store']);
+    Route::post('/feedback/create', [FeedbackController::class, 'create']);
+    Route::post('/feedback/store', [FeedbackController::class, 'store']);
+    Route::post('/feedback/edit/{id}', [FeedbackController::class, 'edit']);
     Route::patch('/feedback/update/{id}', [FeedbackController::class, 'update']);
     Route::delete('/feedback/destroy/{id}', [FeedbackController::class, 'destroy']);
+    Route::get('/feedback/index_user', [FeedbackController::class, 'index_user']);
 
 });
 //centre confirm/refuse reservation
@@ -80,6 +89,7 @@ Route::middleware(['auth:sanctum', 'centre'])->group(function () {
 Route::middleware(['auth:sanctum', 'fournisseur'])->group(function () {
     // RESET for boutique
     Route::get('/boutique/create', [BoutiqueController::class, 'create']);
+    Route::get('/boutique/edit', [BoutiqueController::class, 'edit']);
     Route::post('/boutique/add', [BoutiqueController::class, 'add']);
     Route::patch('/boutique/update', [BoutiqueController::class, 'update']);
     Route::delete('/boutique/destroy', [BoutiqueController::class, 'destroy']);
@@ -101,14 +111,19 @@ Route::middleware(['auth:sanctum', 'fournisseur'])->group(function () {
 
 });
 // routes accesible for visiters
+    //for annonce
+Route::get('/annonces/index/{id}', [AnnonceController::class, 'index']);
+Route::get('/annonces/show/{id}', [AnnonceController::class, 'show']);
+    // for boutique
 Route::get('/boutique', [BoutiqueController::class, 'index']);
 Route::get('/boutique/show/{id}', [BoutiqueController::class, 'show']);
-Route::get('/annonces/list/{id}', [AnnonceController::class, 'index']);
+    // for feedback
+Route::get('/feedback/index', [FeedbackController::class, 'index']);
+Route::get('/feedback/show/{id}', [FeedbackController::class, 'show']);
+    // for materielle
 Route::get('/materielle/compare/{id1}-{id2}', [MaterielleController::class, 'compare']);
 Route::get('/materielle/index/{fournisseur_id}', [MaterielleController::class, 'index']);
 Route::get('/materielle/show/{materielle_id}', [MaterielleController::class, 'show']);
-Route::get('/annonces/index/{id}', [AnnonceController::class, 'index']);
-Route::get('/annonces/show/{id}', [AnnonceController::class, 'show']);
 
 // AUTH API (Sanctum)
 Route::post('/register', [RegisteredUserController::class, 'store']);
