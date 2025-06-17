@@ -5,10 +5,16 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Mail;
+use App\Models\User;
 
 use App\Models\Reservations_centre;
 use App\Models\ProfileCentre;
 use App\Models\Profile;
+use App\Mail\ReservationCanceledByUser;
+use App\Mail\ReservationConfirmed;
+use App\Mail\ReservationRejected;
+use App\Mail\NewReservationNotification;
 
 class ReservationsCentreController extends Controller
 {
@@ -73,22 +79,19 @@ class ReservationsCentreController extends Controller
      */
     public function update_status()
     {
-        $idCentre = Auth::id(); // Centre manager's user ID
+        $idCentre = Auth::id(); 
 
-        // Count the number of confirmed reservations that are still active
         $nbr_place_vide = Reservations_centre::where('centre_id', $idCentre)
             ->where('date_fin', '>', now())
             ->where('status', 'approved')
             ->count();
 
-        // Get the profile ID linked to this user
         $profile = Profile::where('user_id', $idCentre)->first();
 
         if (!$profile) {
             return response()->json(['message' => 'Profile not found for this user.'], 404);
         }
 
-        // Get total capacity from profile_centre
         $profileCentre = ProfileCentre::where('profile_id', $profile->id)->first();
 
         if (!$profileCentre) {
@@ -97,9 +100,7 @@ class ReservationsCentreController extends Controller
 
         $capacity_total = $profileCentre->capacite;
 
-        // Compare capacity and update disponibilite status
         if ($nbr_place_vide >= $capacity_total) {
-            // Set disponibilite to false (i.e., centre is full)
             $profileCentre->disponibilite = false;
             $profileCentre->save();
 
@@ -108,7 +109,6 @@ class ReservationsCentreController extends Controller
                 'vacant_places' => 0
             ]);
         } else {
-            // Centre still has vacant places
             $vacant = $capacity_total - $nbr_place_vide;
 
             return response()->json([
@@ -152,7 +152,6 @@ class ReservationsCentreController extends Controller
                 'message' => 'The selected centre_id does not belong to a user with the role "centre".'
             ], 422);
         }
-
         DB::beginTransaction();
 
         try {
@@ -169,15 +168,29 @@ class ReservationsCentreController extends Controller
 
             DB::commit();
 
+            $user = Auth::user();
+            
+            if ($centreUser) {
+                Mail::to($centreUser->email)->send(new NewReservationNotification($centreUser, $user, $reservationCentre));
+            }
+    
             return response()->json([
                 'message' => 'Reservation added successfully.',
                 'reservationCentre' => $reservationCentre
             ], 201);
         } catch (\Throwable $e) {
             DB::rollBack();
-
+        
+            if ($e instanceof \Illuminate\Database\QueryException) {
+                if ($e->getCode() === '23000') {
+                    return response()->json([
+                        'message' => 'Conflit : Réservation déjà existante pour cette période.',
+                    ], 409);
+                }
+            }
+        
             return response()->json([
-                'message' => 'Error occurred: ' . $e->getMessage(),
+                'message' => 'Erreur serveur: ' . $e->getMessage(),
             ], 500);
         }
     }
@@ -188,14 +201,22 @@ class ReservationsCentreController extends Controller
     public function destroy(int $id)
     {
         $reservation = Reservations_centre::findOrFail($id);
-
+    
         $reservation->status = 'canceled';
         $updated = $reservation->save();
-
+    
         if (!$updated) {
             return response()->json(['message' => 'Failed to cancel reservation.'], 500);
         }
-
+    
+        // Retrieve the related user and center
+        $user = $reservation->user;
+        $center = $reservation->centre;
+    
+        if ($center && $user) {
+            Mail::to($center->email)->send(new ReservationCanceledByUser($center, $user));
+        }
+    
         return response()->json([
             'message' => 'Reservation cancelled successfully.',
             'reservation' => $reservation
@@ -215,6 +236,10 @@ class ReservationsCentreController extends Controller
         if (!$updated) {
             return response()->json(['message' => 'Failed to approve reservation.'], 500);
         }
+        $user = $reservation->user;
+        if ($user) {
+            Mail::to($user->email)->send(new ReservationConfirmed($user));
+        }
 
         return response()->json([
             'message' => 'Reservation approved successfully.',
@@ -228,14 +253,21 @@ class ReservationsCentreController extends Controller
     public function reject(int $id)
     {
         $reservation = Reservations_centre::findOrFail($id);
-
+    
         $reservation->status = 'rejected';
         $updated = $reservation->save();
-
+    
         if (!$updated) {
             return response()->json(['message' => 'Failed to reject reservation.'], 500);
         }
-
+    
+        // Retrieve the user associated with the reservation
+        $user = $reservation->user;
+    
+        if ($user) {
+            Mail::to($user->email)->send(new ReservationRejected($user, 'Aucune disponibilité'));
+        }
+    
         return response()->json([
             'message' => 'Reservation rejected successfully.',
             'reservation' => $reservation

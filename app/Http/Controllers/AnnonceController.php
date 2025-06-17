@@ -6,8 +6,14 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Mail;
 use App\Models\Annonce;
 use App\Models\Photos;
+use App\Mail\RequestAnnonceActivation;
+use App\Mail\ActivateAnnonceNotification;
+use App\Mail\AnnonceDeactivatedNotification;
+
+
 
 class AnnonceController extends Controller
 {
@@ -89,12 +95,14 @@ class AnnonceController extends Controller
         ]);
 
         $userId = Auth::id();
+        $user = Auth::user();
 
         DB::beginTransaction();
         try {
             $annonce = Annonce::create([
                 'user_id' => $userId,
                 'description' => $request->description,
+                'status' => "down"
             ]);
 
             Photos::create([
@@ -103,6 +111,7 @@ class AnnonceController extends Controller
             ]);
 
             DB::commit();
+            Mail::to($user->email)->send(new RequestAnnonceActivation($user));
 
             return response()->json([
                 'status' => 'success',
@@ -137,6 +146,7 @@ class AnnonceController extends Controller
 
             $annonce->update([
                 'description' => $request->description ?? $annonce->description,
+                'status' => "down",
                 'updated_at' => now(),
             ]);
 
@@ -195,4 +205,73 @@ class AnnonceController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * desactivate annonce
+     */
+    public function deactivate(int $id)
+    {
+        $annonce = Annonce::findOrFail($id);
+        $user = Auth::user();
+    
+        if ($user->role_id !== 6 && $user->id !== $annonce->user_id) {
+            return response()->json(['message' => 'Unauthorized.'], 403);
+        }
+    
+        if ($annonce->status === 'down') {
+            return response()->json([
+                'status' => 'info',
+                'message' => 'Cette annonce est déjà désactivée.'
+            ], 400);
+        }
+    
+        $annonce->status = 'down';
+        $annonce->save();
+    
+        if ($user->role_id === 6) {
+            $owner = $annonce->user;
+            if ($owner) {
+                Mail::to($owner->email)->send(new AnnonceDeactivatedNotification($owner, $annonce));
+            }
+        }
+    
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Annonce désactivée avec succès.',
+            'annonce' => $annonce
+        ]);
+    }
+    
+    /**
+     * activate annonce
+     */
+    public function activate(int $annonceId)
+    {
+        $annonce = Annonce::findOrFail($annonceId);
+    
+        if ($annonce->status === 'up') {
+            return response()->json([
+                'status' => 'info',
+                'message' => 'Cette annonce est déjà activée.'
+            ], 400);
+        }
+    
+        $annonce->update([
+            'status' => 'up'
+        ]);
+    
+        $user = $annonce->user;
+    
+        if ($user) {
+            Mail::to($user->email)->send(new ActivateAnnonceNotification($user));
+        }
+    
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Annonce activée avec succès.',
+            'annonce' => $annonce
+        ]);
+    }
+    
+    
 }

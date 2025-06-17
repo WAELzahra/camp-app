@@ -28,6 +28,9 @@ Route::middleware(['auth:sanctum', 'admin'])->group(function () {
     Route::get('/annonces/create', [AnnonceController::class, 'create']);
     Route::get('/annonces/edit/{id}', [AnnonceController::class, 'edit']);
     Route::delete('/annonces/destroy/{id}', [AnnonceController::class, 'destroy']);
+    Route::patch('/annonces/deactivate/{id}', [AnnonceController::class, 'deactivate']);
+    Route::patch('/annonces/activate/{id}', [AnnonceController::class, 'activate']);
+
     // for center reservations
     Route::get('/reservation/centre/{id}', [ReservationsCentreController::class, 'index']);
     Route::get('/reservation/centre/show{id}', [ReservationsCentreController::class, 'show']);
