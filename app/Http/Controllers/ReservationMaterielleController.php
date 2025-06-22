@@ -7,6 +7,12 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
 use App\Models\Reservations_materielles;
 use App\Models\User;
+use App\Models\Materielles;
+use Illuminate\Support\Facades\Mail;
+use App\Mail\NewReservationToFournisseur;
+use App\Mail\ReservationConfirmedToFournisseur;
+use App\Mail\ReservationCanceledToFournisseur;
+use App\Mail\ReservationRejectedToUser;
 
 class ReservationMaterielleController extends Controller
 {
@@ -137,7 +143,9 @@ class ReservationMaterielleController extends Controller
             ]);
 
             DB::commit();
-
+            $user = Auth::user();
+            Mail::to($fournisseurUser->email)->send(new NewReservationToFournisseur($reservation, $user));
+            
             return response()->json([
                 'message' => 'Réservation ajoutée avec succès.',
                 'reservation' => $reservation,
@@ -167,7 +175,11 @@ class ReservationMaterielleController extends Controller
         $reservation->update([
             'status' => 'canceled'
         ]);
-
+        $fournisseur = User::find($reservation->fournisseur_id);
+        if ($fournisseur) {
+            Mail::to($fournisseur->email)->send(new ReservationCanceledToFournisseur($reservation));
+        }
+        
         return response()->json([
             'message' => 'Réservation annulée avec succès.',
             'reservation' => $reservation,
@@ -182,20 +194,88 @@ class ReservationMaterielleController extends Controller
         $reservation = Reservations_materielles::find($id);
 
         if (!$reservation) {
-            return response()->json([
-                'message' => 'Réservation introuvable.',
-            ], 404);
+            return response()->json(['message' => 'Réservation introuvable.'], 404);
         }
 
-        $reservation->update([
-            'status' => 'confirmed'
-        ]);
+        if ($reservation->fournisseur_id !== Auth::id()) {
+            return response()->json(['message' => 'Action non autorisée.'], 403);
+        }
 
-        return response()->json([
-            'message' => 'Réservation confirmée avec succès.',
-            'reservation' => $reservation,
-        ], 200);
+        if ($reservation->status === 'confirmed') {
+            return response()->json(['message' => 'Réservation déjà confirmée.'], 400);
+        }
+
+        $materielle = Materielles::find($reservation->materielle_id);
+        if (!$materielle) {
+            return response()->json(['message' => 'Matériel introuvable.'], 404);
+        }
+
+        if ($materielle->quantite_dispo < $reservation->quantite) {
+            return response()->json(['message' => 'Quantité insuffisante pour confirmer cette réservation.'], 400);
+        }
+
+        DB::beginTransaction();
+        try {
+            $reservation->update(['status' => 'confirmed']);
+            $materielle->decrement('quantite_dispo', $reservation->quantite);
+            DB::commit();
+
+            $fournisseur = User::find($reservation->fournisseur_id);
+            if ($fournisseur) {
+                Mail::to($fournisseur->email)->send(new ReservationConfirmedToFournisseur($reservation));
+            }
+
+            return response()->json([
+                'message' => 'Réservation confirmée et stock mis à jour.',
+                'reservation' => $reservation,
+            ], 200);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'message' => 'Erreur lors de la confirmation: ' . $e->getMessage(),
+            ], 500);
+        }
     }
+
+    public function restockExpiredReservations()
+    {
+        $now = now();
+    
+        $reservations = Reservations_materielles::where('status', 'confirmed')
+            ->where('date_fin', '<', $now)
+            ->get();
+    
+        if ($reservations->isEmpty()) {
+            return response()->json([
+                'message' => 'Aucune réservation expirée à restocker.'
+            ]);
+        }
+    
+        DB::beginTransaction();
+        try {
+            foreach ($reservations as $reservation) {
+                $materielle = Materielles::find($reservation->materielle_id);
+    
+                if ($materielle) {
+                    $materielle->increment('quantite_dispo', $reservation->quantite);
+                    $reservation->update(['status' => 'finished']); // optional status update
+                }
+            }
+    
+            DB::commit();
+    
+            return response()->json([
+                'message' => 'Stock mis à jour pour les réservations expirées.'
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+    
+            return response()->json([
+                'message' => 'Erreur lors de la mise à jour du stock : ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+        
 
     /**
      * Reject a reservation.
@@ -203,20 +283,26 @@ class ReservationMaterielleController extends Controller
     public function reject(int $id)
     {
         $reservation = Reservations_materielles::find($id);
-
+    
         if (!$reservation) {
-            return response()->json([
-                'message' => 'Réservation introuvable.',
-            ], 404);
+            return response()->json(['message' => 'Réservation introuvable.'], 404);
         }
-
-        $reservation->update([
-            'status' => 'rejected'
-        ]);
-
+    
+        if ($reservation->fournisseur_id !== Auth::id()) {
+            return response()->json(['message' => 'Action non autorisée.'], 403);
+        }
+    
+        $reservation->update(['status' => 'rejected']);
+    
+        $user = User::find($reservation->user_id);
+        if ($user) {
+            Mail::to($user->email)->send(new ReservationRejectedToUser($user, 'Le fournisseur a rejeté votre réservation.'));
+        }
+    
         return response()->json([
             'message' => 'Réservation rejetée avec succès.',
             'reservation' => $reservation,
         ], 200);
     }
+    
 }

@@ -102,6 +102,9 @@ Route::middleware(['auth:sanctum', 'fournisseur'])->group(function () {
     Route::delete('/materielle/destroy/{id}', [MaterielleController::class, 'destroy']);
     Route::get('/materielle/create', [MaterielleController::class, 'create']);
     Route::get('/materielle/edit/{materielle_id}', [MaterielleController::class, 'edit']);
+    Route::patch('/materielles/{id}/activate', [MaterielleController::class, 'activate']);
+    Route::patch('/materielles/{id}/deactivate', [MaterielleController::class, 'deactivate']);
+
     // REST for reservation materielle
     Route::get('/reservation/materielle/index/{idMaterielle}', [ReservationMaterielleController::class, 'index']);
     Route::get('/reservation/materielle/show', [ReservationMaterielleController::class, 'show']);

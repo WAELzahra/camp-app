@@ -231,4 +231,56 @@ class MaterielleController extends Controller
             ], 500);
         }
     }
+    // Activate materielle
+    public function activate(int $id)
+    {
+        $materielle = Materielles::findOrFail($id);
+    
+        if (Auth::id() !== $materielle->fournisseur_id) {
+            return response()->json(['status' => 'error', 'message' => 'Unauthorized.'], 403);
+        }
+    
+        if ($materielle->status === 'up') {
+            return response()->json([
+                'status' => 'info',
+                'message' => 'Le materiel est déjà actif.'
+            ], 400);
+        }
+    
+        $materielle->status = 'up';
+        $materielle->save();
+    
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Materiel activé avec succès.',
+            'materielle' => $materielle
+        ]);
+    }
+    
+    // Deactivate materielle
+    public function deactivate(int $id)
+    {
+        $materielle = Materielles::findOrFail($id);
+
+        if (Auth::id() !== $materielle->fournisseur_id) {
+            return response()->json(['status' => 'error', 'message' => 'Unauthorized.'], 403);
+        }
+
+        if ($materielle->status === 'down') {
+            return response()->json([
+                'status' => 'info',
+                'message' => 'Le materiel est déjà désactivé.'
+            ], 400);
+        }
+
+        $materielle->status = 'down';
+        $materielle->save();
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Materiel désactivé avec succès.',
+            'materielle' => $materielle
+        ]);
+    }
+
 }
