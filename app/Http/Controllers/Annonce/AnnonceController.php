@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers;
+namespace App\Http\Controllers\Annonce;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -87,32 +87,39 @@ class AnnonceController extends Controller
     public function store(Request $request)
     {
         $request->validate([
+            'title' => 'required|string|max:255',
+            'tag' => 'nullable|string|max:255',
+            'category' => 'nullable|string|max:255',
             'description' => 'required|string',
             'image' => 'required|string',
         ], [
+            'title.required' => 'Le titre est obligatoire.',
             'description.required' => 'La description est obligatoire.',
             'image.required' => 'L\'image est obligatoire.',
         ]);
-
+    
         $userId = Auth::id();
         $user = Auth::user();
-
+    
         DB::beginTransaction();
         try {
             $annonce = Annonce::create([
                 'user_id' => $userId,
+                'title' => $request->title,
+                'tag' => $request->tag,
+                'category' => $request->category,
                 'description' => $request->description,
-                'status' => "down"
+                'status' => 'down'
             ]);
-
+    
             Photos::create([
                 'annonce_id' => $annonce->id,
                 'path_to_img' => $request->image,
             ]);
-
+    
             DB::commit();
             Mail::to($user->email)->send(new RequestAnnonceActivation($user));
-
+    
             return response()->json([
                 'status' => 'success',
                 'message' => 'Annonce ajoutée avec succès.',
@@ -120,13 +127,14 @@ class AnnonceController extends Controller
             ], 201);
         } catch (\Exception $e) {
             DB::rollBack();
-
+    
             return response()->json([
                 'status' => 'error',
                 'message' => 'Erreur lors de l\'ajout: ' . $e->getMessage()
             ], 500);
         }
     }
+    
 
     /**
      * Update an existing annonce and associated photo.
@@ -134,31 +142,35 @@ class AnnonceController extends Controller
     public function update(Request $request, string $id)
     {
         $request->validate([
+            'title' => 'nullable|string|max:255',
+            'tag' => 'nullable|string|max:255',
+            'category' => 'nullable|string|max:255',
             'description' => 'nullable|string',
-            'image' => 'required|string',
-        ], [
-            'image.required' => 'L\'image est obligatoire pour la mise à jour.',
+            'image' => 'nullable|string',
         ]);
-
+    
         DB::beginTransaction();
         try {
             $annonce = Annonce::findOrFail($id);
-
+    
             $annonce->update([
+                'title' => $request->title ?? $annonce->title,
+                'tag' => $request->tag ?? $annonce->tag,
+                'category' => $request->category ?? $annonce->category,
                 'description' => $request->description ?? $annonce->description,
-                'status' => "down",
+                'status' => 'down',
                 'updated_at' => now(),
             ]);
-
+    
             $photo = Photos::where('annonce_id', $annonce->id)->first();
-            if ($photo) {
+            if ($photo && $request->image) {
                 $photo->update([
                     'path_to_img' => $request->image,
                 ]);
             }
-
+    
             DB::commit();
-
+    
             return response()->json([
                 'status' => 'success',
                 'message' => 'Annonce mise à jour avec succès.',
@@ -166,13 +178,14 @@ class AnnonceController extends Controller
             ], 200);
         } catch (\Exception $e) {
             DB::rollBack();
-
+    
             return response()->json([
                 'status' => 'error',
                 'message' => 'Erreur lors de la mise à jour: ' . $e->getMessage()
             ], 500);
         }
     }
+    
 
     /**
      * Delete an annonce and associated image path.

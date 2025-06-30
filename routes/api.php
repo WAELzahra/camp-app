@@ -12,14 +12,12 @@ use App\Http\Controllers\Auth\PasswordController;
 use App\Http\Controllers\Auth\EmailVerificationPromptController;
 use App\Http\Controllers\Auth\EmailVerificationNotificationController;
 use Illuminate\Foundation\Auth\EmailVerificationRequest;
-use App\Http\Controllers\AnnonceController;
-use App\Http\Controllers\ReservationsCentreController;
-use App\Http\Controllers\BoutiqueController;
-use App\Http\Controllers\MaterielleController;
-use App\Http\Controllers\ReservationMaterielleController;
-use App\Http\Controllers\FeedbackController;
-
-
+use App\Http\Controllers\Annonce\AnnonceController;
+use App\Http\Controllers\Reservation\ReservationsCentreController;
+use App\Http\Controllers\Boutique\BoutiqueController;
+use App\Http\Controllers\Materielle\MaterielleController;
+use App\Http\Controllers\Reservation\ReservationMaterielleController;
+use App\Http\Controllers\Feedback\FeedbackController;
 
 
 // routes for admin 
