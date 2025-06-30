@@ -45,6 +45,10 @@ return [
         'driver' => 'sanctum',
         'provider' => 'users',
     ],
+    'group' => [
+        'driver' => 'sanctum',
+        'provider' => 'groups',
+    ],
 ],
 
 
@@ -70,6 +74,10 @@ return [
             'driver' => 'eloquent',
             'model' => App\Models\User::class,
         ],
+          'groups' => [
+        'driver' => 'eloquent',
+        'model' => App\Models\User::class,  // Remplace par le bon modèle
+    ],
 
         // 'users' => [
         //     'driver' => 'database',

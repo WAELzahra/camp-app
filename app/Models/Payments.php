@@ -4,26 +4,50 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use App\Models\Reservations_events;
+use App\Models\User;
+use App\Models\Events;
 
 class Payments extends Model
 {
     use HasFactory;
 
+    protected $table = 'payments';
+
     protected $fillable = [
-        "montant",
-        "description",
-        "status"
+        'montant',                  // Montant payé
+        'description',              //  Description du paiement
+        'status',                   //  Statut ENUM: pending, paid, failed, refunded_partial, refunded_total
+        'user_id',                  //  Utilisateur qui paie
+        'event_id',                 //  Événement lié
+        'commission',               //  Commission prélevée
+        'net_revenue',              // Revenu net (montant - commission)
+        'konnect_session_id',       //  Session ID Konnect
+        'konnect_payment_id',       //  ID de paiement Konnect
+        'konnect_payment_url',      // URL de redirection Konnect
     ];
 
-    public function reservation_materielle(){
-        return $this->hasOne(Reservation_materielle::class);
+    /**
+     * 🔁 Une réservation liée à ce paiement (relation 1:1)
+     */
+    public function reservation()
+    {
+        return $this->hasOne(Reservations_events::class, 'payment_id');
     }
 
-    public function reservation_event(){
-        return $this->hasOne(Reservation_events::class);
+    /**
+     * 🔁 Utilisateur ayant effectué ce paiement
+     */
+    public function user()
+    {
+        return $this->belongsTo(User::class);
     }
-    
-    public function reservation_centre(){
-        return $this->hasOne(Reservation_centre::class);
+
+    /**
+     * 🔁 Événement concerné par ce paiement
+     */
+    public function event()
+    {
+        return $this->belongsTo(Events::class);
     }
 }

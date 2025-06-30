@@ -43,6 +43,11 @@ return [
         'client_secret' => env('FACEBOOK_CLIENT_SECRET'),
         'redirect' => env('FACEBOOK_REDIRECT_URI'),
     ],
+    'konnect' => [
+    'key' => env('KONNECT_API_KEY'),
+    'base_url' => env('KONNECT_API_URL'),
+    'callback_url' => env('KONNECT_CALLBACK_URL'),
+],
 
 
 ];

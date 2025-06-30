@@ -32,6 +32,7 @@ class User extends Authenticatable implements MustVerifyEmail
     'langue',              
     'first_login',         
     'nombre_signalement',  
+      'avatar',
 ];
 
     
@@ -68,6 +69,30 @@ public function profile()
 {
     return $this->hasOne(Profile::class);
 }
+
+public function profileGroupe()
+{
+    // profile_groupe via profile
+    return $this->hasOneThrough(ProfileGroupe::class, Profile::class, 'user_id', 'profile_id');
+}
+
+public function events()
+{
+    return $this->hasMany(Events::class, 'group_id');
+}
+
+public function followedGroups()
+{
+    return $this->belongsToMany(ProfileGroupe::class, 'follows')->withTimestamps();
+}
+
+public function interestedEvents()
+{
+    return $this->belongsToMany(Events::class, 'interested_events', 'user_id', 'event_id');
+}
+
+
+
 
 
 
