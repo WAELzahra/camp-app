@@ -1,17 +1,12 @@
 <?php
 
-<<<<<<< HEAD
 
 use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\PasswordResetLinkController;
 use App\Http\Controllers\Auth\NewPasswordController;
-=======
-use Illuminate\Support\Facades\Route;
->>>>>>> origin/sprint-3
 use Illuminate\Http\Request;
 use Illuminate\Foundation\Auth\EmailVerificationRequest;
-<<<<<<< HEAD
 use App\Http\Controllers\Annonce\AnnonceController;
 use App\Http\Controllers\Reservation\ReservationsCentreController;
 use App\Http\Controllers\Boutique\BoutiqueController;
@@ -128,43 +123,6 @@ Route::get('/feedback/show/{id}', [FeedbackController::class, 'show']);
 Route::get('/materielle/compare/{id1}-{id2}', [MaterielleController::class, 'compare']);
 Route::get('/materielle/index/{fournisseur_id}', [MaterielleController::class, 'index']);
 Route::get('/materielle/show/{materielle_id}', [MaterielleController::class, 'show']);
-=======
-use App\Http\Controllers\Admin\AdminEventReservationController;
-use App\Http\Controllers\Admin\AdminEventController;
-use App\Http\Controllers\Admin\AdminUserController;
-use App\Http\Controllers\Event\EventController ;
-use App\Http\Controllers\Event\EventInterestController ;
-use App\Http\Controllers\Groupe\GroupController ;
-use App\Http\Controllers\Groupe\FollowGroupeController ;
-use App\Http\Controllers\payment\PaymentController ;
-use App\Http\Controllers\Reservation\ReservationEventController ;
-use App\Http\Controllers\Reservation\ReservationCancellationController ;
-use App\Http\Controllers\feedback\FeedbackController ;
-use App\Http\Controllers\Notification\NotificationController;
-use App\Http\Controllers\Event\EventParticipantController;
-use App\Http\Controllers\message_chat\ChatController;
-use App\Http\Controllers\message_chat\PrivateChatController;
-use App\Http\Controllers\GroupChat\ChatGroupController;
-
-
-
-use App\Http\Controllers\Auth\{
-    RegisteredUserController,
-    AuthenticatedSessionController,
-    PasswordResetLinkController,
-    NewPasswordController,
-    PasswordController,
-    EmailVerificationPromptController,
-    EmailVerificationNotificationController
-};
-use App\Http\Controllers\{
-    ProfileController,
-
-
-};
-
-// ------------------ ✅ ROUTES PUBLIQUES (visiteurs) ------------------ //
->>>>>>> origin/sprint-3
 
 Route::post('/register', [RegisteredUserController::class, 'store']);
 Route::post('/login', [AuthenticatedSessionController::class, 'store']);
