@@ -27,7 +27,7 @@ class Kernel extends HttpKernel
     // autres middlewares
     'active' => \App\Http\Middleware\CheckIfUserIsActive::class,
     'admin' => \App\Http\Middleware\AdminMiddleware::class,
-
+    'role' => \App\Http\Middleware\RoleMiddleware::class,
 ];
 
 

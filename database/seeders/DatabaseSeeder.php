@@ -3,6 +3,7 @@
 namespace Database\Seeders;
 
 // use Illuminate\Database\Console\Seeds\WithoutModelEvents;
+use App\Models\Circuit;
 use Illuminate\Database\Seeder;
 
 class DatabaseSeeder extends Seeder
@@ -10,6 +11,7 @@ class DatabaseSeeder extends Seeder
     /**
      * Seed the application's database.
      */
+<<<<<<< HEAD
     public function run(): void
     {
         $this->call([
@@ -21,4 +23,20 @@ class DatabaseSeeder extends Seeder
         ]);
     }
     
+=======
+   public function run()
+{
+    $this->call([
+        RoleSeeder::class,
+        UserSeeder::class,
+        CircuitSeeder::class,
+        EventSeeder::class,
+        ReservationEventSeeder::class,
+   
+    ]);
+}
+
+
+
+>>>>>>> origin/sprint-3
 }

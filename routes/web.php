@@ -49,3 +49,9 @@ Route::middleware('auth')->group(function () {
 // Route::get('/{any}', function () {
 //     return view('app'); // Vue React compilée
 // })->where('any', '.*');
+
+
+Route::get('/redis-test', function () {
+    \Illuminate\Support\Facades\Redis::set('foo', 'bar');
+    return \Illuminate\Support\Facades\Redis::get('foo');
+});

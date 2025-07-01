@@ -8,16 +8,13 @@ use App\Models\Role;
 
 class RoleSeeder extends Seeder
 {
-    /**
-     * Run the database seeds.
-     */
-    public function run(): void
+    public function run()
     {
-        Role::firstOrCreate(['name' => 'campeur'], ['description' => 'Utilisateur campeur']);
-        Role::firstOrCreate(['name' => 'guide'], ['description' => 'Guide professionnel']);
-        Role::firstOrCreate(['name' => 'centre'], ['description' => 'Centre de camping']);
-        Role::firstOrCreate(['name' => 'fournisseur'], ['description' => 'Fournisseur de matériel']);
-        Role::firstOrCreate(['name' => 'groupe'], ['description' => 'Groupe de randonneurs']);
-        Role::firstOrCreate(['name' => 'admin'], ['description' => 'Administrateur de la plateforme']);
+        $roles = ['campeur', 'groupe', 'centre', 'fournisseur', 'guide', 'admin'];
+
+        foreach ($roles as $roleName) {
+            Role::updateOrCreate(['name' => $roleName]);
+        }
     }
 }
+

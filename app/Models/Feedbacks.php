@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 class Feedbacks extends Model
 {
     use HasFactory;
+<<<<<<< HEAD
     protected $fillable = [
         "user_id",
         "target_id",
@@ -18,6 +19,20 @@ class Feedbacks extends Model
         "response",
         "note",
     ];
+=======
+   protected $fillable = [
+    "user_id",
+    "target_id",
+    "event_id",
+    "zone_id",
+    "contenu",
+    "response",
+    "note",
+    "type",
+    "status",
+];
+
+>>>>>>> origin/sprint-3
 
     public function user(){
         return $this->belongsTo(User::class);

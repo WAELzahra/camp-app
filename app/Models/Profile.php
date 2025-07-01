@@ -44,4 +44,18 @@ public function profileFournisseur()
     return $this->hasOne(ProfileFournisseur::class);
 }
 
+ // Relation feedbacks reçus par ce profil (via user_id)
+    public function feedbacks()
+    {
+        // target_id dans Feedbacks correspond à user_id dans Profile
+        return $this->hasMany(\App\Models\Feedbacks::class, 'target_id', 'user_id');
+    }
+
+ public function album()
+    {
+        // Un profil a un album (relation one-to-one)
+        return $this->hasOne(Album::class, 'profile_id'); 
+        // ou selon ta structure, si la clé étrangère est différente, adapte ici
+    }
+
 }

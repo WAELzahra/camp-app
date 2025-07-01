@@ -9,16 +9,14 @@ class Circuit extends Model
 {
     use HasFactory;
     protected $fillable = [
-        "adresse_debut_circuit",
-        "adresse_fin_circuit",
-        "description",
-        "difficulty",
-        "distance_km",
-        "estimation_temps",
-        "difficulte",
-        "danger_level"
-
-    ];
+    "adresse_debut_circuit",
+    "adresse_fin_circuit",
+    "description",
+    "difficulty", 
+    "distance_km",
+    "estimation_temps",
+    "danger_level" 
+];
 
     public function event(){
         return $this->belongsToMany(Events::class);
