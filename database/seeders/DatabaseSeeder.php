@@ -11,19 +11,6 @@ class DatabaseSeeder extends Seeder
     /**
      * Seed the application's database.
      */
-<<<<<<< HEAD
-    public function run(): void
-    {
-        $this->call([
-            RoleSeeder::class,
-            AdminUserSeeder::class,
-            UserSeeder::class,
-            FounisseurProfileSeeder::class,
-            ProfileCentreSeeder::class
-        ]);
-    }
-    
-=======
    public function run()
 {
     $this->call([
@@ -38,5 +25,4 @@ class DatabaseSeeder extends Seeder
 
 
 
->>>>>>> origin/sprint-3
 }

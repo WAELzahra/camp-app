@@ -14,13 +14,6 @@ return new class extends Migration
         Schema::create('photos', function (Blueprint $table) {
             $table->id();
             $table->string('path_to_img');
-<<<<<<< HEAD
-    
-            $table->foreignId('user_id')->nullable()->constrained()->onDelete('cascade');
-            $table->foreignId('annonce_id')->nullable()->constrained()->onDelete('cascade');
-            $table->foreignId('materielle_id')->nullable()->constrained()->onDelete('cascade');
-    
-=======
             
             $table->unsignedBigInteger('user_id')->nullable();
             $table->unsignedBigInteger('annonce_id')->nullable();
@@ -30,11 +23,9 @@ return new class extends Migration
             $table->foreign('annonce_id')->references('id')->on('camping_zones')->onDelete('cascade');
             $table->foreign('materielle_id')->references('id')->on('materielles')->onDelete('cascade');
 
->>>>>>> origin/sprint-3
             $table->timestamps();
         });
     }
-    
 
     /**
      * Reverse the migrations.

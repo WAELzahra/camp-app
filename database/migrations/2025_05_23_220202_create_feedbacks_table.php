@@ -13,12 +13,6 @@ return new class extends Migration
 
             // Utilisateur qui fait le feedback (campeur)
             $table->foreignId('user_id')->constrained('users')->onDelete('cascade');
-<<<<<<< HEAD
-            $table->foreignId('target_id')->nullable()->constrained('users')->onDelete('cascade');
-            $table->foreignId('event_id')->nullable()->constrained()->onDelete('cascade');
-            $table->foreignId('zone_id')->nullable()->constrained('camping_zones')->onDelete('cascade');
-            $table->foreignId('materielle_id')->nullable()->constrained()->onDelete('cascade');
-=======
 
             // Utilisateur cible (ex groupe de camping)
             $table->foreignId('target_id')->constrained('users')->onDelete('cascade');
@@ -30,7 +24,6 @@ return new class extends Migration
             $table->foreignId('zone_id')->nullable()->constrained('camping_zones')->onDelete('cascade');
 
             // Commentaire texte
->>>>>>> origin/sprint-3
             $table->string('contenu')->nullable();
 
             // Réponse possible (du groupe)
