@@ -35,8 +35,14 @@ return new class extends Migration
     /**
      * Reverse the migrations.
      */
-    public function down(): void
-    {
-        Schema::dropIfExists('events');
-    }
+   public function down(): void
+{
+    Schema::table('events', function (Blueprint $table) {
+        $table->dropForeign(['group_id']);
+        $table->dropForeign(['circuit_id']);
+    });
+
+    Schema::dropIfExists('events');
+}
+
 };

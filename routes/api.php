@@ -13,6 +13,34 @@ use App\Http\Controllers\Boutique\BoutiqueController;
 use App\Http\Controllers\Materielle\MaterielleController;
 use App\Http\Controllers\Reservation\ReservationMaterielleController;
 use App\Http\Controllers\Feedback\FeedbackController;
+use App\Http\Controllers\Event\EventController;
+use App\Http\Controllers\Event\EventInterestController;
+use App\Http\Controllers\Event\EventParticipantController;
+
+use App\Http\Controllers\Reservation\ReservationEventController;
+use App\Http\Controllers\Reservation\ReservationCancellationController;
+
+use App\Http\Controllers\Payment\PaymentController;
+
+use App\Http\Controllers\Groupe\GroupController;
+use App\Http\Controllers\Groupe\FollowGroupeController;
+
+use App\Http\Controllers\Admin\AdminUserController;
+use App\Http\Controllers\Admin\AdminEventController;
+use App\Http\Controllers\Admin\AdminEventReservationController;
+
+use App\Http\Controllers\Notification\NotificationController;
+
+
+use App\Http\Controllers\Auth\EmailVerificationPromptController;
+use App\Http\Controllers\Auth\EmailVerificationNotificationController;
+use App\Http\Controllers\Auth\PasswordController;
+
+use App\Http\Controllers\ProfileController;
+
+use App\Http\Controllers\message_chat\PrivateChatController;
+use App\Http\Controllers\GroupChat\ChatGroupController;
+
 
 
 // routes for admin 
