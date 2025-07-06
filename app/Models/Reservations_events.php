@@ -9,7 +9,7 @@ class Reservations_events extends Model
 {
     use HasFactory;
 
-    protected $table = 'reservations_events';
+protected $table = 'reservations_events'; 
 
     protected $fillable = [
         'group_id',

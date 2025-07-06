@@ -70,7 +70,7 @@ public function update(Request $request, $reservationId)
     }
 
     $rules = [
-        'status' => 'sometimes|in:confirmé,refusé,en_attente,annulé',
+        'status' => 'sometimes|in:en_attente_paiement,confirmée,en_attente_validation,refusée,annulée_par_utilisateur,annulée_par_organisateur,remboursement_en_attente,remboursée_partielle,remboursée_totale',
         'nbr_place' => 'sometimes|integer|min:1',
         'name' => 'sometimes|string',
         'email' => 'sometimes|email',
@@ -160,7 +160,7 @@ public function addManualParticipant(Request $request, $eventId)
         'email' => $request->email,
         'phone' => $request->phone,
         'nbr_place' => $request->nbr_place,
-        'status' => 'confirmé',
+        'status' => 'en_attente_paiement',
         'created_by' => auth()->id(),
     ]);
 

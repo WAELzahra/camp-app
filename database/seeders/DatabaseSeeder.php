@@ -18,8 +18,7 @@ class DatabaseSeeder extends Seeder
         UserSeeder::class,
         CircuitSeeder::class,
         EventSeeder::class,
-        ReservationEventSeeder::class,
-   
+        ReservationsEnvetSeeder::class
     ]);
 }
 

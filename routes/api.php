@@ -40,6 +40,7 @@ use App\Http\Controllers\ProfileController;
 
 use App\Http\Controllers\message_chat\PrivateChatController;
 use App\Http\Controllers\GroupChat\ChatGroupController;
+use App\Http\Controllers\Auth\SocialAuthController;
 
 
 
@@ -282,6 +283,7 @@ Route::middleware('auth:api')->prefix('admin')->group(function () {
     Route::put('events/{id}', [AdminEventController::class, 'update']);
     Route::delete('events/{id}', [AdminEventController::class, 'destroy']);
     Route::patch('events/{id}/activate', [AdminEventController::class, 'activate']);
+    Route::patch('events/{id}/deactivate', [AdminEventController::class, 'deactivate']);
     Route::get('events/{id}/reservations', [AdminEventController::class, 'reservations']);
     Route::get('events/{id}/statistics', [AdminEventController::class, 'statistics']);
     Route::patch('events/{id}/cancel', [AdminEventController::class, 'cancelEvent']);

@@ -10,6 +10,7 @@ class Events extends Model
 {
     use HasFactory;
 
+     protected $table = 'events'; // ✅ assure-toi que c’est bien "events"
     protected $fillable = [
         "title",
         "group_id",
