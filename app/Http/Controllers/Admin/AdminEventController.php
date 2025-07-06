@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Response;
 use App\Models\Users; 
 use App\Models\Circuit; 
+use App\Mail\EventDeactivated;
 
 
 class AdminEventController extends Controller
@@ -238,6 +239,31 @@ public function store(Request $request)
             'event' => $event
         ]);
     }
+public function deactivate(Request $request, $id)
+{
+    $user = auth()->user();
+    if ($user->role->name !== 'admin') {
+        return response()->json(['message' => 'Seul un administrateur peut désactiver un événement.'], 403);
+    }
+
+    $event = Events::with('group')->findOrFail($id);
+
+    if (!$event->is_active) {
+        return response()->json(['message' => 'Événement déjà désactivé.']);
+    }
+
+    $event->is_active = false;
+    $event->save();
+
+    if ($event->group && $event->group->email) {
+        Mail::to($event->group->email)->send(new EventDeactivated($event));
+    }
+
+    return response()->json([
+        'message' => 'Événement désactivé avec succès.',
+        'event' => $event
+    ]);
+}
 
 // Affiche les réservations d'un événement
     public function reservations($eventId, Request $request)

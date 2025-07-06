@@ -14,6 +14,7 @@ use App\Models\User;
 use App\Models\FollowersGroupe;
 use App\Models\Profile;
 use App\Models\Circuit;
+use Illuminate\Validation\Rule;
 
 class EventController extends Controller
 {
@@ -181,9 +182,24 @@ public function update(Request $request, $id)
 // Mise à jour du statut d’un participant (par le groupe)
 public function updateStatus($id, Request $request)
     {
-        $request->validate([
-            'status' => 'required|in:en_attente,confirmé,annulé',
-        ]);
+
+$request->validate([
+    'status' => [
+        'required',
+        Rule::in([
+            'en_attente_paiement',
+            'confirmée',
+            'en_attente_validation',
+            'refusée',
+            'annulée_par_utilisateur',
+            'annulée_par_organisateur',
+            'remboursement_en_attente',
+            'remboursée_partielle',
+            'remboursée_totale',
+        ]),
+    ],
+]);
+
 
         $reservation = Reservations_events::findOrFail($id);
 
