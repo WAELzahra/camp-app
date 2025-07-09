@@ -11,22 +11,32 @@ return new class extends Migration
      */
     public function up(): void
     {
-        // database/migrations/xxxx_create_users_table.php
-Schema::create('users', function (Blueprint $table) {
-    $table->id();
-    $table->string('name');
-    $table->string('email')->unique();
-    $table->timestamp('email_verified_at')->nullable();
-    $table->string('password');
-    $table->string('phone_number')->nullable();
-    $table->foreignId('role_id')->constrained('roles');
-    $table->boolean('is_active')->default(0);
-    $table->timestamp('last_login_at')->nullable();
-    $table->string('avatar')->nullable();
-    $table->rememberToken();
-    $table->timestamps();
-});
+        Schema::create('users', function (Blueprint $table) {
+            $table->id();
+            $table->string('name');
+            $table->string('email')->unique();
+            $table->timestamp('email_verified_at')->nullable();
+            $table->string('password');
 
+            // Infos personnelles
+            $table->string('phone_number')->nullable();
+            $table->string('adresse')->nullable();
+            $table->string('ville')->nullable();
+            $table->date('date_naissance')->nullable();
+            $table->string('sexe')->nullable();
+            $table->string('langue')->nullable();
+
+            // Gestion du compte
+            $table->foreignId('role_id')->constrained('roles');
+            $table->boolean('is_active')->default(0);
+            $table->boolean('first_login')->default(true);
+            $table->integer('nombre_signalement')->default(0);
+            $table->timestamp('last_login_at')->nullable();
+            $table->string('avatar')->nullable();
+
+            $table->rememberToken();
+            $table->timestamps();
+        });
     }
 
     /**

@@ -11,14 +11,13 @@ return new class extends Migration
      */
     public function up(): void
     {
-       // database/migrations/xxxx_create_roles_table.php
-    Schema::create('roles', function (Blueprint $table) {
-    $table->id();
-    $table->string('name')->unique(); // admin, guide, campeur, etc.
-    $table->string('description')->nullable();
-    $table->timestamps();
-});
-
+        Schema::create('roles', function (Blueprint $table) {
+            $table->id();
+            $table->string('name')->unique(); // admin, guide, campeur, etc.
+            $table->string('icon')->nullable(); // déplacé ici depuis migration secondaire
+            $table->string('description')->nullable();
+            $table->timestamps();
+        });
     }
 
     /**
