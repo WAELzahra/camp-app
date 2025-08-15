@@ -4,8 +4,7 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-return new class extends Migration
-{
+return new class extends Migration {
     /**
      * Run the migrations.
      */
@@ -14,11 +13,22 @@ return new class extends Migration
         Schema::create('photos', function (Blueprint $table) {
             $table->id();
             $table->string('path_to_img');
+<<<<<<< HEAD
     
             $table->foreignId('user_id')->nullable()->constrained()->onDelete('cascade');
             $table->foreignId('annonce_id')->nullable()->constrained()->onDelete('cascade');
             $table->foreignId('materielle_id')->nullable()->constrained()->onDelete('cascade');
     
+=======
+
+            // Relations optionnelles
+            $table->foreignId('user_id')->nullable()->constrained('users')->onDelete('cascade');
+            $table->foreignId('annonce_id')->nullable()->constrained('camping_zones')->onDelete('cascade');
+            $table->foreignId('materielle_id')->nullable()->constrained('materielles')->onDelete('cascade');
+            $table->foreignId('event_id')->nullable()->constrained('events')->onDelete('cascade');
+            $table->foreignId('album_id')->nullable()->constrained('albums')->onDelete('set null');
+
+>>>>>>> 564c8e187867caee278ba40f998b091df1084579
             $table->timestamps();
         });
     }

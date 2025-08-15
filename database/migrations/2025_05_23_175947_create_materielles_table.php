@@ -20,7 +20,7 @@ return new class extends Migration
             $table->float('tarif_nuit')->check('tarif_nuit > 0');
             $table->integer('quantite_dispo');
             $table->integer('quantite_total')->check('quantite_total > 0');
-
+            $table->enum('status', ['up', 'down'])->default('up');
             $table->string('type');
 
             $table->timestamps();
