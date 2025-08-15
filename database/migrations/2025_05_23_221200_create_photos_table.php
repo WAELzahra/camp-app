@@ -13,13 +13,6 @@ return new class extends Migration {
         Schema::create('photos', function (Blueprint $table) {
             $table->id();
             $table->string('path_to_img');
-<<<<<<< HEAD
-    
-            $table->foreignId('user_id')->nullable()->constrained()->onDelete('cascade');
-            $table->foreignId('annonce_id')->nullable()->constrained()->onDelete('cascade');
-            $table->foreignId('materielle_id')->nullable()->constrained()->onDelete('cascade');
-    
-=======
 
             // Relations optionnelles
             $table->foreignId('user_id')->nullable()->constrained('users')->onDelete('cascade');
@@ -28,7 +21,6 @@ return new class extends Migration {
             $table->foreignId('event_id')->nullable()->constrained('events')->onDelete('cascade');
             $table->foreignId('album_id')->nullable()->constrained('albums')->onDelete('set null');
 
->>>>>>> 564c8e187867caee278ba40f998b091df1084579
             $table->timestamps();
         });
     }
