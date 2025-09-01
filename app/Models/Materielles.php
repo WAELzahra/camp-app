@@ -30,7 +30,7 @@ class Materielles extends Model
         return $this->hasMany(Feedbacks::class);
     }
     public function fournisseur(){
-        return $this->belongsTo(Feedbacks::class);
+        return $this->belongsTo(User::class);
 
     }
     

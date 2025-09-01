@@ -8,6 +8,8 @@ use Illuminate\Database\Eloquent\Model;
 class Boutiques extends Model
 {
     use HasFactory;
+    protected $primaryKey = 'fournisseur_id';  // <-- important
+    public $incrementing = false;  
     protected $fillable = [
         "fournisseur_id",
         "nom_boutique",

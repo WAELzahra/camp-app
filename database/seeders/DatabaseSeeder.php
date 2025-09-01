@@ -16,9 +16,9 @@ class DatabaseSeeder extends Seeder
     $this->call([
         RoleSeeder::class,
         UserSeeder::class,
-        CircuitSeeder::class,
-        EventSeeder::class,
-        ReservationsEnvetSeeder::class
+        // CircuitSeeder::class,
+        // EventSeeder::class,
+        // ReservationsEnvetSeeder::class
     ]);
 }
 

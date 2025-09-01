@@ -13,6 +13,7 @@ class Feedbacks extends Model
     "user_id",
     "target_id",
     "event_id",
+    'materielle_id',
     "zone_id",
     "contenu",
     "response",

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Annonce;
 
+use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -88,7 +89,7 @@ class AnnonceController extends Controller
     {
         $request->validate([
             'title' => 'required|string|max:255',
-            'tag' => 'nullable|string|max:255',
+            'tag' => 'required|string|max:255',
             'category' => 'nullable|string|max:255',
             'description' => 'required|string',
             'image' => 'required|string',
@@ -148,7 +149,8 @@ class AnnonceController extends Controller
             'description' => 'nullable|string',
             'image' => 'nullable|string',
         ]);
-    
+        $userId = Auth::id();
+        $user = Auth::user();    
         DB::beginTransaction();
         try {
             $annonce = Annonce::findOrFail($id);
@@ -170,6 +172,7 @@ class AnnonceController extends Controller
             }
     
             DB::commit();
+            Mail::to($user->email)->send(new RequestAnnonceActivation($user));
     
             return response()->json([
                 'status' => 'success',

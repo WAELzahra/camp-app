@@ -1,13 +1,19 @@
 <?php
 
 namespace App\Http\Controllers\Materielle;
+use App\Http\Controllers\Controller;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use App\Models\Photos;
+use App\Models\User;
+
 use App\Models\Materielles;
+use App\Mail\MaterielleNotification;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Validator;
 
 class MaterielleController extends Controller
 {
@@ -102,63 +108,75 @@ class MaterielleController extends Controller
         }
     }
     // Store a newly created resource in storage
-    public function store(Request $request)
-    {
-        $validated = $request->validate([
-            'category_id' => 'required|exists:materielles_categories,id',
-            'nom' => 'required|string',
-            'description' => 'required|string',
-            'image' => 'required|string',
-            'tarif_nuit' => 'required|numeric',
-            'quantite_dispo' => 'required|integer',
-            'quantite_total' => 'required|integer',
-            'type' => 'required|string',
-        ]);
+public function store(Request $request)
+{
+    $validated = $request->validate([
+        'category_id' => 'required|exists:materielles_categories,id',
+        'nom' => 'required|string',
+        'description' => 'required|string',
+        'image' => 'required|string',
+        'tarif_nuit' => 'required|numeric',
+        'quantite_dispo' => 'required|integer',
+        'quantite_total' => 'required|integer',
+        'type' => 'required|string',
+    ]);
 
-        DB::beginTransaction();
-        try {
-            $profileId = Auth::id();
+    $profileId = Auth::id();
 
-            $fournisseurUser = \App\Models\Boutiques::where('fournisseur_id', $profileId)
-            ->first();
+    // ✅ Check if the user already has a materielle with the same name
+    $existing = Materielles::where('fournisseur_id', $profileId)
+                            ->where('nom', $validated['nom'])
+                            ->first();
 
-            if (!$fournisseurUser) {
-                return response()->json([
-                    'message' => 'The fournisseur dosent have a boutique.'
-                ], 422);
-            }
-        
-            $materielle = Materielles::create([
-                'category_id' => $validated['category_id'],
-                'fournisseur_id' => $profileId,
-                'nom' => $validated['nom'],
-                'description' => $validated['description'],
-                'image' => $validated['image'],
-                'quantite_dispo' => $validated['quantite_dispo'],
-                'quantite_total' => $validated['quantite_total'],
-                'type' => $validated['type'],
-                'tarif_nuit' => $validated['tarif_nuit']
-            ]);
-
-            Photos::create([
-                'materielle_id' => $materielle->id,
-                'path_to_img' => $validated['image']
-            ]);
-
-            DB::commit();
-
-            return response()->json([
-                'status' => 'success',
-                'message' => 'Materielle added successfully.',
-                'materielle' => $materielle
-            ], 201);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            return response()->json(['status' => 'error', 'message' => 'Failed to store materielle. ' . $e->getMessage()], 500);
-        }
+    if ($existing) {
+        return response()->json([
+            'status' => 'error',
+            'message' => 'You already added a materielle with the same name.'
+        ], 409); // 409 = Conflict
     }
 
-    // Update the specified resource in storage
+    DB::beginTransaction();
+    try {
+        $materielle = Materielles::create([
+            'category_id' => $validated['category_id'],
+            'fournisseur_id' => $profileId,
+            'nom' => $validated['nom'],
+            'description' => $validated['description'],
+            'image' => $validated['image'],
+            'quantite_dispo' => $validated['quantite_dispo'],
+            'quantite_total' => $validated['quantite_total'],
+            'type' => $validated['type'],
+            'tarif_nuit' => $validated['tarif_nuit']
+        ]);
+
+        Photos::create([
+            'materielle_id' => $materielle->id,
+            'path_to_img' => $validated['image']
+        ]);
+
+        DB::commit();
+
+        // 🔔 Send notification
+        Mail::to($materielle->fournisseur->email)
+            ->send(new MaterielleNotification($materielle->fournisseur, $materielle, 'created'));
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Materielle added successfully. Awaiting activation',
+            'materielle' => $materielle
+        ], 201);
+
+    } catch (\Exception $e) {
+        DB::rollBack();
+        return response()->json([
+            'status' => 'error',
+            'message' => 'Failed to store materielle. ' . $e->getMessage()
+        ], 500);
+    }
+}
+
+
+    // Update
     public function update(Request $request, int $id)
     {
         $validated = $request->validate([
@@ -176,16 +194,7 @@ class MaterielleController extends Controller
         try {
             $materielle = Materielles::findOrFail($id);
 
-            $materielle->update([
-                'category_id' => $validated['category_id'],
-                'nom' => $validated['nom'],
-                'description' => $validated['description'],
-                'image' => $validated['image'],
-                'quantite_dispo' => $validated['quantite_dispo'],
-                'quantite_total' => $validated['quantite_total'],
-                'type' => $validated['type'],
-                'updated_at' => now()
-            ]);
+            $materielle->update($validated);
 
             $photo = Photos::where('materielle_id', $materielle->id)->first();
             if ($photo) {
@@ -193,6 +202,10 @@ class MaterielleController extends Controller
             }
 
             DB::commit();
+
+            // 🔔 Notification mise à jour
+            Mail::to($materielle->fournisseur->email)
+                ->send(new MaterielleNotification($materielle->fournisseur, $materielle, 'created'));
 
             return response()->json([
                 'status' => 'success',
@@ -204,83 +217,67 @@ class MaterielleController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Update failed. ' . $e->getMessage()], 500);
         }
     }
-    // Remove the specified resource from storage
-    public function destroy($id)
-    {
-        DB::beginTransaction();
-        try {
-            $materielle = Materielles::with('photos')->findOrFail($id);
 
-            if ($materielle->image) {
-                Storage::delete($materielle->image);
-            }
-
-            $materielle->delete();
-
-            DB::commit();
-
-            return response()->json([
-                'status' => 'success',
-                'message' => 'Materielle deleted successfully.'
-            ]);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Failed to delete materielle. ' . $e->getMessage()
-            ], 500);
-        }
-    }
-    // Activate materielle
+    // Activate
     public function activate(int $id)
     {
         $materielle = Materielles::findOrFail($id);
-    
-        if (Auth::id() !== $materielle->fournisseur_id) {
-            return response()->json(['status' => 'error', 'message' => 'Unauthorized.'], 403);
-        }
-    
-        if ($materielle->status === 'up') {
-            return response()->json([
-                'status' => 'info',
-                'message' => 'Le materiel est déjà actif.'
-            ], 400);
-        }
-    
+
         $materielle->status = 'up';
         $materielle->save();
-    
+
+        // 🔔 Notification activation
+        $this->sendNotification($materielle, 'activated');
+
         return response()->json([
             'status' => 'success',
             'message' => 'Materiel activé avec succès.',
             'materielle' => $materielle
         ]);
     }
-    
-    // Deactivate materielle
+    public function destroy($id) { 
+        DB::beginTransaction(); 
+        try { 
+            $materielle = Materielles::with('photos')->findOrFail($id); 
+            if ($materielle->image) 
+                { 
+                    Storage::delete($materielle->image); 
+                } 
+                $materielle->delete();
+                DB::commit(); 
+                return response()->json([ 'status' => 'success', 'message' => 'Materielle deleted successfully.' ]); 
+            } catch (\Exception $e) { 
+                DB::rollBack(); return response()->json([ 'status' => 'error', 'message' => 'Failed to delete materielle. ' . $e->getMessage() 
+            ], 500); 
+        } 
+    }
+
+    // Deactivate
     public function deactivate(int $id)
     {
         $materielle = Materielles::findOrFail($id);
 
-        if (Auth::id() !== $materielle->fournisseur_id) {
-            return response()->json(['status' => 'error', 'message' => 'Unauthorized.'], 403);
-        }
-
-        if ($materielle->status === 'down') {
-            return response()->json([
-                'status' => 'info',
-                'message' => 'Le materiel est déjà désactivé.'
-            ], 400);
-        }
-
         $materielle->status = 'down';
         $materielle->save();
+
+        // 🔔 Notification désactivation
+        $this->sendNotification($materielle, 'deactivated');
 
         return response()->json([
             'status' => 'success',
             'message' => 'Materiel désactivé avec succès.',
             'materielle' => $materielle
         ]);
+    }
+
+    // ----------- NOTIFICATION ------------
+    private function sendNotification($materielle, string $action)
+    {
+        $user = User::find($materielle->fournisseur_id);
+
+        if ($user && $user->email) {
+            Mail::to($user->email)->send(new MaterielleNotification($materielle, $action));
+        }
     }
 
 }

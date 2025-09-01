@@ -63,6 +63,9 @@ Route::middleware(['auth:sanctum', 'admin'])->group(function () {
     Route::delete('/boutique/destroy', [BoutiqueController::class, 'destroy']);
     Route::get('/boutique/create', [BoutiqueController::class, 'create']);
     Route::get('/boutique/edit', [BoutiqueController::class, 'edit']);
+    Route::patch('/boutique/activate/{id}', [BoutiqueController::class, 'activate']);
+    Route::patch('/boutique/deactivate/{id}', [BoutiqueController::class, 'deactivate']);
+
     // for feedback
     Route::get('/feedback/index_user', [FeedbackController::class, 'index_user']);
     Route::delete('/feedback/destroy/{id}', [FeedbackController::class, 'destroy']);
@@ -71,7 +74,14 @@ Route::middleware(['auth:sanctum', 'admin'])->group(function () {
     Route::post('/feedback/create', [FeedbackController::class, 'create']);
     Route::post('/feedback/store', [FeedbackController::class, 'store']);
     Route::get('/feedback/edit/{id}', [FeedbackController::class, 'edit']);
+    Route::delete('/feedback/adminDestroy/{id}', [FeedbackController::class, 'adminDestroy']);
+    //for materielle
+    Route::patch('/materielle/activate/{id}', [MaterielleController::class, 'activate']);
+    Route::patch('/materielle/deactivate/{id}', [MaterielleController::class, 'deactivate']);
+
+
 });
+
 // REST Annonce
 Route::middleware(['auth:sanctum', 'can.publish'])->group(function () {
     Route::get('/annonces/create', [AnnonceController::class, 'create']);
@@ -124,8 +134,7 @@ Route::middleware(['auth:sanctum', 'fournisseur'])->group(function () {
     Route::delete('/materielle/destroy/{id}', [MaterielleController::class, 'destroy']);
     Route::get('/materielle/create', [MaterielleController::class, 'create']);
     Route::get('/materielle/edit/{materielle_id}', [MaterielleController::class, 'edit']);
-    Route::patch('/materielles/{id}/activate', [MaterielleController::class, 'activate']);
-    Route::patch('/materielles/{id}/deactivate', [MaterielleController::class, 'deactivate']);
+    Route::patch('/materielle/deactivate/{id}', [MaterielleController::class, 'deactivate']);
 
     // REST for reservation materielle
     Route::get('/reservation/materielle/index/{idMaterielle}', [ReservationMaterielleController::class, 'index']);

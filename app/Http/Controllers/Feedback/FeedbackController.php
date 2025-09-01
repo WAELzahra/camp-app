@@ -1,11 +1,15 @@
 <?php
 
 namespace App\Http\Controllers\Feedback;
+use App\Http\Controllers\Controller;
 
+use Illuminate\Support\Facades\Mail;
+use App\Mail\FeedbackDeletedNotification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use App\Models\Feedbacks;
 use Illuminate\Support\Facades\DB;
+use App\Mail\FeedbackNotification;
 
 class FeedbackController extends Controller
 {
@@ -85,7 +89,7 @@ class FeedbackController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'target_id' => 'required|integer|exists:users,id',
+            'target_id' => 'nullable|integer|exists:users,id',
             'event_id' => 'nullable|integer|exists:event,id',
             'zone_id' => 'nullable|integer|exists:zone,id',
             'materielle_id' => 'nullable|integer|exists:materielles,id',
@@ -169,5 +173,50 @@ class FeedbackController extends Controller
         return response()->json([
             'message' => 'Feedback deleted successfully.'
         ]);
+    }
+
+    
+    /**
+     * Delete feedback as ADMIN (notify the user by email).
+     */
+    public function adminDestroy($id)
+    {
+        $user = Auth::user();
+
+        if ($user->role_id !== 6) { // only admins
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized: only administrators can delete feedback.',
+            ], 403);
+        }
+
+        $feedback = Feedbacks::with('user')->findOrFail($id);
+
+        try {
+            DB::beginTransaction();
+
+            $feedback->delete();
+
+            // 🔔 Send reusable notification
+            if ($feedback->user) {
+                Mail::to($feedback->user->email)
+                    ->send(new FeedbackNotification($feedback, 'deleted'));
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Feedback deleted by admin and user notified.'
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'An error occurred: ' . $e->getMessage(),
+            ], 500);
+        }
     }
 }
