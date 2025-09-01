@@ -8,6 +8,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Models\Favoris;
 
 class User extends Authenticatable implements MustVerifyEmail
 {
@@ -58,6 +59,7 @@ class User extends Authenticatable implements MustVerifyEmail
     'last_login_at' => 'datetime',   
     'first_login' => 'boolean',      
     'password' => 'hashed',
+    'preferences' => 'array',
 ];
 
     public function role()
@@ -91,10 +93,21 @@ public function interestedEvents()
     return $this->belongsToMany(Events::class, 'interested_events', 'user_id', 'event_id');
 }
 
+public function isAdmin()
+{
+    // Charge la relation role si nécessaire
+    if (!$this->relationLoaded('role')) {
+        $this->load('role');
+    }
+    
+    // Vérifie si l'utilisateur a un rôle et si c'est admin
+    return $this->role && strtolower($this->role->name) === 'admin';
+}
 
-
-
-
+public function favoris()
+{
+    return $this->hasMany(Favoris::class, 'user_id');
+}
 
 
 }

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Boutique;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Http\Request;
 use App\Models\Boutiques;
+use App\Http\Controllers\Controller;
 
 class BoutiqueController extends Controller
 {

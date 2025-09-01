@@ -25,4 +25,10 @@ class ProfileCentre extends Model
     {
         return $this->belongsTo(Profile::class);
     }
+
+        public function campingCentre()
+    {
+        return $this->hasOne(CampingCentre::class, 'profile_centre_id');
+    }
+
 }

@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use App\Models\Photos;
 use App\Models\Materielles;
+use App\Http\Controllers\Controller;
 
 class MaterielleController extends Controller
 {

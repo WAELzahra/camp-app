@@ -18,7 +18,11 @@ class DatabaseSeeder extends Seeder
         UserSeeder::class,
         CircuitSeeder::class,
         EventSeeder::class,
-        ReservationsEnvetSeeder::class
+        ReservationsEnvetSeeder::class,
+        CampingZonesSeeder::class,
+        FeedbacksZonesSeeder::class,
+         SignalesSeeder::class,
+         CampingZoneSeeder::class,
     ]);
 }
 

@@ -33,6 +33,7 @@ return new class extends Migration
             $table->integer('nombre_signalement')->default(0);
             $table->timestamp('last_login_at')->nullable();
             $table->string('avatar')->nullable();
+            $table->json('preferences')->nullable();
 
             $table->rememberToken();
             $table->timestamps();

@@ -1,173 +1,189 @@
 <?php
 
-namespace App\Http\Controllers\Feedback;
+namespace App\Http\Controllers\feedback;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use App\Models\Feedbacks;
-use Illuminate\Support\Facades\DB;
+use App\Models\User;
+use App\Http\Controllers\Controller;
 
 class FeedbackController extends Controller
 {
-    /**
-     * Display all feedbacks submitted for a given target (user).
+
+ /**
+     * Créer ou mettre à jour un feedback
      */
-    public function index(int $id)
+    public function storeOrUpdateFeedback(Request $request, $type, $targetId)
     {
-        $feedbacks = Feedbacks::where('target_id', $id)->get();
+        $user = Auth::user()->load('role');
 
-        return response()->json([
-            'message' => 'Feedbacks retrieved successfully.',
-            'feedbacks' => $feedbacks,
-        ], 200);
-    }
-
-    /**
-     * Display all feedbacks created by the currently authenticated user.
-     */
-    public function index_user()
-    {
-        $userId = Auth::id();
-
-        $feedbacks = Feedbacks::where('user_id', $userId)->get();
-
-        return response()->json([
-            'message' => 'Your feedbacks retrieved successfully.',
-            'feedbacks' => $feedbacks,
-        ], 200);
-    }
-
-    /**
-     * Return a form or placeholder for feedback creation (optional for frontend use).
-     */
-    public function create()
-    {
-        return response()->json([
-            'message' => 'You can now create a feedback.',
-        ]);
-    }
-
-    /**
-     * Return a form or data for editing an existing feedback.
-     */
-    public function edit(int $feedback_id)
-    {
-        $feedback = Feedbacks::findOrFail($feedback_id);
-
-        if ($feedback->user_id !== Auth::id()) {
-            return response()->json([
-                'message' => 'Unauthorized: you can only edit your own feedback.',
-            ], 403);
+        // Vérification du rôle
+        if (!$user->role || $user->role->name !== 'campeur') {
+            return response()->json(['message' => 'Seuls les campeurs peuvent laisser un feedback.'], 403);
         }
 
-        return response()->json([
-            'message' => 'Feedback loaded for editing.',
-            'feedback' => $feedback,
-        ], 200);
-    }
+        // Types autorisés
+        $allowedTypes = ['groupe', 'guide', 'fournisseur', 'centre_user', 'centre_camping'];
+        $type = strtolower($type);
 
-    /**
-     * Show a specific feedback by its ID.
-     */
-    public function show(int $feedback_id)
-    {
-        $feedback = Feedbacks::findOrFail($feedback_id);
+        if (!in_array($type, $allowedTypes)) {
+            return response()->json(['message' => 'Type de cible non valide.'], 400);
+        }
 
-        return response()->json([
-            'message' => 'Feedback retrieved successfully.',
-            'feedback' => $feedback,
-        ], 200);
-    }
-
-    /**
-     * Store a newly created feedback in the database.
-     */
-    public function store(Request $request)
-    {
-        $validated = $request->validate([
-            'target_id' => 'required|integer|exists:users,id',
-            'event_id' => 'nullable|integer|exists:event,id',
-            'zone_id' => 'nullable|integer|exists:zone,id',
-            'materielle_id' => 'nullable|integer|exists:materielles,id',
-            'contenu' => 'nullable|string|max:1000',
-            'note' => 'required|numeric|min:0|max:5',
-        ]);
-
-        $userId = Auth::id();
-
-        DB::beginTransaction();
-
+        // Récupération de la cible selon le type
         try {
-            $feedback = Feedbacks::create([
-                'user_id' => $userId,
-                'target_id' => $request->target_id,
-                'event_id' => $request->event_id,
-                'zone_id' => $request->zone_id,
-                'materielle_id' => $request->materielle_id,
-                'contenu' => $request->contenu,
-                'note' => $request->note
-            ]);
+            switch ($type) {
+                case 'centre_user':
+                    $target = User::with('role')
+                        ->where('id', $targetId)
+                        ->whereHas('role', fn($q) => $q->where('name', 'centre'))
+                        ->firstOrFail();
+                    break;
 
-            DB::commit();
+                case 'centre_camping':
+                    $target = CampingCentre::findOrFail($targetId);
+                    break;
 
-            return response()->json([
-                'message' => 'Feedback added successfully.',
-                'feedback' => $feedback,
-            ], 201);
-
-        } catch (\Exception $e) {
-            DB::rollBack();
-
-            return response()->json([
-                'message' => 'An error occurred while saving feedback: ' . $e->getMessage(),
-            ], 500);
+                default:
+                    $target = User::with('role')
+                        ->where('id', $targetId)
+                        ->whereHas('role', fn($q) => $q->where('name', $type))
+                        ->firstOrFail();
+                    break;
+            }
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json(['message' => 'Cible introuvable.'], 404);
         }
-    }
 
-    /**
-     * Update an existing feedback (only if user is owner).
-     */
-    public function update(Request $request, $id)
-    {
+        // Validation des données
         $validated = $request->validate([
-            'note' => 'required|numeric|min:0|max:5',
             'contenu' => 'nullable|string|max:1000',
+            'note'    => 'required|integer|min:1|max:5',
         ]);
 
-        $userId = Auth::id();
-        $feedback = Feedbacks::findOrFail($id);
+        // Création ou mise à jour du feedback
+        $feedback = Feedbacks::firstOrNew([
+            'user_id'   => $user->id,
+            'target_id' => $targetId,
+            'type'      => $type,
+        ]);
 
-        if ($feedback->user_id !== $userId) {
-            return response()->json([
-                'message' => 'Prohibited action: you are not the owner of this feedback.',
-            ], 403);
-        }
+        $feedback->contenu = $validated['contenu'] ?? $feedback->contenu;
+        $feedback->note    = $validated['note'];
+        $feedback->status  = 'pending';
+        $feedback->save();
 
-        $feedback->update($validated);
+        $message = $feedback->wasRecentlyCreated
+            ? 'Votre avis a été soumis. Il sera publié après validation.'
+            : 'Votre avis a été mis à jour. Il sera publié après validation.';
 
         return response()->json([
-            'message' => 'Feedback updated successfully.',
-            'feedback' => $feedback
-        ]);
+            'message'  => $message,
+            'feedback' => $feedback,
+            'target'   => $target, // Optionnel : pour afficher les infos du guide/groupe
+        ], $feedback->wasRecentlyCreated ? 201 : 200);
     }
 
     /**
-     * Delete a feedback (only if user is the owner).
+     * Lister les feedbacks validés d’un profil (groupe / guide / fournisseur / centre)
      */
-    public function destroy($id)
-    {
-        $feedback = Feedbacks::findOrFail($id);
-
-        if ($feedback->user_id !== Auth::id()) {
-            return response()->json([
-                'message' => 'Unauthorized: only the author can delete this feedback.',
-            ], 403);
-        }
-
-        $feedback->delete();
-
-        return response()->json([
-            'message' => 'Feedback deleted successfully.'
-        ]);
+    public function getFeedbacks($type, $targetId)
+{
+    $allowedTypes = ['groupe','guide','fournisseur','centre_user','centre_camping'];
+    if (!in_array($type, $allowedTypes)) {
+        return response()->json(['message' => 'Type de cible non valide.'], 400);
     }
+
+    $feedbacks = Feedbacks::with('user')
+        ->where('target_id', $targetId)
+        ->where('type', $type)
+        ->where('status', 'approved')
+        ->latest()
+        ->get();
+
+    $avg = Feedbacks::where('target_id', $targetId)
+        ->where('type', $type)
+        ->where('status', 'approved')
+        ->avg('note');
+
+    return response()->json([
+        'average_note' => is_null($avg) ? null : round($avg, 1),
+        'count'        => $feedbacks->count(),
+        'feedbacks'    => $feedbacks,
+    ]);
+}
+
+
+
+// Ajouter un feedback sur une zone
+    public function storeZone(Request $request, $zoneId)
+{
+    $data = $request->validate([
+        'note' => 'required|integer|min:1|max:5',
+        'contenu' => 'nullable|string',
+    ]);
+
+    // Vérifie si un feedback existe déjà pour cet utilisateur et cette zone
+    $existing = Feedbacks::where('user_id', auth()->id())
+        ->where('zone_id', $zoneId)
+        ->where('type', 'zone')
+        ->first();
+
+    if ($existing) {
+        return response()->json([
+            'message' => 'Vous avez déjà soumis un avis pour cette zone.',
+            'feedback' => $existing
+        ], 200);
+    }
+
+    // Création du feedback
+    $feedback = Feedbacks::create([
+        'user_id' => auth()->id(),
+        'zone_id' => $zoneId,
+        'target_id' => null,
+        'event_id' => null,
+        'contenu' => $data['contenu'],
+        'note' => $data['note'],
+        'type' => 'zone',
+        'status' => 'pending',
+    ]);
+
+    return response()->json([
+        'message' => 'Votre avis sur la zone a été enregistré avec succès. Il sera publié après validation.',
+        'feedback' => $feedback
+    ], 201);
+    }
+
+
+// Lister tous les feedbacks d'une zone
+    public function listZone($zoneId)
+    {
+        $feedbacks = Feedbacks::with('user')
+            ->where('zone_id', $zoneId)
+            ->where('type', 'zone')
+            ->where('status', 'approved')
+            ->latest()
+            ->get();
+
+        return response()->json($feedbacks);
+    }
+
+// Méthode auxiliaire pour retourner les infos liées au feedback
+// Dans FeedbackController
+public function getFeedbackRelatedPublic($id)
+{
+    $feedback = Feedbacks::with(['zone', 'event', 'user_target'])->findOrFail($id);
+    return response()->json([
+        'feedback_id' => $feedback->id,
+        'related' => $this->getFeedbackRelated($feedback),
+    ]);
+}
+
+
+
+
+
+
+
 }

@@ -15,7 +15,7 @@ return new class extends Migration
             $table->foreignId('user_id')->constrained('users')->onDelete('cascade');
 
             // Utilisateur cible (ex groupe de camping)
-            $table->foreignId('target_id')->constrained('users')->onDelete('cascade');
+            $table->foreignId('target_id')->nullable();
 
             // Optionnel : l'événement concerné
             $table->foreignId('event_id')->nullable()->constrained('events')->onDelete('cascade');

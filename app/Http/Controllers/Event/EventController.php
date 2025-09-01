@@ -346,4 +346,42 @@ $request->validate([
             'link' => $publicLink
         ]);
     }
+
+
+    // prévenir si un événement/camping est proche de sa position
+        public function notifyNearbyEvents(Request $request, $userId)
+    {
+        $request->validate([
+            'lat' => 'required|numeric',
+            'lng' => 'required|numeric',
+            'radius' => 'nullable|numeric', // km, par défaut 10 km
+        ]);
+
+        $user = User::findOrFail($userId);
+        $lat = $request->lat;
+        $lng = $request->lng;
+        $radius = $request->radius ?? 10; // rayon par défaut 10 km
+
+        // --- Recherche des événements proches ---
+        $events = Events::where('is_active', true)
+            ->selectRaw("*, (6371 * acos(cos(radians(?)) * cos(radians(lat)) * cos(radians(lng) - radians(?)) + sin(radians(?)) * sin(radians(lat)))) AS distance", [$lat, $lng, $lat])
+            ->having('distance', '<=', $radius)
+            ->orderBy('distance', 'asc')
+            ->get();
+
+        // --- Recherche des campings proches ---
+        $zones = CampingZone::where('status', true)
+            ->where('is_closed', false)
+            ->selectRaw("*, (6371 * acos(cos(radians(?)) * cos(radians(lat)) * cos(radians(lng) - radians(?)) + sin(radians(?)) * sin(radians(lat)))) AS distance", [$lat, $lng, $lat])
+            ->having('distance', '<=', $radius)
+            ->orderBy('distance', 'asc')
+            ->get();
+
+        return response()->json([
+            'user' => $user->name,
+            'events_nearby' => $events,
+            'campings_nearby' => $zones,
+        ]);
+    }
 }
+

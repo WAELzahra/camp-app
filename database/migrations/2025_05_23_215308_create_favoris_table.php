@@ -12,13 +12,13 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('favoris', function (Blueprint $table) {
-            $table->foreignId('user_id')->constrained()->onDelete('cascade');
-            $table->foreignId('target_id')->constrained('users')->onDelete('cascade');
-            $table->enum('type', ['guide', 'centre', 'event']);
-            $table->timestamps();
-            $table->primary(['user_id', 'target_id']);
+        $table->foreignId('user_id')->constrained()->onDelete('cascade');
+        $table->foreignId('target_id')->constrained('users')->onDelete('cascade'); // ou une autre table selon le type
+        $table->enum('type', ['guide', 'centre', 'event', 'zone']); // <-- ajout de 'zone'
+        $table->timestamps();
+        $table->primary(['user_id', 'target_id']);
+});
 
-        });
     }
 
     /**

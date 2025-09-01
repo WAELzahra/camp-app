@@ -222,5 +222,44 @@ public function storeOrUpdateProfilePhotos(Request $request)
 }
 
 
+    // Déterminer la saison actuelle
+    private function getCurrentSeason()
+    {
+        $month = date('n');
+        if (in_array($month, [12, 1, 2])) return 'hiver';
+        if (in_array($month, [3, 4, 5])) return 'printemps';
+        if (in_array($month, [6, 7, 8])) return 'été';
+        return 'automne';
+    }
+
+    // Récupérer les préférences utilisateur
+    private function getUserPreferences($userId)
+    {
+        $user = User::findOrFail($userId);
+        return $user->preferences ? json_decode($user->preferences, true) : [];
+    }
+
+    // Déterminer la région de référence
+    private function getUserRegion($userId)
+    {
+        $user = User::findOrFail($userId);
+
+        // 1️⃣ Région dans les préférences
+        $preferences = $this->getUserPreferences($userId);
+        if (!empty($preferences['region'])) {
+            return $preferences['region'];
+        }
+
+        // 2️⃣ Région dans le profil
+        if (!empty($user->ville)) {
+            return $user->ville;
+        }
+
+        // 3️⃣ Valeur par défaut
+        return 'Tunisie';
+    }
+
+
+
 
 }

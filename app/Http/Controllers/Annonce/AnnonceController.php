@@ -12,6 +12,7 @@ use App\Models\Photos;
 use App\Mail\RequestAnnonceActivation;
 use App\Mail\ActivateAnnonceNotification;
 use App\Mail\AnnonceDeactivatedNotification;
+use App\Http\Controllers\Controller;
 
 
 
