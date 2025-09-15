@@ -15,7 +15,7 @@ class CanPublishAnnonce
      */
     public function handle($request, \Closure $next)
     {
-        if (!in_array(auth()->user()->role->name, ['fournisseur', 'centre'])) {
+        if (!in_array(auth()->user()->role->name, ['fournisseur', 'centre', 'admin'])) {
             abort(403, "Seuls les fournisseurs et centres peuvent accéder.");
         }
         return $next($request);
