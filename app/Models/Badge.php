@@ -20,7 +20,7 @@ class Badge extends Model
 
     ];
 
-    public function guide(){
+    public function user(){
         return $this->belongsTo(User::class);
     }
 }

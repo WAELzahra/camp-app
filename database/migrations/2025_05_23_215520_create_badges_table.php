@@ -12,17 +12,17 @@ return new class extends Migration
     {
         Schema::create('badges', function (Blueprint $table) {
             $table->id(); // Auto-incrementing primary key
-            $table->foreignId('guide_id')->constrained('users')->onDelete('cascade');
+            $table->foreignId('user_id')->constrained('users')->onDelete('cascade');
             $table->foreignId('provider_id')->constrained('users')->onDelete('cascade');
             $table->date('creation_date');
             $table->string('titre');
             $table->string('decription');
-            $table->enum('type', ['certification', 'reputation']);
+            $table->enum('type', ['certification', 'reputation','badge']);
             $table->string('icon');
             $table->timestamps();
 
             // Unique constraint instead of composite primary key
-            $table->unique(['provider_id', 'guide_id', 'creation_date'], 'badge_unique');
+            $table->unique(['provider_id', 'user_id', 'creation_date'], 'badge_unique');
         });
     }
 

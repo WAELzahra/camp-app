@@ -20,15 +20,29 @@ class DashboardController extends Controller
     public function index()
     {
         $stats = [
-            'totalUsers' => $this->dashboardRepository->getTotalUsers(),
-            'activeUsers' => $this->dashboardRepository->getActiveUsers(),
-            'totalCenters' => $this->dashboardRepository->getTotalCenters(),
-            'totalEvents' => $this->dashboardRepository->getTotalEvents(),
-            'monthlyReservations' => $this->dashboardRepository->getMonthlyReservations(),
-            'topProfiles' => $this->dashboardRepository->getTopProfiles(),
+            'userStats' => $this->dashboardRepository->getUserStats(),
+            'eventStats' => $this->dashboardRepository->getEventStats(),
+            'profileStats' => $this->dashboardRepository->getProfileStats(),
+            'reservationTrends' => $this->dashboardRepository->getReservationTrends(),
         ];
 
-        //return view('admin.dashboard.index', compact('stats'));
-        // or return response()->json($stats) if API
+        return response()->json([
+            'status' => 'success',
+            'data' => $stats,
+        ]);
+    }
+
+    public function centerStats()
+    {
+
+        $stats = [
+            'satisfactionRate'    => $this->dashboardRepository->getCenterSatisfaction($user->id),
+            'reservationTrends'  => $this->dashboardRepository->getCenterSatisfaction($user->id)
+        ];
+
+        return response()->json([
+            'status' => 'success',
+            'data'   => $stats
+        ]);
     }
 }

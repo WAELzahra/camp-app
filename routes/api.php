@@ -1,4 +1,4 @@
- <?php
+﻿ <?php
 
 use App\Services\ZoneSearchService;
 use App\Http\Controllers\Auth\RegisteredUserController;
@@ -385,6 +385,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/group-chat/{chat_group_id}/rename', [ChatGroupController::class, 'renameGroup']);
         Route::post('/group-chat/{chat_group_id}/archive', [ChatGroupController::class, 'archive']);
         Route::delete('/group-chat/{chat_group_id}/members/{user_id}', [ChatGroupController::class, 'removeMember']);
+
+        // notification 
+        Route::post('/notification/send', [NotificationController::class, 'store']);
+        Route::get('/notification/index', [NotificationController::class, 'index']);
+
     });
     
     // -------------------- PUBLISHER (PUBLICATEUR) --------------------
@@ -474,6 +479,16 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/group/events/{event_id}/participants', [ReservationEventController::class, 'participants']);
     Route::get('/group/events/{event_id}/stats', [ReservationEventController::class, 'participantStats']);
     Route::get('/group/events/{event_id}/search', [ReservationEventController::class, 'search']);
+
+    // notification routes for all auth users
+    Route::post('/notification/send', [NotificationController::class, 'store']);
+    Route::post('/notification/show/{%id}', [NotificationController::class, 'show']);
+    Route::post('/notification/markAsRead/{%id}', [NotificationController::class, 'markAsRead']);
+    Route::post('/notification/markAllAsRead', [NotificationController::class, 'markAllAsRead']);
+    Route::post('/notification/destroy/{%id}', [NotificationController::class, 'destroy']);
+    // favoris
+    Route::post('/favoris/add', [FavorisController::class, 'addToFavorites']);
+
 });
 
 // ==================== ROUTES DE SAISON ET RECOMMANDATIONS ====================

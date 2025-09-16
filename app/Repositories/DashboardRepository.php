@@ -7,7 +7,7 @@ class DashboardRepository
     /**
      * Return statistics about users (e.g. total, active, by role).
      */
-    public function userStats()
+    public function getUserStats()
     {
         // Query users table
         return [
@@ -33,7 +33,7 @@ class DashboardRepository
     /**
      * Return statistics about events and centers.
      */
-    public function eventStats()
+    public function getEventStats()
     {
 
         return [
@@ -71,7 +71,7 @@ class DashboardRepository
     /**
      * Return the most active profiles (top campers, guides, etc.).
      */
-    public function profileStats()
+    public function getProfileStats()
     {
         // Query reservations/activities
         // Example: rank users by activity, get top 5 campers, top guides
@@ -211,6 +211,24 @@ class DashboardRepository
             ->orderBy('avg_rating', 'asc')
             ->take(5) 
             ->get(),
+        'topTenCampers' => User::where('role_id', 1) // Only campers
+            ->select(
+                'users.id',
+                'users.name',
+                DB::raw('(SELECT COUNT(*) FROM reservations_centre WHERE reservations_centre.user_id = users.id) as nbr_reservation_center'),
+                DB::raw('(SELECT COUNT(*) FROM reservation_guides WHERE reservation_guides.reserver_id = users.id) as nbr_reservation_guides'),
+                DB::raw('(SELECT COUNT(*) FROM reservations_events WHERE reservations_events.user_id = users.id) as nbr_reservation_events'),
+                DB::raw('(SELECT COUNT(*) FROM reservations_materielles WHERE reservations_materielles.user_id = users.id) as nbr_reservation_materielles'),
+                DB::raw('(
+                    (SELECT COUNT(*) FROM reservations_centre WHERE reservations_centre.user_id = users.id) +
+                    (SELECT COUNT(*) FROM reservation_guides WHERE reservation_guides.reserver_id = users.id) +
+                    (SELECT COUNT(*) FROM reservations_events WHERE reservations_events.user_id = users.id) +
+                    (SELECT COUNT(*) FROM reservations_materielles WHERE reservations_materielles.user_id = users.id)
+                ) as total_reservations')
+            )
+            ->orderByDesc('total_reservations')
+            ->take(10)
+            ->get(),
 
     ];
 
@@ -219,7 +237,7 @@ class DashboardRepository
     /**
      * Return reservation trends over time (monthly/yearly).
      */
-    public function reservationTrends()
+    public function getReservationTrends()
     {
         $currentYear = now()->year;
         $previousYear = now()->subYear()->year;
@@ -277,5 +295,110 @@ class DashboardRepository
             ]
         ];
     }
+    /**
+     * Return Center reservation trends over time (monthly/yearly).
+     */
+    public function centerReservationTrends($centerId)
+    {
+        $currentYear = now()->year;
+        $previousYear = now()->subYear()->year;
+
+        // Yearly totals for the center
+        $currentYearTotal = Reservations_centre::where('centre_id', $centerId)
+            ->whereYear('created_at', $currentYear)
+            ->count();
+
+        $previousYearTotal = Reservations_centre::where('centre_id', $centerId)
+            ->whereYear('created_at', $previousYear)
+            ->count();
+
+        $growthRate = $previousYearTotal > 0
+            ? round((($currentYearTotal - $previousYearTotal) / $previousYearTotal) * 100, 2) . '%'
+            : 'N/A';
+
+        // Monthly reservations for the center
+        $monthlyReservations = Reservations_centre::where('centre_id', $centerId)
+            ->select(
+                DB::raw('DATE_FORMAT(created_at, "%Y-%m") as month'),
+                DB::raw('COUNT(*) as total_reservations')
+            )
+            ->groupBy('month')
+            ->orderBy('month', 'asc')
+            ->get();
+
+        // Top months (2 highest) for the center
+        $topMonths = Reservations_centre::where('centre_id', $centerId)
+            ->select(
+                DB::raw('DATE_FORMAT(created_at, "%Y-%m") as month'),
+                DB::raw('COUNT(*) as total_reservations')
+            )
+            ->groupBy('month')
+            ->orderByDesc('total_reservations')
+            ->take(2)
+            ->get();
+
+        // Latest & previous month
+        $latestMonth = $monthlyReservations->last();
+        $previousMonth = $monthlyReservations->count() > 1
+            ? $monthlyReservations[$monthlyReservations->count() - 2]
+            : null;
+
+        $vsPrevious = ($previousMonth && $previousMonth->total_reservations > 0)
+            ? round((($latestMonth->total_reservations - $previousMonth->total_reservations) / $previousMonth->total_reservations) * 100, 2) . '%'
+            : 'N/A';
+
+        return [
+            'monthlyCenterReservation' => $monthlyReservations,
+
+            'kpis' => [
+                'yearToDate' => [
+                    'total_reservations' => $currentYearTotal,
+                    'previous_year' => $previousYearTotal,
+                    'growth_rate' => $growthRate,
+                ],
+                'topMonths' => $topMonths,
+                'latestMonth' => [
+                    'month' => $latestMonth->month ?? null,
+                    'total_reservations' => $latestMonth->total_reservations ?? 0,
+                    'vs_previous_month' => $vsPrevious,
+                ],
+            ]
+        ];
+    }
+    /**
+    * return the satisfaction rate0 of a center
+     **/
+    public function getCenterSatisfaction($centreId)
+    {
+        // Filter feedbacks related to this center
+        $feedbacks = Feedbacks::where('target_id', $centreId)->get();
+
+        if ($feedbacks->isEmpty()) {
+            return [
+                'average_rating' => null,
+                'total_feedbacks' => 0,
+                'status_count' => [
+                    'pending' => 0,
+                    'approved' => 0,
+                    'rejected' => 0,
+                ],
+            ];
+        }
+
+        $averageRating = round($feedbacks->avg('note'), 2);
+        $totalFeedbacks = $feedbacks->count();
+
+        $statusCount = $feedbacks->groupBy('status')->map->count()->toArray();
+        // Ensure all statuses are present even if zero
+        $statusCount = array_merge(['pending' => 0, 'approved' => 0, 'rejected' => 0], $statusCount);
+
+        return [
+            'average_rating' => $averageRating,
+            'total_feedbacks' => $totalFeedbacks,
+            'status_count' => $statusCount,
+        ];
+    }
+
+
 }
 

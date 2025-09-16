@@ -12,13 +12,18 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('favoris', function (Blueprint $table) {
-        $table->foreignId('user_id')->constrained()->onDelete('cascade');
-        $table->foreignId('target_id')->constrained('users')->onDelete('cascade'); // ou une autre table selon le type
-        $table->enum('type', ['guide', 'centre', 'event', 'zone']); // <-- ajout de 'zone'
-        $table->timestamps();
-        $table->primary(['user_id', 'target_id']);
-});
+            $table->id();
+            $table->foreignId('user_id')->constrained()->onDelete('cascade');
 
+            // Polymorphic structure
+            $table->unsignedBigInteger('target_id');
+            $table->enum('type', ['guide', 'centre', 'event', 'zone', 'annonce']);
+
+            $table->timestamps();
+
+            // Prevent duplicates: same user can’t favorite same target twice
+            $table->unique(['user_id', 'target_id', 'type']);
+        });
     }
 
     /**

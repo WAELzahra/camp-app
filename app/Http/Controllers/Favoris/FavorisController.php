@@ -57,6 +57,70 @@ class FavorisController extends Controller
 
         return response()->json($favorisDetails->values());
     }
+    /**
+     * Add to favoris
+     */
+    public function addToFavorites(Request $request)
+    {
+        try {
+            $validated = $request->validate([
+                'user_id'   => 'required|exists:users,id',
+                'target_id' => 'required|integer',
+                'type'      => 'required|in:guide,centre,event,zone,annonce',
+            ]);
+
+            $exists = Favori::where('user_id', $validated['user_id'])
+                ->where('target_id', $validated['target_id'])
+                ->where('type', $validated['type'])
+                ->exists();
+
+            if ($exists) {
+                Log::warning('Duplicate favorite attempt', $validated);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Already in favorites.',
+                ], 409); // Conflict
+            }
+
+            $favori = Favori::create($validated);
+
+            Log::info('Favorite added successfully', [
+                'favori_id' => $favori->id,
+                'user_id'   => $favori->user_id,
+                'target_id' => $favori->target_id,
+                'type'      => $favori->type,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Added to favorites successfully.',
+                'data'    => $favori,
+            ], 201);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            Log::error('Validation failed when adding favorite', [
+                'errors' => $e->errors(),
+                'request' => $request->all(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation error.',
+                'errors'  => $e->errors(),
+            ], 422);
+
+        } catch (\Exception $e) {
+            Log::error('Unexpected error when adding favorite', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Something went wrong.',
+            ], 500);
+        }
+    }
 
 
 
