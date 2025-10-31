@@ -295,9 +295,7 @@ class DashboardRepository
             ]
         ];
     }
-    /**
-     * Return Center reservation trends over time (monthly/yearly).
-     */
+
     public function centerReservationTrends($centerId)
     {
         $currentYear = now()->year;
@@ -347,6 +345,12 @@ class DashboardRepository
             ? round((($latestMonth->total_reservations - $previousMonth->total_reservations) / $previousMonth->total_reservations) * 100, 2) . '%'
             : 'N/A';
 
+        // Add counts by status
+        $statusCounts = Reservations_centre::where('centre_id', $centerId)
+            ->select('status', DB::raw('COUNT(*) as total'))
+            ->groupBy('status')
+            ->pluck('total', 'status'); // gives ['pending' => 10, 'approved' => 5, ...]
+
         return [
             'monthlyCenterReservation' => $monthlyReservations,
 
@@ -362,9 +366,16 @@ class DashboardRepository
                     'total_reservations' => $latestMonth->total_reservations ?? 0,
                     'vs_previous_month' => $vsPrevious,
                 ],
+                'byStatus' => [
+                    'pending' => $statusCounts['pending'] ?? 0,
+                    'approved' => $statusCounts['approved'] ?? 0,
+                    'rejected' => $statusCounts['rejected'] ?? 0,
+                    'cancelled' => $statusCounts['cancelled'] ?? 0,
+                ]
             ]
         ];
     }
+
     /**
     * return the satisfaction rate0 of a center
      **/
