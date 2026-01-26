@@ -1,4 +1,4 @@
- <?php
+﻿ <?php
 
 use App\Services\ZoneSearchService;
 use App\Http\Controllers\Auth\RegisteredUserController;
@@ -43,6 +43,21 @@ use App\Http\Controllers\Admin\CampingCentreController;
 use App\Http\Controllers\zonecamping\CampingCentresController;
 use App\Http\Controllers\Admin\CampingZoneController;
 use App\Http\Controllers\zonecamping\PublicCampingController;
+use App\Http\Controllers\Api\CenterServiceApiController;
+use App\Http\Controllers\Admin\ServiceCategoryController;
+
+// routes/web.php (for admin)
+Route::middleware(['auth', 'role:admin'])->prefix('admin')->name('admin.')->group(function () {
+    Route::resource('service-categories', \App\Http\Controllers\Admin\ServiceCategoryController::class);
+});
+// routes/api.php
+Route::prefix('v1')->group(function () {
+    Route::get('centers/services', [\App\Http\Controllers\Api\CenterServiceApiController::class, 'centersWithServices']);
+    Route::get('centers/{center}/services', [\App\Http\Controllers\Api\CenterServiceApiController::class, 'centerServices']);
+    Route::get('service-categories', [\App\Http\Controllers\Api\CenterServiceApiController::class, 'serviceCategories']);
+    Route::post('calculate-price', [\App\Http\Controllers\Api\CenterServiceApiController::class, 'calculatePrice']);
+});
+
 
 // ==================== ROUTES PUBLIQUES (ACCESSIBLES SANS AUTHENTIFICATION) ====================
 

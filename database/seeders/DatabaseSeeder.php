@@ -2,30 +2,18 @@
 
 namespace Database\Seeders;
 
-// use Illuminate\Database\Console\Seeds\WithoutModelEvents;
-use App\Models\Circuit;
 use Illuminate\Database\Seeder;
 
 class DatabaseSeeder extends Seeder
 {
-    /**
-     * Seed the application's database.
-     */
-   public function run()
-{
-    $this->call([
-        RoleSeeder::class,
-        UserSeeder::class,
-        CircuitSeeder::class,
-        EventSeeder::class,
-        ReservationsEnvetSeeder::class,
-        CampingZonesSeeder::class,
-        FeedbacksZonesSeeder::class,
-         SignalesSeeder::class,
-         CampingZoneSeeder::class,
-    ]);
-}
-
-
-
+    public function run(): void
+    {
+        $this->call([
+            RoleSeeder::class,           // Must be first (creates roles)
+            ServiceCategorySeeder::class, // Must be before UserSeeder (for services)
+            UserSeeder::class,           // Creates users and profiles
+            ProfileCentreSeeder::class,  // Creates additional centers with services
+            // Add other seeders as needed
+        ]);
+    }
 }
