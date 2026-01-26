@@ -34,6 +34,7 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\message_chat\PrivateChatController;
 use App\Http\Controllers\GroupChat\ChatGroupController;
 use App\Http\Controllers\Auth\SocialAuthController;
+use App\Http\Controllers\Auth\VerifyEmailController;
 use App\Http\Controllers\zonecamping\CampingZonesController;
 use App\Http\Controllers\zonecamping\ZonePolygonController;
 use App\Http\Controllers\Signal\SignalementZoneController;
@@ -58,6 +59,16 @@ Route::prefix('v1')->group(function () {
     Route::post('calculate-price', [\App\Http\Controllers\Api\CenterServiceApiController::class, 'calculatePrice']);
 });
 
+// Route::get('/auth/google/url', [SocialAuthController::class, 'getSocialAuthUrls']);
+// Route::get('/auth/google', [SocialAuthController::class, 'redirectToGoogle'])->name('google.redirect');
+// Route::get('/auth/google/callback', [SocialAuthController::class, 'handleGoogleCallback']);
+// Route::get('/auth/facebook', [SocialAuthController::class, 'redirectToFacebook'])->name('facebook.redirect');
+// Route::get('/auth/facebook/callback', [SocialAuthController::class, 'handleFacebookCallback']);
+
+Route::post('/verify-by-token', [VerifyEmailController::class, 'verifyByToken']);
+Route::post('/verify-by-code', [VerifyEmailController::class, 'verifyByCode']);
+Route::post('/resend-verification', [VerifyEmailController::class, 'resendVerification']);
+Route::get('/verification-status/{id}', [VerifyEmailController::class, 'verificationStatus']);
 
 // ==================== ROUTES PUBLIQUES (ACCESSIBLES SANS AUTHENTIFICATION) ====================
 
@@ -163,6 +174,26 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/user/password', [PasswordController::class, 'update']);
     Route::post('/logout', [AuthenticatedSessionController::class, 'destroy']);
     
+    Route::get('/user/verification-status', function (Request $request) {
+        return response()->json([
+            'verified' => $request->user()->hasVerifiedEmail(),
+            'email' => $request->user()->email,
+        ]);
+    });
+    // Also add this route for unauthenticated users (if they have the user ID)
+    Route::get('/user/{id}/verification-status', function ($id) {
+        $user = \App\Models\User::find($id);
+        
+        if (!$user) {
+            return response()->json(['error' => 'User not found'], 404);
+        }
+        
+        return response()->json([
+            'verified' => $user->hasVerifiedEmail(),
+            'email' => $user->email,
+        ]);
+    });
+
     // Vérification email
     Route::middleware('signed')->get('/email/verify/{id}/{hash}', function (EmailVerificationRequest $request) {
         $request->fulfill();

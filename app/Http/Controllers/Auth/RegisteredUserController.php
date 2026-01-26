@@ -188,7 +188,19 @@ class RegisteredUserController extends Controller
             $message = $isActive
                 ? 'Inscription réussie ! Vous pouvez maintenant vous connecter.'
                 : 'Inscription réussie ! Veuillez attendre l\'activation par un administrateur.';
-
+            $verificationService = new \App\Services\EmailVerificationService('both');
+            $verificationService->sendVerification($user, 'both');
+        // Return the user data so frontend can display it
+        return response()->json([
+            'message' => 'Registration successful! Please verify your email.',
+            'user' => [
+                'id' => $user->id,
+                'first_name' => $user->first_name,
+                'last_name' => $user->last_name,
+                'email' => $user->email,
+            ],
+            'requires_verification' => true,
+        ], 201);
             return response()->json([
                 'message' => $message,
                 'user' => $user
