@@ -22,20 +22,20 @@ class User extends Authenticatable implements MustVerifyEmail
     protected $fillable = [
        'first_name',      
         'last_name',      
-         'email',
-    'adresse',
-    'phone_number',
-    'password',
-    'role_id',
-    'is_active',
-    'ville',               
-    'date_naissance',      
-    'sexe',                
-    'langue',              
-    'first_login',         
-    'nombre_signalement',  
-      'avatar',
-];
+        'email',
+        'adresse',
+        'phone_number',
+        'password',
+        'role_id',
+        'is_active',
+        'ville',               
+        'date_naissance',      
+        'sexe',                
+        'langue',              
+        'first_login',         
+        'nombre_signalement',  
+        'avatar',
+    ];
 
     
     
@@ -109,7 +109,21 @@ public function favoris()
 {
     return $this->hasMany(Favoris::class, 'user_id');
 }
+    /**
+     * Get the albums for the user.
+     */
+    public function albums()
+    {
+        return $this->hasMany(Album::class);
+    }
 
+    /**
+     * Get the center album for the user (if they're a host).
+     */
+    public function centerAlbum()
+    {
+        return $this->hasOne(Album::class)->where('type', 'center');
+    }
 
 }
 

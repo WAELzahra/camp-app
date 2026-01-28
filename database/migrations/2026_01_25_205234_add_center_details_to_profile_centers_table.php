@@ -22,8 +22,7 @@ return new class extends Migration
             
             // Rename existing columns for clarity
             $table->renameColumn('document_legal', 'legal_document');
-            $table->renameColumn('id_annonce', 'ad_id');
-            $table->renameColumn('id_album_photo', 'photo_album_id');
+
             
             // Change services_offerts to be a general description field
             $table->text('additional_services_description')->nullable()->after('services_offerts');

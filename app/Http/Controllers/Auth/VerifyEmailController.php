@@ -22,6 +22,148 @@ class VerifyEmailController extends Controller
     }
 
     /**
+     * NEW FUNCTION: Send verification email to user
+     */
+    public function sendVerification(Request $request)
+    {
+        Log::info('=== SEND VERIFICATION EMAIL CALLED ===');
+        Log::info('Request data:', $request->all());
+
+        try {
+            $validator = Validator::make($request->all(), [
+                'user_id' => 'required|integer|exists:users,id',
+                'email' => 'required|email',
+                'method' => 'sometimes|in:both,code,link'
+            ]);
+
+            if ($validator->fails()) {
+                Log::warning('Send verification validation failed:', ['errors' => $validator->errors()->toArray()]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid request data',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            $user = User::find($request->input('user_id'));
+            
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'User not found'
+                ], 404);
+            }
+
+            // Check if email matches
+            if ($user->email !== $request->input('email')) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Email does not match user record'
+                ], 400);
+            }
+
+            // Check if already verified
+            if ($user->hasVerifiedEmail()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Email already verified'
+                ], 400);
+            }
+
+            // Send verification email
+            $method = $request->input('method', 'both');
+            $verification = $this->emailVerificationService->sendVerification($user, $method);
+
+            Log::info('Verification email sent successfully', [
+                'user_id' => $user->id,
+                'email' => $user->email,
+                'verification_id' => $verification->id,
+                'token' => $verification->token,
+                'code' => $verification->code
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Verification email sent successfully',
+                'verification' => [
+                    'id' => $verification->id,
+                    'method' => $verification->method,
+                    'expires_at' => $verification->expires_at->format('Y-m-d H:i:s'),
+                    'code' => $verification->code,
+                    'token' => $verification->token,
+                    'verification_link' => url('/api/verify-by-token?token=' . $verification->token),
+                    'frontend_url' => config('app.frontend_url') . '/verify-email?token=' . $verification->token
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Failed to send verification email: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+                'request_data' => $request->all()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to send verification email: ' . ($e->getMessage()),
+                'error' => env('APP_DEBUG') ? $e->getMessage() : null
+            ], 500);
+        }
+    }
+
+    /**
+     * NEW FUNCTION: Send verification email for logged-in user
+     */
+    public function sendVerificationForCurrentUser(Request $request)
+    {
+        Log::info('=== SEND VERIFICATION FOR CURRENT USER ===');
+
+        try {
+            $user = $request->user();
+            
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'User not authenticated'
+                ], 401);
+            }
+
+            if ($user->hasVerifiedEmail()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Email already verified'
+                ], 400);
+            }
+
+            $method = $request->input('method', 'both');
+            $verification = $this->emailVerificationService->sendVerification($user, $method);
+
+            Log::info('Verification email sent for current user', [
+                'user_id' => $user->id,
+                'email' => $user->email,
+                'verification_id' => $verification->id
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Verification email sent successfully',
+                'verification' => [
+                    'id' => $verification->id,
+                    'method' => $verification->method,
+                    'expires_at' => $verification->expires_at->format('Y-m-d H:i:s')
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Failed to send verification for current user: ' . $e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to send verification email'
+            ], 500);
+        }
+    }
+
+    /**
      * Verify email by token
      */
     public function verifyByToken(Request $request)
@@ -83,7 +225,6 @@ class VerifyEmailController extends Controller
      */
     public function verifyByCode(Request $request)
     {
-
         try {
             $validator = Validator::make($request->all(), [
                 'user_id' => 'required|integer',

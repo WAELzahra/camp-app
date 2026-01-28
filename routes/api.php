@@ -30,7 +30,7 @@ use App\Http\Controllers\Notification\NotificationController;
 use App\Http\Controllers\Auth\EmailVerificationPromptController;
 use App\Http\Controllers\Auth\EmailVerificationNotificationController;
 use App\Http\Controllers\Auth\PasswordController;
-use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\profile\ProfileController;
 use App\Http\Controllers\message_chat\PrivateChatController;
 use App\Http\Controllers\GroupChat\ChatGroupController;
 use App\Http\Controllers\Auth\SocialAuthController;
@@ -65,6 +65,8 @@ Route::prefix('v1')->group(function () {
 // Route::get('/auth/facebook', [SocialAuthController::class, 'redirectToFacebook'])->name('facebook.redirect');
 // Route::get('/auth/facebook/callback', [SocialAuthController::class, 'handleFacebookCallback']);
 
+Route::post('/send-verification', [VerifyEmailController::class, 'sendVerification']);
+Route::post('/send-verification-current', [VerifyEmailController::class, 'sendVerificationForCurrentUser'])->middleware('auth:sanctum');
 Route::post('/verify-by-token', [VerifyEmailController::class, 'verifyByToken']);
 Route::post('/verify-by-code', [VerifyEmailController::class, 'verifyByCode']);
 Route::post('/resend-verification', [VerifyEmailController::class, 'resendVerification']);
@@ -75,8 +77,9 @@ Route::get('/verification-status/{id}', [VerifyEmailController::class, 'verifica
 // Authentification
 Route::post('/register', [RegisteredUserController::class, 'store']);
 Route::post('/login', [AuthenticatedSessionController::class, 'store']);
-Route::post('/forgot-password', [PasswordResetLinkController::class, 'store']);
-Route::post('/reset-password', [NewPasswordController::class, 'store']);
+Route::post('/forgot-password', [NewPasswordController::class, 'sendResetEmail']);
+Route::post('/reset-password', [NewPasswordController::class, 'resetPassword']);
+Route::post('/verify-password', [NewPasswordController::class, 'verifyResetCode']);
 
 // Annonces
 Route::get('/annonces/index/{id}', [AnnonceController::class, 'index']);
@@ -200,11 +203,15 @@ Route::middleware('auth:sanctum')->group(function () {
         return response()->json(['message' => 'Email verified successfully']);
     })->name('verification.verify');
     
-    // Profil
+    // Profile routes
     Route::get('/profile', [ProfileController::class, 'show']);
     Route::put('/profile', [ProfileController::class, 'update']);
     Route::post('/profile/avatar', [ProfileController::class, 'updateAvatar']);
     Route::post('/profile/photos', [ProfileController::class, 'storeOrUpdateProfilePhotos']);
+    
+    // Additional profile routes
+    Route::get('/profile/{userId}', [ProfileController::class, 'showById']);
+    Route::get('/profile/{type}/{userId}', [ProfileController::class, 'getProfileDetails']);
     
     // -------------------- RÉSERVATIONS PASSÉES --------------------
     Route::get('/reservations/passees', [ReservationEventController::class, 'mesReservationsPassees']);

@@ -10,7 +10,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rules;
 use Illuminate\Support\Facades\DB;
-
+use Illuminate\Support\Facades\Storage; 
+use App\Models\Album;
 class RegisteredUserController extends Controller
 {
     /**
@@ -58,6 +59,8 @@ class RegisteredUserController extends Controller
             'cin_fournisseur' => ['nullable', 'string', 'max:50'],
             'interval_prix' => ['nullable', 'string', 'max:100'],
             'product_category' => ['nullable', 'string', 'max:255'],
+            'legal_document_file' => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'], // 5MB max
+            'center_images.*' => ['nullable', 'image', 'mimes:jpg,jpeg,png,gif', 'max:2048'], // 2MB per image
         ]);
 
         if (strtolower($validated['role']) === 'admin') {
@@ -119,8 +122,16 @@ class RegisteredUserController extends Controller
                     break;
 
                 case 'centre':
+                    $legalDocumentPath = null;
+                    if ($request->hasFile('legal_document_file')) {
+                        $legalDocument = $request->file('legal_document_file');
+                        $filename = 'legal_' . time() . '_' . $legalDocument->getClientOriginalName();
+                        $path = $legalDocument->storeAs('uploads/legal_documents', $filename, 'public');
+                        $legalDocumentPath = Storage::url($path);
+                    }
+                    
                     // Créer le profil centre
-                    $centreId = DB::table('profile_centres')->insertGetId([
+                     $centreId = DB::table('profile_centres')->insertGetId([
                         'profile_id' => $profileId,
                         'name' => $request->input('name') ?? null,
                         'adresse' => $request->input('adresse') ?? null,
@@ -132,14 +143,8 @@ class RegisteredUserController extends Controller
                         'category' => $request->input('category') ?? null,
                         'services_offerts' => $request->input('services_offerts') ?? null,
                         'additional_services_description' => $request->input('additional_services_description') ?? null,
-                        'legal_document' => null, // This is the corrected field name
+                        'legal_document' => $legalDocumentPath, // Store the file path/URL
                         'disponibilite' => true,
-                        'ad_id' => null,
-                        'photo_album_id' => null, 
-                        // These fields can be added later if needed:
-                        // 'latitude' => $request->input('latitude') ?? null,
-                        // 'longitude' => $request->input('longitude') ?? null,
-                        // 'established_date' => $request->input('established_date') ?? null,
                         'created_at' => now(),
                         'updated_at' => now(),
                     ]);
@@ -339,52 +344,62 @@ class RegisteredUserController extends Controller
     }
 
     /**
-     * Gère les images du centre - UPDATED FOR ALBUMS TABLE
+     * Gère les images du centre - UPDATED FOR YOUR ACTUAL TABLE STRUCTURE
      */
     private function handleCenterImages(Request $request, $centreId, $userId)
     {
-        $centerData = $request->input('center_data');
-        
-        // If center_data is a string, decode it
-        if (is_string($centerData)) {
-            $centerData = json_decode($centerData, true);
-        }
-        
-        if (is_array($centerData) && isset($centerData['images']) && is_array($centerData['images'])) {
-            $images = $centerData['images'];
+        // First, check if we have uploaded files
+        if ($request->hasFile('center_images')) {
+            $centerImages = $request->file('center_images');
             
-            if (count($images) > 0) {
-                // Create an album for the center
-                $albumId = DB::table('albums')->insertGetId([
-                    'user_id' => $userId,
-                    'name' => 'Center Images',
-                    'description' => 'Images for camping center',
-                    'type' => 'center',
-                    'cover_image' => $images[0], // First image as cover
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
+            if (count($centerImages) > 0) {
+                // Create directory if it doesn't exist
+                $directory = 'uploads/centers/' . $centreId . '/images';
+                \Storage::makeDirectory($directory);
                 
-                // Update the center with album ID
-                DB::table('profile_centres')
-                    ->where('id', $centreId)
-                    ->update(['id_album_photo' => $albumId]);
                 
-                // Insert images into album_images table (assuming you have one)
-                // Or store image URLs in a separate table
-                foreach ($images as $index => $imageUrl) {
-                    // Assuming you have an album_images table
-                    if (DB::getSchemaBuilder()->hasTable('album_images')) {
-                        DB::table('album_images')->insert([
-                            'album_id' => $albumId,
+                // Upload and save each image
+                foreach ($centerImages as $index => $image) {
+                    // Generate unique filename
+                    $filename = 'center_' . $centreId . '_' . time() . '_' . $index . '.' . $image->getClientOriginalExtension();
+                    
+                    // Store the image
+                    $path = $image->storeAs($directory, $filename, 'public');
+                    
+                    // Full URL for the image
+                    $imageUrl = \Storage::url($path);
+                    
+                    // Determine if this is the cover image (first image)
+                    $isCover = ($index === 0);
+                    
+                    // Store each image in the photos table with is_cover flag
+                    $photoId = DB::table('photos')->insertGetId([
+                        'path_to_img' => $imageUrl,
+                        'user_id' => $userId,
+                        'is_cover' => $isCover,
+                        'order' => $index,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                    
+
+                    
+                    // Also store in profile_center_images if that table exists
+                    if (DB::getSchemaBuilder()->hasTable('profile_center_images')) {
+                        DB::table('profile_center_images')->insert([
+                            'profile_center_id' => $centreId,
                             'image_url' => $imageUrl,
+                            'is_primary' => $isCover,
                             'order' => $index,
                             'created_at' => now(),
                             'updated_at' => now(),
                         ]);
                     }
                 }
+                
             }
         }
+        
+        return null;
     }
 }

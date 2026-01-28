@@ -15,8 +15,6 @@ return new class extends Migration {
             $table->text('services_offerts')->nullable();
             $table->string('document_legal')->nullable();
             $table->boolean('disponibilite')->default(true);
-            $table->unsignedBigInteger('id_annonce')->nullable();
-            $table->unsignedBigInteger('id_album_photo')->nullable();
             $table->timestamps();
         });
     }

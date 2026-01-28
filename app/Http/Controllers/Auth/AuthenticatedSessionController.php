@@ -21,11 +21,6 @@ class AuthenticatedSessionController extends Controller
 
         $user = Auth::user();
 
-        if (!$user->is_active) {
-            Auth::logout();
-            return response()->json(['message' => 'Account inactive'], 403);
-        }
-
         return response()->json([
             'user' => $user
         ]);

@@ -19,30 +19,29 @@ class Profile extends Model
         'type',
     ];
 
-    public function user()
+
+    // In Profile model
+    public function profileGuide()
     {
-        return $this->belongsTo(User::class);
+        return $this->hasOne(ProfileGuide::class);
     }
 
-  public function profileGuide()
-{
-    return $this->hasOne(ProfileGuide::class);
-}
+    public function profileCentre()
+    {
+        return $this->hasOne(ProfileCentre::class);
+    }
 
-public function profileCentre()
-{
-    return $this->hasOne(ProfileCentre::class);
-}
+    public function profileGroupe()
+    {
+        return $this->hasOne(ProfileGroupe::class);
+    }
 
-public function profileGroupe()
-{
-    return $this->hasOne(ProfileGroupe::class);
-}
+    public function profileFournisseur()
+    {
+        return $this->hasOne(ProfileFournisseur::class);
+    }
 
-public function profileFournisseur()
-{
-    return $this->hasOne(ProfileFournisseur::class);
-}
+
 
  // Relation feedbacks reçus par ce profil (via user_id)
     public function feedbacks()

@@ -12,7 +12,6 @@ return new class extends Migration
             $table->id();
             $table->string('titre'); 
             $table->text('description')->nullable(); 
-            $table->string('cover_image')->nullable(); 
             $table->timestamps();
         });
     }
