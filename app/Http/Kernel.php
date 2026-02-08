@@ -78,6 +78,8 @@ class Kernel extends HttpKernel
         'campeur' => \App\Http\Middleware\UserIsCampeur::class,
         'centre' => \App\Http\Middleware\UserIsCentre::class,
         'fournisseur' => \App\Http\Middleware\UserIsFournisseur::class,
+        'campeur_or_centre' => \App\Http\Middleware\CheckCampeurOrCentreRole::class,
+
 
     ];
 }

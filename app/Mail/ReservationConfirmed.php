@@ -13,7 +13,7 @@ class ReservationConfirmed extends Mailable
 
     public $reservation;
 
-    public function __construct(Reservations_events $reservation)
+    public function __construct($reservation)
     {
         $this->reservation = $reservation;
     }

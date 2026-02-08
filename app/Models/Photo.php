@@ -5,7 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-class Photos extends Model // Changed from "Photos" to "Photo" (singular)
+class Photo extends Model
 {
     use HasFactory;
 
@@ -18,8 +18,8 @@ class Photos extends Model // Changed from "Photos" to "Photo" (singular)
         'materielle_id',
         'event_id',
         'album_id',
-        'is_cover', // Added
-        'order'     // Added
+        'is_cover', 
+        'order'     
     ];
 
     protected $casts = [

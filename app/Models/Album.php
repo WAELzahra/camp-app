@@ -23,6 +23,8 @@ class Album extends Model
         'path_to_img',
         'user_id',
         'annonce_id',
+        'titre',
+        'description', 
         'materielle_id',
         'event_id',
         'album_id'
