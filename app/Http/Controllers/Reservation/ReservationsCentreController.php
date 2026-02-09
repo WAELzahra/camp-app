@@ -248,10 +248,15 @@ class ReservationsCentreController extends Controller
             'nbr_place' => 'sometimes|integer|min:1',
             'note' => 'nullable|string',
             'service_items' => 'sometimes|array',
-            'service_items.*.id' => 'sometimes|exists:reservation_service_items,id',
-            'service_items.*.quantity' => 'sometimes|integer|min:1',
-            'service_items.*.unit_price' => 'sometimes|numeric|min:0',
+            'service_items.*.id' => 'nullable', 
+            'service_items.*.service_id' => 'required|exists:profile_center_services,id', 
+            'service_items.*.service_name' => 'sometimes|string',
+            'service_items.*.quantity' => 'required|integer|min:1',
+            'service_items.*.unit_price' => 'required|numeric|min:0',
+            'service_items.*.unit' => 'sometimes|string',
             'service_items.*.notes' => 'nullable|string',
+            'service_items.*.is_new' => 'sometimes|boolean', 
+            'service_items.*.is_removed' => 'sometimes|boolean',
         ]);
 
         DB::beginTransaction();
@@ -271,37 +276,105 @@ class ReservationsCentreController extends Controller
                 $reservation->note = $request->note;
             }
 
+            $totalPrice = 0;
+            $activeServiceCount = 0;
+            
             // Update service items if provided
             if ($request->has('service_items')) {
-                $totalPrice = 0;
-                
                 foreach ($request->service_items as $itemData) {
-                    if (isset($itemData['id'])) {
-                        // Update existing service item
+                    // Handle removed items
+                    if (isset($itemData['is_removed']) && $itemData['is_removed'] === true) {
+                        if (isset($itemData['id']) && is_numeric($itemData['id'])) {
+                            ReservationServiceItem::where('id', $itemData['id'])
+                                ->where('reservation_id', $reservation->id)
+                                ->delete();
+                        }
+                        continue;
+                    }
+
+                    // Handle new items
+                    $isNewItem = isset($itemData['is_new']) && $itemData['is_new'] === true;
+                    $hasTempId = isset($itemData['id']) && str_starts_with($itemData['id'], 'new-');
+                    
+                    if ($isNewItem || $hasTempId || !isset($itemData['id'])) {
+                        // Create new service item
+                        $newServiceItem = ReservationServiceItem::create([
+                            'reservation_id' => $reservation->id,
+                            'profile_center_service_id' => $itemData['service_id'],
+                            'service_name' => $itemData['service_name'] ?? 'Service',
+                            'service_description' => $itemData['service_description'] ?? null,
+                            'unit_price' => $itemData['unit_price'] ?? 0,
+                            'unit' => $itemData['unit'] ?? 'item',
+                            'quantity' => $itemData['quantity'] ?? 1,
+                            'notes' => $itemData['notes'] ?? null,
+                            'subtotal' => ($itemData['unit_price'] ?? 0) * ($itemData['quantity'] ?? 1),
+                            'status' => 'pending',
+                            'service_date_debut' => $reservation->date_debut,
+                            'service_date_fin' => $reservation->date_fin
+                        ]);
+                        
+                        $totalPrice += $newServiceItem->subtotal;
+                        $activeServiceCount++;
+                        continue;
+                    }
+
+                    // Handle existing items
+                    if (isset($itemData['id']) && is_numeric($itemData['id'])) {
                         $serviceItem = ReservationServiceItem::where('id', $itemData['id'])
                             ->where('reservation_id', $reservation->id)
-                            ->firstOrFail();
-                            
-                        if (isset($itemData['quantity'])) {
+                            ->first();
+
+                        if (!$serviceItem) {
+                            continue;
+                        }
+
+                        // Track changes
+                        $hasChanges = false;
+                        if (isset($itemData['quantity']) && $itemData['quantity'] != $serviceItem->quantity) {
                             $serviceItem->quantity = $itemData['quantity'];
-                        }
-                        if (isset($itemData['unit_price'])) {
-                            $serviceItem->unit_price = $itemData['unit_price'];
-                        }
-                        if (isset($itemData['notes'])) {
-                            $serviceItem->notes = $itemData['notes'];
+                            $hasChanges = true;
                         }
                         
-                        // Recalculate subtotal
-                        $serviceItem->subtotal = $serviceItem->unit_price * $serviceItem->quantity;
-                        $serviceItem->save();
+                        if (isset($itemData['unit_price']) && $itemData['unit_price'] != $serviceItem->unit_price) {
+                            $serviceItem->unit_price = $itemData['unit_price'];
+                            $hasChanges = true;
+                        }
+                        
+                        if (isset($itemData['notes']) && $itemData['notes'] != $serviceItem->notes) {
+                            $serviceItem->notes = $itemData['notes'];
+                            $hasChanges = true;
+                        }
+
+                        if ($hasChanges) {
+                            // Recalculate subtotal
+                            $serviceItem->subtotal = $serviceItem->unit_price * $serviceItem->quantity;
+                            $serviceItem->save();
+                        }
                         
                         $totalPrice += $serviceItem->subtotal;
+                        $activeServiceCount++;
                     }
                 }
                 
-                $reservation->total_price = $totalPrice;
+                // Update service_count field
+                $reservation->service_count = $activeServiceCount;
+                
+                // Update total price if we have calculated it
+                if ($totalPrice > 0) {
+                    $reservation->total_price = $totalPrice;
+                }
             }
+
+            // Update reservation status ONLY if it was previously approved and being modified by camper
+            // If status is "pending" (under review), keep it as "pending"
+            // If status is "approved" and camper modifies it, change to "modified"
+            if ($reservation->status === 'approved' && $reservation->user_id == $userId) {
+                $reservation->status = 'modified';
+                $reservation->last_modified_by = 'user';
+                $reservation->last_modified_at = now();
+            }
+            // If status is "pending" and camper modifies it, keep it as "pending" (under review)
+            // No status change needed
 
             $reservation->save();
             DB::commit();
@@ -318,7 +391,6 @@ class ReservationsCentreController extends Controller
             ], 500);
         }
     }
-
     /**
      * Cancel a reservation (change status to 'canceled').
      */

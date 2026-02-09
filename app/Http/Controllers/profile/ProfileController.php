@@ -1090,19 +1090,20 @@ class ProfileController extends Controller
     public function getCenterServices($centerId)
     {
         try {
-            $user = Auth::user();
-            $center = ProfileCentre::findOrFail($centerId);
-
-            // Verify ownership
-            if ($center->profile->user_id !== $user->id) {
+            // Check if center exists (no authentication required)
+            $center = ProfileCentre::find($centerId);
+            
+            if (!$center) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Unauthorized access'
-                ], 403);
+                    'message' => 'Center not found'
+                ], 404);
             }
 
+            // Only get available services for public access
             $services = ProfileCenterService::with('serviceCategory')
                 ->where('profile_center_id', $centerId)
+                ->where('is_available', true) // Only return available services for public
                 ->orderBy('is_standard', 'desc')
                 ->orderBy('created_at', 'asc')
                 ->get();
@@ -1121,7 +1122,7 @@ class ProfileController extends Controller
                         'is_available' => (bool) $service->is_available,
                         'min_quantity' => $service->min_quantity,
                         'max_quantity' => $service->max_quantity,
-                        'is_custom' => true, // Flag to identify custom services
+                        'is_custom' => true,
                     ];
                 }
                 
@@ -1129,8 +1130,8 @@ class ProfileController extends Controller
                 return [
                     'id' => $service->id,
                     'service_category_id' => $service->service_category_id,
-                    'name' => $service->serviceCategory->name,
-                    'description' => $service->description ?? $service->serviceCategory->description,
+                    'name' => $service->serviceCategory ? $service->serviceCategory->name : 'Service',
+                    'description' => $service->description ?? ($service->serviceCategory ? $service->serviceCategory->description : ''),
                     'price' => (float) $service->price,
                     'unit' => $service->unit,
                     'is_standard' => (bool) $service->is_standard,
