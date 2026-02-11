@@ -355,6 +355,9 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::get('/{id}', [ReservationsCentreController::class, 'show']);
             Route::get('/{id}/invoice', [ReservationsCentreController::class, 'downloadInvoice']);
             Route::get('/{id}/user-history', [ReservationsCentreController::class, 'getUserReservationHistory']);
+            Route::patch('/centre/cancel/{id}', [ReservationsCentreController::class, 'destroy']);
+            Route::patch('/centre/approve-modified/{id}', [ReservationsCentreController::class, 'approveModified']);
+
         });
         
         // Routes for campers only

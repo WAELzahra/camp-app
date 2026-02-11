@@ -1,7 +1,9 @@
 <?php
 
 return [
-
+    'cancellation_fee_percent' => env('CANCELLATION_FEE_PERCENT', 15),
+    'processing_fee' => env('PROCESSING_FEE_PERCENT', 2),
+    'late_cancellation_fee' => env('LATE_CANCELLATION_FEE_PERCENT', 50),
     /*
     |--------------------------------------------------------------------------
     | Application Name

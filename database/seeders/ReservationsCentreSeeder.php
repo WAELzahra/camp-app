@@ -12,9 +12,9 @@ class ReservationsCentreSeeder extends Seeder
     public function run()
     {
         $reservations = [
-            // Past reservation (completed)
+            // Past reservation (completed) - User ID 2 (Camper User)
             [
-                'user_id' => 2, // Camper user ID
+                'user_id' => 2, // Camper user ID (deadxshot660@gmail.com)
                 'centre_id' => 1, // Center ID
                 'date_debut' => Carbon::now()->subDays(10)->format('Y-m-d'),
                 'date_fin' => Carbon::now()->subDays(7)->format('Y-m-d'),
@@ -27,7 +27,7 @@ class ReservationsCentreSeeder extends Seeder
                 'created_at' => Carbon::now()->subDays(12),
                 'updated_at' => Carbon::now()->subDays(12),
             ],
-            // Current reservation (pending approval)
+            // Current reservation (pending approval) - User ID 2
             [
                 'user_id' => 2,
                 'centre_id' => 1,
@@ -42,7 +42,7 @@ class ReservationsCentreSeeder extends Seeder
                 'created_at' => Carbon::now()->subDays(2),
                 'updated_at' => Carbon::now()->subDays(2),
             ],
-            // Future reservation (approved)
+            // Future reservation (approved) - User ID 2
             [
                 'user_id' => 2,
                 'centre_id' => 1,
@@ -57,7 +57,7 @@ class ReservationsCentreSeeder extends Seeder
                 'created_at' => Carbon::now()->subDays(1),
                 'updated_at' => Carbon::now()->subDays(1),
             ],
-            // Rejected reservation
+            // Rejected reservation - User ID 2
             [
                 'user_id' => 2,
                 'centre_id' => 1,
@@ -72,7 +72,7 @@ class ReservationsCentreSeeder extends Seeder
                 'created_at' => Carbon::now()->subDays(3),
                 'updated_at' => Carbon::now()->subDays(2),
             ],
-            // Canceled reservation
+            // Canceled reservation - User ID 2
             [
                 'user_id' => 2,
                 'centre_id' => 1,
@@ -87,9 +87,9 @@ class ReservationsCentreSeeder extends Seeder
                 'created_at' => Carbon::now()->subDays(5),
                 'updated_at' => Carbon::now()->subDays(4),
             ],
-            // Another user's reservation to test center view
+            // Another user's reservation to test center view - User ID 3 (Sarah Camper)
             [
-                'user_id' => 3, // Different user
+                'user_id' => 3, // Sarah Camper (sarah@example.com)
                 'centre_id' => 1,
                 'date_debut' => Carbon::now()->addDays(3)->format('Y-m-d'),
                 'date_fin' => Carbon::now()->addDays(6)->format('Y-m-d'),
@@ -102,9 +102,9 @@ class ReservationsCentreSeeder extends Seeder
                 'created_at' => Carbon::now()->subDays(1),
                 'updated_at' => Carbon::now()->subDays(1),
             ],
-            // Approved reservation for another user
+            // Approved reservation for another user - User ID 4 (Mike Smith)
             [
-                'user_id' => 4, // Different user
+                'user_id' => 4, // Mike Smith (mike@example.com)
                 'centre_id' => 1,
                 'date_debut' => Carbon::now()->addDays(10)->format('Y-m-d'),
                 'date_fin' => Carbon::now()->addDays(12)->format('Y-m-d'),

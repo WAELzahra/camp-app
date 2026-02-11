@@ -10,6 +10,9 @@ use App\Models\User;
 use App\Models\Reservations_centre;
 use App\Models\ReservationServiceItem;
 use App\Models\ProfileCentre;
+use App\Mail\ReservationCanceledByCenter; 
+use App\Mail\UserReservationCancellation; 
+use App\Mail\CenterReservationCancellation;
 use App\Models\Profile;
 use App\Mail\ReservationCanceledByUser;
 use App\Mail\CentreReservationConfirmed;
@@ -394,6 +397,7 @@ class ReservationsCentreController extends Controller
     /**
      * Cancel a reservation (change status to 'canceled').
      */
+
     public function destroy(int $id)
     {
         $reservation = Reservations_centre::findOrFail($id);
@@ -406,7 +410,14 @@ class ReservationsCentreController extends Controller
             ], 403);
         }
 
+        // Determine who is canceling
+        $canceledBy = ($userId == $reservation->user_id) ? 'user' : 'center';
+        $cancellationDate = now();
+
+        // Update reservation with cancellation details
         $reservation->status = 'canceled';
+        $reservation->canceled_by = $canceledBy;
+        $reservation->canceled_at = $cancellationDate;
         $updated = $reservation->save();
 
         if (!$updated) {
@@ -415,18 +426,50 @@ class ReservationsCentreController extends Controller
 
         // Also cancel all service items
         ReservationServiceItem::where('reservation_id', $reservation->id)
-            ->update(['status' => 'canceled']);
+            ->update([
+                'status' => 'canceled',
+                'rejected_by' => $canceledBy,
+                'rejected_at' => $cancellationDate
+            ]);
 
-        // Send notification emails
-        $user = $reservation->user;
-        $center = $reservation->centre;
+        // Load relationships for email content
+        $reservation->load(['user', 'centre', 'serviceItems']);
 
-        if ($center && $user) {
-            Mail::to($center->email)->send(new ReservationCanceledByUser($center, $user));
+        // Send notification emails based on who canceled
+        if ($reservation->centre && $reservation->user) {
+            if ($canceledBy === 'user') {
+                // User canceled - notify center
+                Mail::to($reservation->centre->email)->send(new ReservationCanceledByUser(
+                    $reservation->centre, 
+                    $reservation->user,
+                    $reservation
+                ));
+                
+                // Also notify user about their own cancellation
+                Mail::to($reservation->user->email)->send(new \App\Mail\UserReservationCancellation(
+                    $reservation->user,
+                    $reservation
+                ));
+            } else {
+                // Center canceled - notify user
+                Mail::to($reservation->user->email)->send(new ReservationCanceledByCenter(
+                    $reservation->user,
+                    $reservation->centre,
+                    $reservation
+                ));
+                
+                // Also notify center about their own cancellation
+                Mail::to($reservation->centre->email)->send(new \App\Mail\CenterReservationCancellation(
+                    $reservation->centre,
+                    $reservation
+                ));
+            }
         }
 
         return response()->json([
             'message' => 'Reservation cancelled successfully.',
+            'canceled_by' => $canceledBy,
+            'canceled_at' => $cancellationDate->format('Y-m-d H:i:s'),
             'reservation' => $reservation
         ], 200);
     }
@@ -486,6 +529,32 @@ class ReservationsCentreController extends Controller
                 return response()->json(['message' => 'Unauthorized'], 403);
             }
 
+            // Update status
+            $reservation->status = 'approved';
+            $reservation->save();
+            
+            // Also approve all service items
+            ReservationServiceItem::where('reservation_id', $reservation->id)
+                ->update(['status' => 'approved']);
+
+            // Send email - SIMPLE like verification
+            if ($reservation->user && $reservation->user->email) {
+                // Use the SAME pattern as verification service
+                \Mail::to($reservation->user->email)->send(new \App\Mail\CentreReservationConfirmed($reservation));
+            }
+
+            return response()->json([
+                'message' => 'Reservation approved and email sent',
+                'reservation' => $reservation
+            ], 200);
+        }
+
+    // approve-modified
+    public function approveModified(int $id)
+        {
+            // Get reservation with relationships
+            $reservation = Reservations_centre::with(['user', 'serviceItems'])->findOrFail($id);
+            
             // Update status
             $reservation->status = 'approved';
             $reservation->save();

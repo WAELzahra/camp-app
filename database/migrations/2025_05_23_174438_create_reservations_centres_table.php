@@ -27,7 +27,9 @@ return new class extends Migration
             $table->enum('status', ['pending', 'approved', 'rejected', 'canceled'])->default('pending');
 
             $table->foreignId('payments_id')->nullable()->constrained()->onDelete('cascade');
-
+            $table->enum('canceled_by', ['user', 'center'])->nullable();
+            $table->timestamp('canceled_at')->nullable();
+            $table->text('cancellation_reason')->nullable();
             // Unique constraint on user_id, centre_id, and date_debut
             $table->unique(['user_id', 'centre_id', 'date_debut'], 'unique_user_centre_date');
 
