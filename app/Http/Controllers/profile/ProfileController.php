@@ -284,53 +284,80 @@ class ProfileController extends Controller
                     }
                     break;
 
-                case 'centre':
-                    $centreData = $request->only([
-                        'name',
-                        'adresse',  // Goes to profile_centres table
-                        'contact_email',
-                        'contact_phone',
-                        'manager_name',
-                        'capacite',
-                        'price_per_night',
-                        'category',
-                        'services_offerts',
-                        'additional_services_description',
-                        'legal_document',
-                        'disponibilite',
-                    ]);
-                    
-                    // Handle numeric conversions
-                    if (isset($centreData['capacite'])) {
-                        $centreData['capacite'] = (int) $centreData['capacite'];
-                    }
-                    if (isset($centreData['price_per_night'])) {
-                        $centreData['price_per_night'] = (float) $centreData['price_per_night'];
-                    }
-                    if (isset($centreData['disponibilite'])) {
-                        $centreData['disponibilite'] = (bool) $centreData['disponibilite'] ? 1 : 0;
-                    }
-                    
-                    // Handle latitude/longitude
-                    if ($request->has('latitude')) {
-                        $centreData['latitude'] = (float) $request->latitude;
-                    }
-                    if ($request->has('longitude')) {
-                        $centreData['longitude'] = (float) $request->longitude;
-                    }
-                    
-                    // Handle established_date
-                    if ($request->has('established_date')) {
-                        $centreData['established_date'] = $request->established_date;
-                    }
-                    
-                    if ($profile->profileCentre) {
-                        $profile->profileCentre->update($centreData);
-                    } else {
-                        $centreData['profile_id'] = $profile->id;
-                        ProfileCentre::create($centreData);
-                    }
-                    break;
+                    case 'centre':
+                        $centreData = $request->only([
+                            'name',
+                            'adresse',
+                            'contact_email',
+                            'contact_phone',
+                            'manager_name',
+                            'capacite',
+                            'price_per_night',
+                            'category',
+                            'services_offerts',
+                            'additional_services_description',
+                            'disponibilite',
+                        ]);
+                        
+                        // Handle numeric conversions
+                        if (isset($centreData['capacite'])) {
+                            $centreData['capacite'] = (int) $centreData['capacite'];
+                        }
+                        if (isset($centreData['price_per_night'])) {
+                            $centreData['price_per_night'] = (float) $centreData['price_per_night'];
+                        }
+                        if (isset($centreData['disponibilite'])) {
+                            $centreData['disponibilite'] = (bool) $centreData['disponibilite'] ? 1 : 0;
+                        }
+                        
+                        // Handle latitude/longitude
+                        if ($request->has('latitude')) {
+                            $centreData['latitude'] = (float) $request->latitude;
+                        }
+                        if ($request->has('longitude')) {
+                            $centreData['longitude'] = (float) $request->longitude;
+                        }
+                        
+                        // Handle established_date
+                        if ($request->has('established_date')) {
+                            $centreData['established_date'] = $request->established_date;
+                        }
+                        
+                        // Handle document deletion
+                        if ($request->has('delete_legal_document') && $request->delete_legal_document == '1') {
+                            $centre = $profile->profileCentre;
+                            if ($centre && $centre->legal_document) {
+                                Storage::disk('public')->delete($centre->legal_document);
+                                $centreData['legal_document'] = null;
+                            }
+                        }
+                        
+                        // Handle new document upload
+                        if ($request->hasFile('legal_document_file')) {
+                            $file = $request->file('legal_document_file');
+                            
+                            // Validate file
+                            $request->validate([
+                                'legal_document_file' => 'image|mimes:jpeg,png,jpg,gif,pdf|max:5120',
+                            ]);
+                            
+                            // Generate unique filename
+                            $filename = 'legal_doc_' . $user->id . '_' . time() . '.' . $file->getClientOriginalExtension();
+                            
+                            // Store the file
+                            $path = $file->storeAs('legal_documents', $filename, 'public');
+                            
+                            // Save the path to the database
+                            $centreData['legal_document'] = $path;
+                        }
+                        
+                        if ($profile->profileCentre) {
+                            $profile->profileCentre->update($centreData);
+                        } else {
+                            $centreData['profile_id'] = $profile->id;
+                            ProfileCentre::create($centreData);
+                        }
+                        break;
 
                 case 'groupe':
                     $groupeData = $request->only([
@@ -859,47 +886,77 @@ class ProfileController extends Controller
     }
 
     /**
-     * Get profile by user ID (for admin or specific needs)
+     * Get user profile by ID (public profile)
      */
-    public function showById($userId)
+    public function showById($id)
     {
-        $user = User::findOrFail($userId);
-        $profile = $user->profile;
-
-        if (!$profile) {
-            return response()->json(['message' => 'Profile not found'], 404);
-        }
-
-        $data = [
-            'user' => [
-                'id' => $user->id,
-                'first_name' => $user->first_name,
-                'last_name' => $user->last_name,
-                'email' => $user->email,
-                'phone_number' => $user->phone_number,
-                'ville' => $user->ville,
-                'role_id' => $user->role_id,
-            ],
-            'profile' => $profile,
-            'details' => null,
+        $user = User::findOrFail($id);
+        
+        // Don't return sensitive information for other users
+        $userData = [
+            'id' => $user->id,
+            'first_name' => $user->first_name,
+            'last_name' => $user->last_name,
+            'email' => $user->email, // Maybe hide email for non-authenticated users?
+            'phone_number' => $user->phone_number,
+            'ville' => $user->ville,
+            'avatar' => $user->avatar,
+            'role_id' => $user->role_id,
         ];
+        
+        // Only include if public profile
+        if ($user->profile) {
+            $profile = $user->profile;
+            
+            $data = [
+                'user' => $userData,
+                'profile' => $profile,
+                'details' => null,
+            ];
 
-        switch ($profile->type) {
-            case 'guide':
-                $data['details'] = $profile->profileGuide;
-                break;
-            case 'centre':
-                $data['details'] = $profile->profileCentre;
-                break;
-            case 'groupe':
-                $data['details'] = $profile->profileGroupe;
-                break;
-            case 'fournisseur':
-                $data['details'] = $profile->profileFournisseur;
-                break;
+            switch ($profile->type) {
+                case 'guide':
+                    $data['details'] = $profile->profileGuide;
+                    break;
+                case 'centre':
+                    $data['details'] = $profile->profileCentre;
+                    // Remove sensitive business info for public view?
+                    break;
+                case 'groupe':
+                    $data['details'] = $profile->profileGroupe;
+                    // Include public feedbacks
+                    $feedbacks = \App\Models\Feedbacks::with('user')
+                        ->where('target_id', $user->id)
+                        ->where('type', 'groupe')
+                        ->where('status', 'approved')
+                        ->latest()
+                        ->take(5)
+                        ->get();
+
+                    $average = \App\Models\Feedbacks::where('target_id', $user->id)
+                        ->where('type', 'groupe')
+                        ->where('status', 'approved')
+                        ->avg('note');
+
+                    $data['feedback_summary'] = [
+                        'average_note' => round($average, 2),
+                        'feedback_count' => \App\Models\Feedbacks::where('target_id', $user->id)
+                            ->where('type', 'groupe')
+                            ->where('status', 'approved')
+                            ->count(),
+                        'latest_feedbacks' => $feedbacks,
+                    ];
+                    break;
+                case 'fournisseur':
+                    $data['details'] = $profile->profileFournisseur;
+                    break;
+            }
+
+            return response()->json($data);
         }
 
-        return response()->json($data);
+        // If no profile, just return basic user info
+        return response()->json(['user' => $userData]);
     }
     /**
      * Add custom service

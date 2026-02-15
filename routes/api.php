@@ -74,7 +74,10 @@ Route::post('/verify-by-token', [VerifyEmailController::class, 'verifyByToken'])
 Route::post('/verify-by-code', [VerifyEmailController::class, 'verifyByCode']);
 Route::post('/resend-verification', [VerifyEmailController::class, 'resendVerification']);
 Route::get('/verification-status/{id}', [VerifyEmailController::class, 'verificationStatus']);
-
+// Public profile lookup - separate route group
+Route::prefix('profile')->group(function () {
+    Route::get('/public/{id}', [ProfileController::class, 'showById']);
+});
 // Authentication
 Route::post('/register', [RegisteredUserController::class, 'store']);
 Route::post('/login', [AuthenticatedSessionController::class, 'store']);
@@ -119,9 +122,7 @@ Route::prefix('comments')->group(function () {
 Route::get('/boutique', [BoutiqueController::class, 'index']);
 Route::get('/boutique/show/{id}', [BoutiqueController::class, 'show']);
 
-// Public Feedback
-Route::get('/feedback/index', [FeedbackController::class, 'index']);
-Route::get('/feedback/show/{id}', [FeedbackController::class, 'show']);
+
 
 // Public Equipment
 Route::get('/materielle/compare/{id1}-{id2}', [MaterielleController::class, 'compare']);
@@ -190,6 +191,29 @@ Route::prefix('v1')->group(function () {
 // Payment Callback (Public)
 Route::get('/flouci/callback', [PaymentController::class, 'callback']);
 
+
+// Feedback routes - Place this after your public routes
+Route::prefix('feedbacks')->group(function () {
+    // Public/authenticated routes
+    Route::get('/', [FeedbackController::class, 'index'])->middleware('auth:sanctum');
+    Route::get('/statistics', [FeedbackController::class, 'statistics']);
+    Route::get('/target/{type}/{targetId}', [FeedbackController::class, 'getTargetFeedbacks']);
+    Route::get('/zone/{zoneId}', [FeedbackController::class, 'listZone']);
+    
+    // Authenticated routes
+    Route::middleware('auth:sanctum')->group(function () {
+        Route::post('/', [FeedbackController::class, 'store']);
+        Route::put('/{id}', [FeedbackController::class, 'update']);
+        Route::delete('/{id}', [FeedbackController::class, 'destroy']);
+        Route::post('/zone/{zoneId}', [FeedbackController::class, 'storeZone']);
+    });
+    
+    // Admin routes
+    Route::middleware(['auth:sanctum', 'admin'])->group(function () {
+        Route::post('/{id}/moderate', [FeedbackController::class, 'moderate']);
+    });
+});
+
 // ==================== ROUTES AUTHENTIFIÉES (REQUIRE SANCTUM AUTH) ====================
 
 Route::middleware('auth:sanctum')->group(function () {
@@ -250,7 +274,6 @@ Route::middleware('auth:sanctum')->group(function () {
         });
         
         // Profile lookup (should be last to avoid conflicts)
-        Route::get('/{userId}', [ProfileController::class, 'showById'])->where('userId', '[0-9]+');
         Route::get('/{type}/{userId}', [ProfileController::class, 'getProfileDetails'])
             ->where('type', 'guide|centre|groupe|fournisseur')
             ->where('userId', '[0-9]+');
@@ -287,11 +310,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/groupes/{groupe}/feedbacks', [GroupController::class, 'listForGroup']);
     
     // -------------------- FEEDBACKS --------------------
-    Route::post('/feedback/{type}/{targetId}', [FeedbackController::class, 'storeOrUpdateFeedback']);
-    Route::get('/feedback/{type}/{id}', [FeedbackController::class, 'getFeedbacks']);
-    Route::post('/zones/{id}/feedbacks', [FeedbackController::class, 'storeZone']);
-    Route::post('/guides/{id}/report', [FeedbackController::class, 'reportGuide']);
-    Route::get('/zone-feedbacks/{zoneId}', [FeedbackController::class, 'listZone']);
+    Route::post('/feedbacks/zone/{zoneId}', [FeedbackController::class, 'storeZone']);
     
     // -------------------- NOTIFICATIONS --------------------
     Route::post('/events/{event}/send-reminders', [NotificationController::class, 'sendRemindersForEvent']);
@@ -393,13 +412,12 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::patch('/materielle/destroy/{id}', [ReservationMaterielleController::class, 'destroy']);
             Route::get('/materielle/index_user', [ReservationMaterielleController::class, 'index_user']);
             
-            // Feedback
-            Route::post('/feedback/create', [FeedbackController::class, 'create']);
-            Route::post('/feedback/store', [FeedbackController::class, 'store']);
-            Route::post('/feedback/edit/{id}', [FeedbackController::class, 'edit']);
-            Route::patch('/feedback/update/{id}', [FeedbackController::class, 'update']);
-            Route::delete('/feedback/destroy/{id}', [FeedbackController::class, 'destroy']);
-            Route::get('/feedback/index_user', [FeedbackController::class, 'index_user']);
+            // // Feedback
+            // Route::post('/feedback/create', [FeedbackController::class, 'create']);
+            // Route::post('/feedback/store', [FeedbackController::class, 'store']);
+            // Route::post('/feedback/edit/{id}', [FeedbackController::class, 'edit']);
+            // Route::delete('/feedback/destroy/{id}', [FeedbackController::class, 'destroy']);
+            // Route::get('/feedback/index_user', [FeedbackController::class, 'index_user']);
         });
         
         // Routes for centers only
@@ -478,12 +496,11 @@ Route::middleware('auth:sanctum')->group(function () {
         });
         
         // Feedback Management
-        Route::prefix('feedbacks')->group(function () {
-            Route::get('/', [AdminFeedbackController::class, 'index']);
-            Route::get('/{id}', [AdminFeedbackController::class, 'show']);
-            Route::post('/{id}/approve', [AdminFeedbackController::class, 'approve']);
-            Route::post('/{id}/reject', [AdminFeedbackController::class, 'reject']);
-        });
+        // Route::prefix('feedbacks')->group(function () {
+        //     Route::post('/', [FeedbackController::class, 'store']);         
+        //     Route::put('/{id}', [FeedbackController::class, 'update']);
+        //     Route::delete('/{id}', [FeedbackController::class, 'destroy']);
+        // });
         
         // Announcement Management
         // Route::prefix('annonces')->group(function () {

@@ -44,7 +44,7 @@ class RegisteredUserController extends Controller
             'password' => ['required', 'confirmed', Rules\Password::defaults()],
             'role' => ['required', 'string', 'exists:roles,name'],
             
-            // Champs spécifiques aux rôles
+            // Make all these fields nullable instead of required
             'adresse' => ['nullable', 'string', 'max:500'],
             'capacite' => ['nullable', 'integer', 'min:1'],
             'services_offerts' => ['nullable', 'string'],
@@ -59,8 +59,8 @@ class RegisteredUserController extends Controller
             'cin_fournisseur' => ['nullable', 'string', 'max:50'],
             'interval_prix' => ['nullable', 'string', 'max:100'],
             'product_category' => ['nullable', 'string', 'max:255'],
-            'legal_document_file' => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'], // 5MB max
-            'center_images.*' => ['nullable', 'image', 'mimes:jpg,jpeg,png,gif', 'max:2048'], // 2MB per image
+            'legal_document_file' => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
+            'center_images.*' => ['nullable', 'image', 'mimes:jpg,jpeg,png,gif', 'max:2048'],
         ]);
 
         if (strtolower($validated['role']) === 'admin') {
@@ -105,88 +105,6 @@ class RegisteredUserController extends Controller
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
-
-            // Création profile enfant selon le type
-            switch ($role->name) {
-                case 'guide':
-                    DB::table('profile_guides')->insert([
-                        'profile_id' => $profileId,
-                        'adresse' => $request->input('adresse') ?? null,
-                        'cin' => $request->input('cin') ?? $request->input('cin_guide') ?? null,
-                        'experience' => $request->input('experience') ?? null,
-                        'tarif' => $request->input('tarif') ?? null,
-                        'zone_travail' => $request->input('zone_travail') ?? null,
-                        'created_at' => now(),
-                        'updated_at' => now(),
-                    ]);
-                    break;
-
-                case 'centre':
-                    $legalDocumentPath = null;
-                    if ($request->hasFile('legal_document_file')) {
-                        $legalDocument = $request->file('legal_document_file');
-                        $filename = 'legal_' . time() . '_' . $legalDocument->getClientOriginalName();
-                        $path = $legalDocument->storeAs('uploads/legal_documents', $filename, 'public');
-                        $legalDocumentPath = Storage::url($path);
-                    }
-                    
-                    // Créer le profil centre
-                     $centreId = DB::table('profile_centres')->insertGetId([
-                        'profile_id' => $profileId,
-                        'name' => $request->input('name') ?? null,
-                        'adresse' => $request->input('adresse') ?? null,
-                        'contact_email' => $request->input('contact_email') ?? null,
-                        'contact_phone' => $request->input('contact_phone') ?? null,
-                        'manager_name' => $request->input('manager_name') ?? null,
-                        'capacite' => $request->input('capacite') ?? null,
-                        'price_per_night' => $request->input('price_per_night') ?? null,
-                        'category' => $request->input('category') ?? null,
-                        'services_offerts' => $request->input('services_offerts') ?? null,
-                        'additional_services_description' => $request->input('additional_services_description') ?? null,
-                        'legal_document' => $legalDocumentPath, // Store the file path/URL
-                        'disponibilite' => true,
-                        'created_at' => now(),
-                        'updated_at' => now(),
-                    ]);
-
-                    // Gérer les services pour les centres
-                    $this->handleCenterServices($request, $centreId);
-                    
-                    // Gérer l'équipement pour les centres
-                    $this->handleCenterEquipment($request, $centreId);
-                    
-                    // Gérer les images pour les centres (using albums table)
-                    $this->handleCenterImages($request, $centreId, $user->id);
-                    break;
-
-                case 'groupe':
-                    DB::table('profile_groupes')->insert([
-                        'profile_id' => $profileId,
-                        'nom_groupe' => $request->input('nom_groupe') ?? null,
-                        'id_album_photo' => null,
-                        'id_annonce' => null,
-                        'cin_responsable' => $request->input('cin_responsable') ?? null,
-                        'created_at' => now(),
-                        'updated_at' => now(),
-                    ]);
-                    break;
-
-                case 'fournisseur':
-                    DB::table('profile_fournisseurs')->insert([
-                        'profile_id' => $profileId,
-                        'adresse' => $request->input('adresse') ?? null,
-                        'cin' => $request->input('cin_fournisseur') ?? null,
-                        'intervale_prix' => $request->input('interval_prix') ?? null,
-                        'product_category' => $request->input('product_category') ?? null,
-                        'created_at' => now(),
-                        'updated_at' => now(),
-                    ]);
-                    break;
-
-                case 'campeur':
-                    // Pas de table fille
-                    break;
-            }
 
             DB::commit();
 

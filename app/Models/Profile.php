@@ -17,8 +17,11 @@ class Profile extends Model
         'cover_image',
         'immatricule',
         'type',
+        'activities',
     ];
-
+    protected $casts = [
+        'activities' => 'array',
+    ];
 
     // In Profile model
     public function profileGuide()
