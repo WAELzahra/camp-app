@@ -16,6 +16,7 @@ return [
         'verify-by-code',
         'resend-verification',
         'verification-status/*',
+        'broadcasting/*'
     ],
 
     'allowed_methods' => ['*'],

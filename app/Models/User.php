@@ -125,5 +125,63 @@ public function favoris()
         return $this->hasOne(Album::class)->where('type', 'center');
     }
 
+    /**
+     * Get chat groups this user has created (as a group user)
+     */
+    public function createdChatGroups()
+    {
+        return $this->hasMany(ChatGroup::class, 'group_user_id');
+    }
+
+    /**
+     * Get chat groups this user is a member of
+     */
+    public function chatGroups()
+    {
+        return $this->belongsToMany(ChatGroup::class, 'chat_group_users')
+                    ->withPivot(['role', 'status', 'joined_at', 'left_at', 'muted_until', 'last_read_message_id'])
+                    ->withTimestamps();
+    }
+
+    /**
+     * Get chat group memberships
+     */
+    public function chatGroupMemberships()
+    {
+        return $this->hasMany(ChatGroupUser::class, 'user_id');
+    }
+
+    /**
+     * Get messages sent by this user
+     */
+    public function chatMessages()
+    {
+        return $this->hasMany(ChatGroupMessage::class, 'sender_id');
+    }
+
+    /**
+     * Get message reactions by this user
+     */
+    public function messageReactions()
+    {
+        return $this->hasMany(MessageReaction::class, 'user_id');
+    }
+
+    /**
+     * Get read receipts by this user
+     */
+    public function messageReadReceipts()
+    {
+        return $this->hasMany(MessageReadReceipt::class, 'user_id');
+    }
+
+    /**
+     * Get typing statuses by this user
+     */
+    public function typingStatuses()
+    {
+        return $this->hasMany(ChatGroupTypingStatus::class, 'user_id');
+    }
+
 }
 

@@ -65,9 +65,9 @@ use App\Http\Controllers\Admin\ServiceCategoryController;
 
 // API Services
 use App\Services\ZoneSearchService;
+use Illuminate\Support\Facades\Broadcast;
 
 // ==================== ROUTES PUBLIQUES (NO AUTH REQUIRED) ====================
-
 // Email Verification
 Route::post('/send-verification', [VerifyEmailController::class, 'sendVerification']);
 Route::post('/verify-by-token', [VerifyEmailController::class, 'verifyByToken']);
@@ -217,6 +217,42 @@ Route::prefix('feedbacks')->group(function () {
 // ==================== ROUTES AUTHENTIFIÉES (REQUIRE SANCTUM AUTH) ====================
 
 Route::middleware('auth:sanctum')->group(function () {
+Broadcast::routes(['middleware' => ['auth:sanctum']]);
+
+    // Group Chat Routes
+    Route::prefix('group-chat')->group(function () {
+        // Group management
+        Route::post('/', [ChatGroupController::class, 'store']);
+        Route::get('/my-groups', [ChatGroupController::class, 'myGroups']);
+        Route::get('/my-memberships', [ChatGroupController::class, 'myMemberships']);
+        Route::delete('/{id}', [ChatGroupController::class, 'destroy']);
+        Route::patch('/{id}/archive', [ChatGroupController::class, 'archive']);
+        Route::put('/{id}/rename', [ChatGroupController::class, 'renameGroup']);
+        
+        // Invitations
+        Route::get('/join/{token}', [ChatGroupController::class, 'joinByToken']);
+        
+        // Messages
+        Route::get('/{chat_group_id}/messages', [ChatGroupController::class, 'getMessages']);
+        Route::post('/{chat_group_id}/message', [ChatGroupController::class, 'sendMessage']);
+        Route::post('/messages/{message_id}/react', [ChatGroupController::class, 'reactToMessage']);
+        Route::delete('/messages/{message_id}/react/{reaction}', [ChatGroupController::class, 'removeReaction']);
+        Route::patch('/messages/{message_id}/pin', [ChatGroupController::class, 'pinMessage']);
+        
+        // Members
+        Route::get('/{chat_group_id}/members', [ChatGroupController::class, 'getMembers']);
+        Route::delete('/{chat_group_id}/leave', [ChatGroupController::class, 'leaveGroup']);
+        Route::delete('/{chat_group_id}/members/{user_id}', [ChatGroupController::class, 'removeMember']);
+        Route::post('/{chat_group_id}/members/{user_id}/mute', [ChatGroupController::class, 'muteMember']);
+        Route::post('/{chat_group_id}/members/{user_id}/unmute', [ChatGroupController::class, 'unmuteMember']);
+        
+        // Typing status
+        Route::post('/{chat_group_id}/typing', [ChatGroupController::class, 'typingStatus']);
+        Route::get('/{chat_group_id}/typing', [ChatGroupController::class, 'typingUsers']);
+        
+        // Statistics
+        Route::get('/{chat_group_id}/stats', [ChatGroupController::class, 'getStats']);
+    });
     Route::post('/annonces/{id}/like', [AnnonceController::class, 'like']);
     Route::post('/annonces/{id}/unlike', [AnnonceController::class, 'unlike']);
     Route::get('/annonces/{id}/check-like', [AnnonceController::class, 'checkLike']);
@@ -324,17 +360,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/chat/archive', [PrivateChatController::class, 'archiveConversation']);
     Route::get('/chat/conversations', [PrivateChatController::class, 'listConversations']);
     
-    // Group Chat
-    Route::get('/group-chat/my-groups', [ChatGroupController::class, 'myGroups']);
-    Route::get('/group-chat/join/{token}', [ChatGroupController::class, 'joinByToken']);
-    Route::prefix('group-chat')->group(function () {
-        Route::post('/{chat_group_id}/message', [ChatGroupController::class, 'sendMessage']);
-        Route::get('/{chat_group_id}/messages', [ChatGroupController::class, 'getMessages']);
-        Route::get('/{chat_group_id}/members', [ChatGroupController::class, 'getMembers']);
-        Route::delete('/{chat_group_id}/leave', [ChatGroupController::class, 'leaveGroup']);
-        Route::post('/{chat_group_id}/typing', [ChatGroupController::class, 'typingStatus']);
-        Route::get('/{chat_group_id}/typing', [ChatGroupController::class, 'typingUsers']);
-    });
+
     
     // -------------------- CAMPING ZONES --------------------
     Route::prefix('zones')->group(function () {
@@ -558,14 +584,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/zones/import-geojson', [CampingZoneController::class, 'importGeoJson']);
         });
         
-        // Group Chat Management
-        Route::prefix('group-chat')->group(function () {
-            Route::post('/create', [ChatGroupController::class, 'store']);
-            Route::delete('/{id}', [ChatGroupController::class, 'destroy']);
-            Route::put('/{chat_group_id}/rename', [ChatGroupController::class, 'renameGroup']);
-            Route::post('/{chat_group_id}/archive', [ChatGroupController::class, 'archive']);
-            Route::delete('/{chat_group_id}/members/{user_id}', [ChatGroupController::class, 'removeMember']);
-        });
+
         
         // Service Categories Management
         Route::resource('service-categories', ServiceCategoryController::class);
