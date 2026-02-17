@@ -7,7 +7,14 @@ use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use Illuminate\Support\Facades\Mail;
 
 
-
+Route::get('/debug-auth', function () {
+    return response()->json([
+        'authenticated' => auth()->check(),
+        'user' => auth()->user()?->id,
+        'session_id' => session()->getId(),
+        'guard' => 'web',
+    ]);
+});
 
 // routes/web.php (for center owners)
 Route::middleware(['auth'])->prefix('center')->name('center.')->group(function () {

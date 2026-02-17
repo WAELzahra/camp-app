@@ -66,6 +66,7 @@ use App\Http\Controllers\Admin\ServiceCategoryController;
 // API Services
 use App\Services\ZoneSearchService;
 use Illuminate\Support\Facades\Broadcast;
+// Broadcast::routes(['middleware' => ['auth:sanctum']]);
 
 // ==================== ROUTES PUBLIQUES (NO AUTH REQUIRED) ====================
 // Email Verification
@@ -217,7 +218,6 @@ Route::prefix('feedbacks')->group(function () {
 // ==================== ROUTES AUTHENTIFIÉES (REQUIRE SANCTUM AUTH) ====================
 
 Route::middleware('auth:sanctum')->group(function () {
-Broadcast::routes(['middleware' => ['auth:sanctum']]);
 
     // Group Chat Routes
     Route::prefix('group-chat')->group(function () {

@@ -341,68 +341,102 @@ class ChatGroupController extends Controller
      */
     public function reactToMessage(Request $request, $message_id)
     {
-        $user = Auth::user();
-
-        $request->validate([
-            'reaction' => 'required|string|max:50|in:👍,❤️,😂,😮,😢,😡,🎉,👏,🔥,✅',
-        ]);
-
-        $message = ChatGroupMessage::findOrFail($message_id);
-
-        // Check if user is member
-        $isMember = ChatGroupUser::where('chat_group_id', $message->chat_group_id)
-            ->where('user_id', $user->id)
-            ->where('status', 'active')
-            ->exists();
-
-        if (!$isMember) {
-            return response()->json(['error' => 'Not a member'], 403);
-        }
-
-        $existingReaction = MessageReaction::where('message_id', $message_id)
-            ->where('user_id', $user->id)
-            ->where('reaction', $request->reaction)
-            ->first();
-
-        $action = $existingReaction ? 'removed' : 'added';
-
-        if ($existingReaction) {
-            $existingReaction->delete();
-        } else {
-            MessageReaction::create([
+        try {
+            $user = Auth::user();
+            
+            \Log::info('React to message attempt', [
+                'user_id' => $user?->id,
                 'message_id' => $message_id,
-                'user_id' => $user->id,
                 'reaction' => $request->reaction
             ]);
-        }
 
-        // Get updated reactions
-        $message->load('reactions.user');
-        $reactions_grouped = $message->reactions
-            ->groupBy('reaction')
-            ->map(function ($reactions) {
-                return [
+            $request->validate([
+                'reaction' => 'required|string|max:50|in:👍,❤️,😂,😮,😢,😡,🎉,👏,🔥,✅',
+            ]);
+
+            $message = ChatGroupMessage::findOrFail($message_id);
+
+            // Check if user is member
+            $isMember = ChatGroupUser::where('chat_group_id', $message->chat_group_id)
+                ->where('user_id', $user->id)
+                ->where('status', 'active')
+                ->exists();
+
+            if (!$isMember) {
+                return response()->json(['error' => 'Not a member'], 403);
+            }
+
+            $existingReaction = MessageReaction::where('message_id', $message_id)
+                ->where('user_id', $user->id)
+                ->where('reaction', $request->reaction)
+                ->first();
+
+            $action = $existingReaction ? 'removed' : 'added';
+
+            if ($existingReaction) {
+                $existingReaction->delete();
+            } else {
+                MessageReaction::create([
+                    'message_id' => $message_id,
+                    'user_id' => $user->id,
+                    'reaction' => $request->reaction
+                ]);
+            }
+
+            // Get updated reactions
+            $message->load('reactions.user');
+            
+            // ✅ FIX: Properly format reactions as array, not calling toArray() on array
+            $reactions_grouped = [];
+            
+            foreach ($message->reactions->groupBy('reaction') as $reaction => $reactions) {
+                $reactions_grouped[$reaction] = [
                     'count' => $reactions->count(),
-                    'users' => $reactions->pluck('user_id'),
+                    'users' => $reactions->pluck('user_id')->toArray(), // Convert to array
                 ];
-            });
+            }
 
-        // Broadcast the reaction update to all group members
-        broadcast(new GroupMessageReactionUpdated(
-            $message,
-            $user,
-            $request->reaction,
-            $action,
-            $reactions_grouped
-        ))->toOthers();
-
-        return response()->json([
-            'success' => true,
-            'message' => $action === 'added' ? 'Reaction added' : 'Reaction removed',
-            'data' => [
+            \Log::info('Reaction successful', [
+                'action' => $action,
                 'reactions_grouped' => $reactions_grouped
-            ]
-        ]);
+            ]);
+
+            // Broadcast the reaction update to all group members
+            broadcast(new GroupMessageReactionUpdated(
+                $message,
+                $user,
+                $request->reaction,
+                $action,
+                $reactions_grouped // Now this is definitely an array
+            ))->toOthers();
+
+            return response()->json([
+                'success' => true,
+                'message' => $action === 'added' ? 'Reaction added' : 'Reaction removed',
+                'data' => [
+                    'reactions_grouped' => $reactions_grouped
+                ]
+            ]);
+            
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            \Log::error('Message not found', ['message_id' => $message_id]);
+            return response()->json(['error' => 'Message not found'], 404);
+            
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            \Log::error('Validation error', ['errors' => $e->errors()]);
+            return response()->json(['error' => 'Invalid reaction'], 422);
+            
+        } catch (\Exception $e) {
+            \Log::error('Error in reactToMessage', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'error' => 'Failed to process reaction',
+                'message' => $e->getMessage()
+            ], 500);
+        }
     }
     /**
      * Get messages from a group

@@ -16,7 +16,7 @@ use App\Models\ChatGroupUser;
 
 // Register the broadcasting auth route
 // This is the key to making /broadcasting/auth available
-Broadcast::routes(['middleware' => ['auth:sanctum']]); // or 'auth:api' if you use token auth
+// Broadcast::routes(['middleware' => ['auth:sanctum']]); // or 'auth:api' if you use token auth
 
 // Private group channel
 Broadcast::channel('group.{groupId}', function ($user, $groupId) {

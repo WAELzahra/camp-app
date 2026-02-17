@@ -23,7 +23,7 @@ class VerifyCsrfToken extends Middleware
         'api/reset-password',
         'api/send-verification',
         'resend-verification',
-
+        'broadcasting/auth',
 
     ];
     
