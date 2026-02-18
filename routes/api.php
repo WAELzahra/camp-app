@@ -62,6 +62,10 @@ use App\Http\Controllers\Admin\SignaleZoneController;
 use App\Http\Controllers\Admin\CampingCentreController;
 use App\Http\Controllers\Admin\CampingZoneController;
 use App\Http\Controllers\Admin\ServiceCategoryController;
+use App\Http\Controllers\Admin\TestUserController;
+
+
+
 
 // API Services
 use App\Services\ZoneSearchService;
@@ -75,9 +79,38 @@ Route::post('/verify-by-code', [VerifyEmailController::class, 'verifyByCode']);
 Route::post('/resend-verification', [VerifyEmailController::class, 'resendVerification']);
 Route::get('/verification-status/{id}', [VerifyEmailController::class, 'verificationStatus']);
 
+
+// routes/api.php
+Route::middleware('auth:sanctum')->get('/test-users-auth', [TestUserController::class, 'index']);
+
+use App\Models\User;
+use Illuminate\Support\Facades\Hash;
+
+Route::post('/test-login', function (Request $request) {
+    $request->validate([
+        'email' => 'required|email',
+        'password' => 'required',
+    ]);
+
+    $user = User::where('email', $request->email)->first();
+
+    if (!$user || !Hash::check($request->password, $user->password)) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Identifiants incorrects'
+        ], 401);
+    }
+
+    return response()->json([
+        'success' => true,
+        'user' => $user,
+        'token' => $user->createToken('test-token')->plainTextToken
+    ]);
+});
+
 // Authentication
 Route::post('/register', [RegisteredUserController::class, 'store']);
-Route::post('/login', [AuthenticatedSessionController::class, 'store']);
+Route::post('/login', [AuthenticatedSessionController::class, 'store'])->name('login');
 Route::post('/forgot-password', [NewPasswordController::class, 'sendResetEmail']);
 Route::post('/reset-password', [NewPasswordController::class, 'resetPassword']);
 Route::post('/verify-password', [NewPasswordController::class, 'verifyResetCode']);
@@ -442,14 +475,24 @@ Route::middleware('auth:sanctum')->group(function () {
     });
     
     // -------------------- ADMIN ROUTES --------------------
-    Route::middleware(['admin'])->prefix('admin')->group(function () {
-        // User Management
-        Route::get('/users', [AdminUserController::class, 'index']);
-        Route::get('/users/{id}', [AdminUserController::class, 'show']);
-        Route::put('/users/{id}', [AdminUserController::class, 'update']);
-        Route::delete('/users/{id}', [AdminUserController::class, 'destroy']);
-        Route::put('/users/{id}/toggle-activation', [AdminUserController::class, 'toggleActivation']);
-        Route::post('/feedbacks/{id}/moderate', [AdminUserController::class, 'moderate']);
+// Route::middleware(['admin'])->prefix('admin')->group(function () {
+//     // User Management
+
+// });
+// routes/api.php
+    Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function () {
+    Route::get('/users', [AdminUserController::class, 'index']);
+    Route::get('/users/{id}', [AdminUserController::class, 'show']);
+    Route::put('/users/{id}', [AdminUserController::class, 'update']);
+    Route::delete('/users/{id}', [AdminUserController::class, 'destroy']);
+    Route::put('/users/{id}/toggle-activation', [AdminUserController::class, 'toggleActivation']);
+    Route::post('/feedbacks/{id}/moderate', [AdminUserController::class, 'moderate']);
+    
+    // NOUVELLES ROUTES
+    Route::post('/users/{id}/reset-password', [AdminUserController::class, 'resetPassword']);
+    Route::post('/users/{id}/send-email', [AdminUserController::class, 'sendEmail']);
+    Route::get('/users/stats/overview', [AdminUserController::class, 'stats']);
+});
         
         // Event Management
         Route::prefix('events')->group(function () {
@@ -589,7 +632,6 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{event_id}/stats', [ReservationEventController::class, 'participantStats']);
         Route::get('/{event_id}/search', [ReservationEventController::class, 'search']);
     });
-});
 
 // ==================== PUBLIC USER VERIFICATION ROUTE ====================
 // This route should be outside auth middleware since it's for public access
