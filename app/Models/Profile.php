@@ -1,7 +1,5 @@
 <?php
 
-// app/Models/Profile.php
-
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -17,10 +15,18 @@ class Profile extends Model
         'cover_image',
         'immatricule',
         'type',
+        'activities',
+        // Nouveaux champs documents
+        'cin_path',
+        'cin_filename',
+        'adresse', // Ajout de l'adresse si manquant
     ];
 
+    protected $casts = [
+        'activities' => 'array',
+    ];
 
-    // In Profile model
+    // Relations existantes
     public function profileGuide()
     {
         return $this->hasOne(ProfileGuide::class);
@@ -41,20 +47,35 @@ class Profile extends Model
         return $this->hasOne(ProfileFournisseur::class);
     }
 
-
-
- // Relation feedbacks reçus par ce profil (via user_id)
+    // Relation feedbacks reçus par ce profil (via user_id)
     public function feedbacks()
     {
-        // target_id dans Feedbacks correspond à user_id dans Profile
         return $this->hasMany(\App\Models\Feedbacks::class, 'target_id', 'user_id');
     }
 
- public function album()
+    public function album()
     {
-        // Un profil a un album (relation one-to-one)
         return $this->hasOne(Album::class, 'profile_id'); 
-        // ou selon ta structure, si la clé étrangère est différente, adapte ici
     }
 
+    public function user()
+    {
+        return $this->belongsTo(User::class);
+    }
+
+    /**
+     * Get the CIN URL
+     */
+    public function getCinUrlAttribute(): ?string
+    {
+        return $this->cin_path ? asset('storage/' . $this->cin_path) : null;
+    }
+
+    /**
+     * Check if profile has CIN document
+     */
+    public function hasCin(): bool
+    {
+        return !is_null($this->cin_path);
+    }
 }

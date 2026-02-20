@@ -69,45 +69,20 @@ use App\Http\Controllers\Admin\TestUserController;
 
 // API Services
 use App\Services\ZoneSearchService;
+use Illuminate\Support\Facades\Broadcast;
+// Broadcast::routes(['middleware' => ['auth:sanctum']]);
 
 // ==================== ROUTES PUBLIQUES (NO AUTH REQUIRED) ====================
-
 // Email Verification
 Route::post('/send-verification', [VerifyEmailController::class, 'sendVerification']);
 Route::post('/verify-by-token', [VerifyEmailController::class, 'verifyByToken']);
 Route::post('/verify-by-code', [VerifyEmailController::class, 'verifyByCode']);
 Route::post('/resend-verification', [VerifyEmailController::class, 'resendVerification']);
 Route::get('/verification-status/{id}', [VerifyEmailController::class, 'verificationStatus']);
-
-
-// routes/api.php
-Route::middleware('auth:sanctum')->get('/test-users-auth', [TestUserController::class, 'index']);
-
-use App\Models\User;
-use Illuminate\Support\Facades\Hash;
-
-Route::post('/test-login', function (Request $request) {
-    $request->validate([
-        'email' => 'required|email',
-        'password' => 'required',
-    ]);
-
-    $user = User::where('email', $request->email)->first();
-
-    if (!$user || !Hash::check($request->password, $user->password)) {
-        return response()->json([
-            'success' => false,
-            'message' => 'Identifiants incorrects'
-        ], 401);
-    }
-
-    return response()->json([
-        'success' => true,
-        'user' => $user,
-        'token' => $user->createToken('test-token')->plainTextToken
-    ]);
+// Public profile lookup - separate route group
+Route::prefix('profile')->group(function () {
+    Route::get('/public/{id}', [ProfileController::class, 'showById']);
 });
-
 // Authentication
 Route::post('/register', [RegisteredUserController::class, 'store']);
 Route::post('/login', [AuthenticatedSessionController::class, 'store'])->name('login');
@@ -152,9 +127,7 @@ Route::prefix('comments')->group(function () {
 Route::get('/boutique', [BoutiqueController::class, 'index']);
 Route::get('/boutique/show/{id}', [BoutiqueController::class, 'show']);
 
-// Public Feedback
-Route::get('/feedback/index', [FeedbackController::class, 'index']);
-Route::get('/feedback/show/{id}', [FeedbackController::class, 'show']);
+
 
 // Public Equipment
 Route::get('/materielle/compare/{id1}-{id2}', [MaterielleController::class, 'compare']);
@@ -223,9 +196,67 @@ Route::prefix('v1')->group(function () {
 // Payment Callback (Public)
 Route::get('/flouci/callback', [PaymentController::class, 'callback']);
 
+
+// Feedback routes - Place this after your public routes
+Route::prefix('feedbacks')->group(function () {
+    // Public/authenticated routes
+    Route::get('/', [FeedbackController::class, 'index'])->middleware('auth:sanctum');
+    Route::get('/statistics', [FeedbackController::class, 'statistics']);
+    Route::get('/target/{type}/{targetId}', [FeedbackController::class, 'getTargetFeedbacks']);
+    Route::get('/zone/{zoneId}', [FeedbackController::class, 'listZone']);
+    
+    // Authenticated routes
+    Route::middleware('auth:sanctum')->group(function () {
+        Route::post('/', [FeedbackController::class, 'store']);
+        Route::put('/{id}', [FeedbackController::class, 'update']);
+        Route::delete('/{id}', [FeedbackController::class, 'destroy']);
+        Route::post('/zone/{zoneId}', [FeedbackController::class, 'storeZone']);
+    });
+    
+    // Admin routes
+    Route::middleware(['auth:sanctum', 'admin'])->group(function () {
+        Route::post('/{id}/moderate', [FeedbackController::class, 'moderate']);
+    });
+});
+
 // ==================== ROUTES AUTHENTIFIÉES (REQUIRE SANCTUM AUTH) ====================
 
 Route::middleware('auth:sanctum')->group(function () {
+
+    // Group Chat Routes
+    Route::prefix('group-chat')->group(function () {
+        // Group management
+        Route::post('/', [ChatGroupController::class, 'store']);
+        Route::get('/my-groups', [ChatGroupController::class, 'myGroups']);
+        Route::get('/my-memberships', [ChatGroupController::class, 'myMemberships']);
+        Route::delete('/{id}', [ChatGroupController::class, 'destroy']);
+        Route::patch('/{id}/archive', [ChatGroupController::class, 'archive']);
+        Route::put('/{id}/rename', [ChatGroupController::class, 'renameGroup']);
+        
+        // Invitations
+        Route::get('/join/{token}', [ChatGroupController::class, 'joinByToken']);
+        
+        // Messages
+        Route::get('/{chat_group_id}/messages', [ChatGroupController::class, 'getMessages']);
+        Route::post('/{chat_group_id}/message', [ChatGroupController::class, 'sendMessage']);
+        Route::post('/messages/{message_id}/react', [ChatGroupController::class, 'reactToMessage']);
+        Route::delete('/messages/{message_id}/react/{reaction}', [ChatGroupController::class, 'removeReaction']);
+        Route::patch('/messages/{message_id}/pin', [ChatGroupController::class, 'pinMessage']);
+        
+        // Members
+        Route::get('/{chat_group_id}/members', [ChatGroupController::class, 'getMembers']);
+        Route::delete('/{chat_group_id}/leave', [ChatGroupController::class, 'leaveGroup']);
+        Route::delete('/{chat_group_id}/members/{user_id}', [ChatGroupController::class, 'removeMember']);
+        Route::post('/{chat_group_id}/members/{user_id}/mute', [ChatGroupController::class, 'muteMember']);
+        Route::post('/{chat_group_id}/members/{user_id}/unmute', [ChatGroupController::class, 'unmuteMember']);
+        
+        // Typing status
+        Route::post('/{chat_group_id}/typing', [ChatGroupController::class, 'typingStatus']);
+        Route::get('/{chat_group_id}/typing', [ChatGroupController::class, 'typingUsers']);
+        
+        // Statistics
+        Route::get('/{chat_group_id}/stats', [ChatGroupController::class, 'getStats']);
+    });
     Route::post('/annonces/{id}/like', [AnnonceController::class, 'like']);
     Route::post('/annonces/{id}/unlike', [AnnonceController::class, 'unlike']);
     Route::get('/annonces/{id}/check-like', [AnnonceController::class, 'checkLike']);
@@ -283,7 +314,6 @@ Route::middleware('auth:sanctum')->group(function () {
         });
         
         // Profile lookup (should be last to avoid conflicts)
-        Route::get('/{userId}', [ProfileController::class, 'showById'])->where('userId', '[0-9]+');
         Route::get('/{type}/{userId}', [ProfileController::class, 'getProfileDetails'])
             ->where('type', 'guide|centre|groupe|fournisseur')
             ->where('userId', '[0-9]+');
@@ -320,11 +350,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/groupes/{groupe}/feedbacks', [GroupController::class, 'listForGroup']);
     
     // -------------------- FEEDBACKS --------------------
-    Route::post('/feedback/{type}/{targetId}', [FeedbackController::class, 'storeOrUpdateFeedback']);
-    Route::get('/feedback/{type}/{id}', [FeedbackController::class, 'getFeedbacks']);
-    Route::post('/zones/{id}/feedbacks', [FeedbackController::class, 'storeZone']);
-    Route::post('/guides/{id}/report', [FeedbackController::class, 'reportGuide']);
-    Route::get('/zone-feedbacks/{zoneId}', [FeedbackController::class, 'listZone']);
+    Route::post('/feedbacks/zone/{zoneId}', [FeedbackController::class, 'storeZone']);
     
     // -------------------- NOTIFICATIONS --------------------
     Route::post('/events/{event}/send-reminders', [NotificationController::class, 'sendRemindersForEvent']);
@@ -338,17 +364,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/chat/archive', [PrivateChatController::class, 'archiveConversation']);
     Route::get('/chat/conversations', [PrivateChatController::class, 'listConversations']);
     
-    // Group Chat
-    Route::get('/group-chat/my-groups', [ChatGroupController::class, 'myGroups']);
-    Route::get('/group-chat/join/{token}', [ChatGroupController::class, 'joinByToken']);
-    Route::prefix('group-chat')->group(function () {
-        Route::post('/{chat_group_id}/message', [ChatGroupController::class, 'sendMessage']);
-        Route::get('/{chat_group_id}/messages', [ChatGroupController::class, 'getMessages']);
-        Route::get('/{chat_group_id}/members', [ChatGroupController::class, 'getMembers']);
-        Route::delete('/{chat_group_id}/leave', [ChatGroupController::class, 'leaveGroup']);
-        Route::post('/{chat_group_id}/typing', [ChatGroupController::class, 'typingStatus']);
-        Route::get('/{chat_group_id}/typing', [ChatGroupController::class, 'typingUsers']);
-    });
+
     
     // -------------------- CAMPING ZONES --------------------
     Route::prefix('zones')->group(function () {
@@ -426,13 +442,12 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::patch('/materielle/destroy/{id}', [ReservationMaterielleController::class, 'destroy']);
             Route::get('/materielle/index_user', [ReservationMaterielleController::class, 'index_user']);
             
-            // Feedback
-            Route::post('/feedback/create', [FeedbackController::class, 'create']);
-            Route::post('/feedback/store', [FeedbackController::class, 'store']);
-            Route::post('/feedback/edit/{id}', [FeedbackController::class, 'edit']);
-            Route::patch('/feedback/update/{id}', [FeedbackController::class, 'update']);
-            Route::delete('/feedback/destroy/{id}', [FeedbackController::class, 'destroy']);
-            Route::get('/feedback/index_user', [FeedbackController::class, 'index_user']);
+            // // Feedback
+            // Route::post('/feedback/create', [FeedbackController::class, 'create']);
+            // Route::post('/feedback/store', [FeedbackController::class, 'store']);
+            // Route::post('/feedback/edit/{id}', [FeedbackController::class, 'edit']);
+            // Route::delete('/feedback/destroy/{id}', [FeedbackController::class, 'destroy']);
+            // Route::get('/feedback/index_user', [FeedbackController::class, 'index_user']);
         });
         
         // Routes for centers only
@@ -475,24 +490,93 @@ Route::middleware('auth:sanctum')->group(function () {
     });
     
     // -------------------- ADMIN ROUTES --------------------
-// Route::middleware(['admin'])->prefix('admin')->group(function () {
-//     // User Management
 
-// });
 // routes/api.php
-    Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function () {
-    Route::get('/users', [AdminUserController::class, 'index']);
-    Route::get('/users/{id}', [AdminUserController::class, 'show']);
-    Route::put('/users/{id}', [AdminUserController::class, 'update']);
-    Route::delete('/users/{id}', [AdminUserController::class, 'destroy']);
-    Route::put('/users/{id}/toggle-activation', [AdminUserController::class, 'toggleActivation']);
-    Route::post('/feedbacks/{id}/moderate', [AdminUserController::class, 'moderate']);
+
+
+
+// Routes protégées par authentification et rôle admin
+// Routes protégées par authentification et rôle admin
+Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function () {
     
-    // NOUVELLES ROUTES
-    Route::post('/users/{id}/reset-password', [AdminUserController::class, 'resetPassword']);
-    Route::post('/users/{id}/send-email', [AdminUserController::class, 'sendEmail']);
-    Route::get('/users/stats/overview', [AdminUserController::class, 'stats']);
+    // Dashboard
+    
+    // ==================== GESTION DES UTILISATEURS ====================
+    Route::prefix('users')->group(function () {
+        
+        // Liste des utilisateurs avec filtres
+        Route::get('/', [AdminUserController::class, 'index']);
+        
+        // Statistiques des utilisateurs
+        Route::get('/stats/overview', [AdminUserController::class, 'stats']);
+        
+        // Récupérer tous les rôles
+        Route::get('/roles/all', function () {
+            return response()->json([
+                'success' => true,
+                'data' => \App\Models\Role::all()
+            ]);
+        });
+        
+        // Actions sur un utilisateur spécifique
+        Route::prefix('{id}')->group(function () {
+            
+            // Informations de base
+            Route::get('/', [AdminUserController::class, 'show']); // Profil complet
+            Route::put('/', [AdminUserController::class, 'update']); // Mise à jour
+            Route::delete('/', [AdminUserController::class, 'destroy']); // Suppression
+            
+            // Actions spéciales
+            Route::put('/toggle-activation', [AdminUserController::class, 'toggleActivation']); // Activer/Désactiver
+            Route::post('/reset-password', [AdminUserController::class, 'resetPassword']); // Réinitialiser mot de passe
+            Route::post('/send-email', [AdminUserController::class, 'sendEmail']); // Envoyer email
+            
+            // ==================== GESTION DES DOCUMENTS ====================
+            Route::prefix('documents')->group(function () {
+                
+                // Upload de document
+                Route::post('/', [AdminUserController::class, 'uploadDocument']);
+                
+                // Types de documents spécifiques
+                Route::get('/{documentType}/download', [AdminUserController::class, 'downloadDocument']); // Télécharger
+                Route::get('/{documentType}/view', [AdminUserController::class, 'viewDocument']); // Visualiser
+                Route::delete('/{documentType}', [AdminUserController::class, 'deleteDocument']); // Supprimer
+            });
+            
+            // ==================== GESTION DES PHOTOS (ALBUMS) ====================
+             Route::prefix('photos')->group(function () {
+            Route::post('/', [AdminUserController::class, 'uploadPhotos']);
+            Route::get('/', [AdminUserController::class, 'getPhotos']);
+            Route::delete('/{photoId}', [AdminUserController::class, 'deletePhoto']);
+        });
+        });
+    });
+    
+    // ==================== GESTION DES FEEDBACKS ====================
+    Route::prefix('feedbacks')->group(function () {
+        Route::post('/{id}/moderate', [AdminUserController::class, 'moderate']);
+    });
+    
+    // ==================== STATISTIQUES GLOBALES ====================
+    Route::get('/stats', [AdminUserController::class, 'stats']);
 });
+
+// Routes publiques (si nécessaire)
+Route::get('/roles', function () {
+    return response()->json([
+        'success' => true,
+        'data' => \App\Models\Role::all()
+    ]);
+});
+
+// Routes publiques (si nécessaire)
+Route::get('/roles', function () {
+    return response()->json([
+        'success' => true,
+        'data' => \App\Models\Role::all()
+    ]);
+});
+
         
         // Event Management
         Route::prefix('events')->group(function () {
@@ -521,12 +605,11 @@ Route::middleware('auth:sanctum')->group(function () {
         });
         
         // Feedback Management
-        Route::prefix('feedbacks')->group(function () {
-            Route::get('/', [AdminFeedbackController::class, 'index']);
-            Route::get('/{id}', [AdminFeedbackController::class, 'show']);
-            Route::post('/{id}/approve', [AdminFeedbackController::class, 'approve']);
-            Route::post('/{id}/reject', [AdminFeedbackController::class, 'reject']);
-        });
+        // Route::prefix('feedbacks')->group(function () {
+        //     Route::post('/', [FeedbackController::class, 'store']);         
+        //     Route::put('/{id}', [FeedbackController::class, 'update']);
+        //     Route::delete('/{id}', [FeedbackController::class, 'destroy']);
+        // });
         
         // Announcement Management
         // Route::prefix('annonces')->group(function () {
@@ -584,14 +667,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/zones/import-geojson', [CampingZoneController::class, 'importGeoJson']);
         });
         
-        // Group Chat Management
-        Route::prefix('group-chat')->group(function () {
-            Route::post('/create', [ChatGroupController::class, 'store']);
-            Route::delete('/{id}', [ChatGroupController::class, 'destroy']);
-            Route::put('/{chat_group_id}/rename', [ChatGroupController::class, 'renameGroup']);
-            Route::post('/{chat_group_id}/archive', [ChatGroupController::class, 'archive']);
-            Route::delete('/{chat_group_id}/members/{user_id}', [ChatGroupController::class, 'removeMember']);
-        });
+
         
         // Service Categories Management
         Route::resource('service-categories', ServiceCategoryController::class);

@@ -2,72 +2,66 @@
 
 namespace App\Models;
 
+// use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Models\Favoris;
 
 class User extends Authenticatable implements MustVerifyEmail
 {
     use HasApiTokens, HasFactory, Notifiable;
 
+    /**
+     * The attributes that are mass assignable.
+     *
+     * @var array<int, string>
+     */
     protected $fillable = [
-        'first_name',      
+       'first_name',      
         'last_name',      
         'email',
-        'adresse',
         'phone_number',
         'password',
+        'addresse',
         'role_id',
         'is_active',
         'ville',               
         'date_naissance',      
         'sexe',                
-        'langue',
-        // Nouveaux champs
-        'cin',
-        'cin_recto',
-        'cin_verso',
-        'certificat',
-        'patente',
-        'registre_commerce',
-        'licence',
-        'documents_status',
-        'documents_verified_at',
-        'documents_verified_by',
-        'siret',
-        'tva_number',
-        'company_name',
-        'legal_representative',
-        'representative_cin',
+        'langue',              
         'first_login',         
         'nombre_signalement',  
         'avatar',
     ];
 
+    
+    
+    
+    /**
+     * The attributes that should be hidden for serialization.
+     *
+     * @var array<int, string>
+     */
     protected $hidden = [
         'password',
         'remember_token',
     ];
-
-    protected $casts = [
-        'email_verified_at' => 'datetime',
-        'last_login_at' => 'datetime',   
-        'first_login' => 'boolean',      
-        'password' => 'hashed',
-        'preferences' => 'array',
-        'documents_verified_at' => 'datetime',
-    ];
-
-    
-    
 
     /**
      * The attributes that should be cast.
      *
      * @var array<string, string>
      */
+    protected $casts = [
+    'email_verified_at' => 'datetime',
+    'last_login_at' => 'datetime',   
+    'first_login' => 'boolean',      
+    'password' => 'hashed',
+    'preferences' => 'array',
+];
 
     public function role()
 {
@@ -131,97 +125,62 @@ public function favoris()
         return $this->hasOne(Album::class)->where('type', 'center');
     }
 
-        /**
-     * Vérifie si tous les documents obligatoires sont fournis
+    /**
+     * Get chat groups this user has created (as a group user)
      */
-    public function hasRequiredDocuments(): bool
+    public function createdChatGroups()
     {
-        if (!$this->role) {
-            return false;
-        }
-
-        switch (strtolower($this->role->name)) {
-            case 'campeur':
-                return !empty($this->cin);
-            
-            case 'guide':
-                return !empty($this->cin) && !empty($this->certificat);
-            
-            case 'centre':
-            case 'center':
-                return !empty($this->licence) && 
-                       !empty($this->registre_commerce) && 
-                       !empty($this->company_name) &&
-                       !empty($this->legal_representative) &&
-                       !empty($this->representative_cin);
-            
-            case 'groupe':
-            case 'group':
-                return !empty($this->patente) && 
-                       !empty($this->company_name) &&
-                       !empty($this->legal_representative) &&
-                       !empty($this->representative_cin);
-            
-            case 'fournisseur':
-            case 'supplier':
-                return !empty($this->registre_commerce) && 
-                       !empty($this->siret) &&
-                       !empty($this->company_name);
-            
-            default:
-                return false;
-        }
+        return $this->hasMany(ChatGroup::class, 'group_user_id');
     }
 
     /**
-     * Récupère la liste des documents manquants
+     * Get chat groups this user is a member of
      */
-    public function getMissingDocuments(): array
+    public function chatGroups()
     {
-        $missing = [];
-        
-        if (!$this->role) {
-            return ['Rôle non défini'];
-        }
-
-        switch (strtolower($this->role->name)) {
-            case 'campeur':
-                if (empty($this->cin)) $missing[] = 'CIN';
-                break;
-            
-            case 'guide':
-                if (empty($this->cin)) $missing[] = 'CIN';
-                if (empty($this->certificat)) $missing[] = 'Certificat';
-                break;
-            
-            case 'centre':
-            case 'center':
-                if (empty($this->licence)) $missing[] = 'Licence';
-                if (empty($this->registre_commerce)) $missing[] = 'Registre de commerce';
-                if (empty($this->company_name)) $missing[] = 'Nom de la société';
-                if (empty($this->legal_representative)) $missing[] = 'Représentant légal';
-                if (empty($this->representative_cin)) $missing[] = 'CIN du représentant';
-                break;
-            
-            case 'groupe':
-            case 'group':
-                if (empty($this->patente)) $missing[] = 'Patente';
-                if (empty($this->company_name)) $missing[] = 'Nom du groupe';
-                if (empty($this->legal_representative)) $missing[] = 'Responsable';
-                if (empty($this->representative_cin)) $missing[] = 'CIN du responsable';
-                break;
-            
-            case 'fournisseur':
-            case 'supplier':
-                if (empty($this->registre_commerce)) $missing[] = 'Registre de commerce';
-                if (empty($this->siret)) $missing[] = 'Numéro SIRET';
-                if (empty($this->company_name)) $missing[] = 'Nom de l\'entreprise';
-                break;
-        }
-        
-        return $missing;
+        return $this->belongsToMany(ChatGroup::class, 'chat_group_users')
+                    ->withPivot(['role', 'status', 'joined_at', 'left_at', 'muted_until', 'last_read_message_id'])
+                    ->withTimestamps();
     }
+
+    /**
+     * Get chat group memberships
+     */
+    public function chatGroupMemberships()
+    {
+        return $this->hasMany(ChatGroupUser::class, 'user_id');
+    }
+
+    /**
+     * Get messages sent by this user
+     */
+    public function chatMessages()
+    {
+        return $this->hasMany(ChatGroupMessage::class, 'sender_id');
+    }
+
+    /**
+     * Get message reactions by this user
+     */
+    public function messageReactions()
+    {
+        return $this->hasMany(MessageReaction::class, 'user_id');
+    }
+
+    /**
+     * Get read receipts by this user
+     */
+    public function messageReadReceipts()
+    {
+        return $this->hasMany(MessageReadReceipt::class, 'user_id');
+    }
+
+    /**
+     * Get typing statuses by this user
+     */
+    public function typingStatuses()
+    {
+        return $this->hasMany(ChatGroupTypingStatus::class, 'user_id');
+    }
+
 }
-
-
-
