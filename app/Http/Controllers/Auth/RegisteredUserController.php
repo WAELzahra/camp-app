@@ -12,6 +12,8 @@ use Illuminate\Validation\Rules;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage; 
 use App\Models\Album;
+use App\Events\UserRegistered;
+
 class RegisteredUserController extends Controller
 {
     /**
@@ -113,6 +115,8 @@ class RegisteredUserController extends Controller
                 : 'Inscription réussie ! Veuillez attendre l\'activation par un administrateur.';
             $verificationService = new \App\Services\EmailVerificationService('both');
             $verificationService->sendVerification($user, 'both');
+            event(new UserRegistered($user));
+
         // Return the user data so frontend can display it
         return response()->json([
             'message' => 'Registration successful! Please verify your email.',

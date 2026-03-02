@@ -1,4 +1,5 @@
 <?php
+// app/Models/MessageReaction.php
 
 namespace App\Models;
 
@@ -17,17 +18,12 @@ class MessageReaction extends Model
         'reaction',
     ];
 
-    protected $casts = [
-        'created_at' => 'datetime',
-        'updated_at' => 'datetime',
-    ];
-
     /**
-     * Get the message this reaction belongs to
+     * Get the message
      */
     public function message()
     {
-        return $this->belongsTo(ChatGroupMessage::class, 'message_id');
+        return $this->belongsTo(Message::class);
     }
 
     /**
@@ -35,27 +31,14 @@ class MessageReaction extends Model
      */
     public function user()
     {
-        return $this->belongsTo(User::class, 'user_id');
+        return $this->belongsTo(User::class);
     }
 
     /**
-     * Get emoji as HTML entity (for display)
+     * Scope for a specific reaction
      */
-    public function getEmojiHtmlAttribute()
+    public function scopeWithReaction($query, $reaction)
     {
-        $emojis = [
-            '👍' => '&#128077;',
-            '❤️' => '&#10084;&#65039;',
-            '😂' => '&#128514;',
-            '😮' => '&#128562;',
-            '😢' => '&#128546;',
-            '😡' => '&#128545;',
-            '🎉' => '&#127881;',
-            '👏' => '&#128079;',
-            '🔥' => '&#128293;',
-            '✅' => '&#9989;',
-        ];
-        
-        return $emojis[$this->reaction] ?? $this->reaction;
+        return $query->where('reaction', $reaction);
     }
 }

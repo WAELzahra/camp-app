@@ -15,8 +15,14 @@ class DatabaseSeeder extends Seeder
             ProfileCentreSeeder::class,   
             ReservationsCentreSeeder::class, 
             ReservationServiceItemSeeder::class, 
-            ChatGroupsSeeder::class,      
-            ChatMessagesSeeder::class,  
+            ConversationSeeder::class,
+            ConversationParticipantSeeder::class,
+            MessageSeeder::class,
+            MessageStatusSeeder::class,
+            MessageReactionSeeder::class,
+
+            EventSeeder::class,
+            ReservationEventSeeder::class,
 
         ]);
     }

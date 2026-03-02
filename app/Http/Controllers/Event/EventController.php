@@ -5,8 +5,11 @@ namespace App\Http\Controllers\Event;
 use Illuminate\Support\Facades\Mail;
 use App\Http\Controllers\Controller;
 use App\Models\Events;
+use App\Models\CampingZone;
+use App\Models\Photo;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Storage;
 use App\Mail\NewEventNotification;
 use App\Models\Reservations_events;
 use App\Models\ProfileGroupe;
@@ -18,151 +21,621 @@ use Illuminate\Validation\Rule;
 
 class EventController extends Controller
 {
-// Création d'un événement par un groupe
-public function store(Request $request)
-{
-    if (auth()->user()->role->name !== 'groupe') {
-        return response()->json(['message' => 'Accès refusé : seuls les groupes peuvent créer des événements.'], 403);
+    // ==================== PUBLIC ROUTES (No auth required) ====================
+    /**
+     * Get events by group ID (Public - no auth required)
+     * This allows anyone to view events created by a specific group
+     */
+    public function getGroupEvents($groupId, Request $request)
+    {
+        $query = Events::where('group_id', $groupId)
+                    ->with(['group', 'photos']);
+
+        // Optional filters
+        if ($request->has('status')) {
+            $query->where('status', $request->status);
+        }
+
+        if ($request->has('event_type')) {
+            $query->where('event_type', $request->event_type);
+        }
+
+        // Sort options
+        $sortBy = $request->get('sort_by', 'created_at');
+        $sortOrder = $request->get('sort_order', 'desc');
+        $query->orderBy($sortBy, $sortOrder);
+
+        $events = $query->paginate($request->get('per_page', 15));
+
+        return response()->json([
+            'success' => true,
+            'data' => $events
+        ]);
     }
 
-    $validated = $request->validate([
-        // Champs événement
-        'title' => 'required|string|max:255',
-        'description' => 'nullable|string',
-        'category' => 'required|string',
-        'date_sortie' => 'required|date',
-        'date_retoure' => 'required|date|after_or_equal:date_sortie',
-        'ville_passente' => 'nullable|array',
-        'nbr_place_total' => 'required|integer|min:1',
-        'prix_place' => 'required|numeric|min:0',
+    /**
+     * Get all events created by the authenticated group (Authenticated)
+     * This is for groups to see their own events (including pending ones)
+     */
+    public function myEvents(Request $request)
+    {
+        $user = Auth::user();
+        
+        if (!$user) {
+            return response()->json(['message' => 'Unauthenticated'], 401);
+        }
+        
+        // Check if user is group (role_id = 2)
+        if ($user->role_id !== 2) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Only groups can access their events',
+                'data' => []
+            ], 200);
+        }
 
-        // Champs circuit
-        'adresse_debut_circuit' => 'required|string',
-        'adresse_fin_circuit' => 'required|string',
-        'description_circuit' => 'nullable|string',
-        'difficulty' => 'nullable|in:facile,moyenne,difficile',
-        'distance_km' => 'nullable|numeric|min:0',
-        'estimation_temps' => 'nullable|string',
-        'danger_level' => 'nullable|in:low,moderate,high,extreme',
-    ]);
+        try {
+            $query = Events::where('group_id', $user->id)
+                        ->with(['group', 'photos']);
 
-    $userId = auth()->id();
+            // Optional filters
+            if ($request->has('status')) {
+                $query->where('status', $request->status);
+            }
 
-    // Création du circuit
-    $circuit = Circuit::create([
-        'adresse_debut_circuit' => $validated['adresse_debut_circuit'],
-        'adresse_fin_circuit' => $validated['adresse_fin_circuit'],
-        'description' => $validated['description_circuit'] ?? null,
-        'difficulty' => $validated['difficulty'] ?? null,
-        'distance_km' => $validated['distance_km'] ?? null,
-        'estimation_temps' => $validated['estimation_temps'] ?? null,
-        'danger_level' => $validated['danger_level'] ?? null,
-    ]);
+            if ($request->has('event_type')) {
+                $query->where('event_type', $request->event_type);
+            }
 
-    // Création de l'événement
-    $event = Events::create([
-        'title' => $validated['title'],
-        'description' => $validated['description'] ?? null,
-        'category' => $validated['category'],
-        'date_sortie' => $validated['date_sortie'],
-        'date_retoure' => $validated['date_retoure'],
-        'ville_passente' => isset($validated['ville_passente']) ? json_encode($validated['ville_passente']) : null,
-        'nbr_place_total' => $validated['nbr_place_total'],
-        'prix_place' => $validated['prix_place'],
-        'circuit_id' => $circuit->id,
-        'group_id' => $userId,
-        'status' => 'pending',
-        'nbr_place_restante' => $validated['nbr_place_total'],
-        'is_active' => false,
-    ]);
+            // Sort options
+            $sortBy = $request->get('sort_by', 'created_at');
+            $sortOrder = $request->get('sort_order', 'desc');
+            $query->orderBy($sortBy, $sortOrder);
 
-    // Récupération du profil groupe
-    $profile = Profile::where('user_id', $userId)->first();
-    if (!$profile) {
-        return response()->json(['message' => 'Profil non trouvé.'], 404);
-    }
+            $events = $query->paginate($request->get('per_page', 15));
 
-    $profileGroupe = ProfileGroupe::where('profile_id', $profile->id)->first();
-    if (!$profileGroupe) {
-        return response()->json(['message' => 'Profil groupe non trouvé.'], 404);
-    }
+            // Transform the photos to include URLs (though the model accessor will handle it)
+            $events->getCollection()->transform(function ($event) {
+                // Add a cover_image property for easy access
+                if ($event->photos && $event->photos->isNotEmpty()) {
+                    $coverPhoto = $event->photos->firstWhere('is_cover', true);
+                    if ($coverPhoto) {
+                        $event->cover_image = $coverPhoto->url; // This will use the accessor
+                    } else {
+                        $event->cover_image = $event->photos->first()->url; // This will use the accessor
+                    }
+                }
+                return $event;
+            });
 
-    // Notifications aux abonnés
-    $followersUserIds = FollowersGroupe::where('groupe_id', $profileGroupe->id)->pluck('user_id')->toArray();
-    $users = User::whereIn('id', $followersUserIds)->get();
-
-    foreach ($users as $user) {
-        if ($user->email) {
-            Mail::to($user->email)->send(new NewEventNotification($event, $user->name));
+            return response()->json([
+                'success' => true,
+                'data' => $events
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch events: ' . $e->getMessage(),
+                'data' => ['data' => []]
+            ], 500);
         }
     }
-
-    return response()->json([
-        'message' => 'Événement et circuit créés avec succès. Notifications envoyées aux abonnés.',
-        'event' => $event,
-        'circuit' => $circuit,
-    ], 201);
-}
-
-// Affichage des détails d’un événement
-public function show($id)
+    /**
+     * List all active events with filters (Public)
+     */
+    public function index(Request $request)
     {
-        $event = Events::with('circuit')->findOrFail($id);
+        $query = Events::where('is_active', true)
+                      ->where('status', 'scheduled');
+
+        // Search by title
+        if ($request->has('title')) {
+            $query->where('title', 'like', '%' . $request->title . '%');
+        }
+
+        // Filter by event type
+        if ($request->has('event_type')) {
+            $query->where('event_type', $request->event_type);
+        }
+
+        // Filter by destination (departure or arrival city)
+        if ($request->has('destination')) {
+            $destination = $request->destination;
+            $query->where(function($q) use ($destination) {
+                $q->where('departure_city', 'like', '%' . $destination . '%')
+                  ->orWhere('arrival_city', 'like', '%' . $destination . '%')
+                  ->orWhere('address', 'like', '%' . $destination . '%');
+            });
+        }
+
+        // Price range filters
+        if ($request->has('min_price')) {
+            $query->where('price', '>=', $request->min_price);
+        }
+
+        if ($request->has('max_price')) {
+            $query->where('price', '<=', $request->max_price);
+        }
+
+        // Date filters
+        if ($request->has('start_date')) {
+            $query->whereDate('start_date', '>=', $request->start_date);
+        }
+
+        if ($request->has('end_date')) {
+            $query->whereDate('end_date', '<=', $request->end_date);
+        }
+
+        // Sort options
+        $sortBy = $request->get('sort_by', 'start_date');
+        $sortOrder = $request->get('sort_order', 'asc');
+        $query->orderBy($sortBy, $sortOrder);
+
+        $events = $query->paginate($request->get('per_page', 15));
 
         return response()->json([
-            'status' => true,
-            'message' => 'Détails de l’événement',
-            'data' => $event
+            'success' => true,
+            'data' => $events
         ]);
-}
+    }
 
-// Mise à jour d’un événement par son créateur (groupe)
-public function update(Request $request, $id)
+    /**
+     * Get public event details (Public)
+     */
+    public function getEventDetails($id)
     {
-        $user = Auth::user();
+        $event = Events::where('is_active', true)
+                      ->with(['group', 'photos'])
+                      ->find($id);
 
-        $event = Events::where('group_id', $user->id)->findOrFail($id);
-
-        $event->update($request->only([
-            'title',
-            'description',
-            'category',
-            'date_sortie',
-            'date_retoure',
-            'ville_passente',
-            'nbr_place_total',
-            'prix_place',
-            'circuit_id',
-            'status'
-        ]));
+        if (!$event) {
+            return response()->json(['message' => 'Event not found'], 404);
+        }
 
         return response()->json([
-            'status' => true,
-            'message' => 'Événement mis à jour avec succès',
+            'success' => true,
             'data' => $event
         ]);
-}
+    }
 
-// Suppression d’un événement par le groupe
- public function destroy($id)
+    /**
+     * Search events by keyword (Public)
+     */
+    public function search(Request $request)
+    {
+        $keyword = trim($request->input('q'));
+
+        if (!$keyword) {
+            return response()->json(['message' => 'Please enter a search keyword'], 400);
+        }
+
+        $events = Events::where('is_active', true)
+            ->where('status', 'scheduled')
+            ->where(function ($query) use ($keyword) {
+                $query->where('title', 'like', "%$keyword%")
+                      ->orWhere('description', 'like', "%$keyword%")
+                      ->orWhere('departure_city', 'like', "%$keyword%")
+                      ->orWhere('arrival_city', 'like', "%$keyword%")
+                      ->orWhereJsonContains('tags', $keyword);
+            })
+            ->orderBy('start_date', 'asc')
+            ->paginate($request->get('per_page', 15));
+
+        return response()->json([
+            'success' => true,
+            'data' => $events
+        ]);
+    }
+
+    /**
+     * Get event share links (Public)
+     */
+    public function getEventShareLinks($id)
+    {
+        $event = Events::find($id);
+
+        if (!$event || !$event->is_active) {
+            return response()->json(['message' => 'Event not found'], 404);
+        }
+
+        $url = url('/events/' . $event->id);
+
+        $shareLinks = [
+            'facebook' => 'https://www.facebook.com/sharer/sharer.php?u=' . urlencode($url),
+            'whatsapp' => 'https://api.whatsapp.com/send?text=' . urlencode("Check out this event: " . $url),
+            'telegram' => 'https://t.me/share/url?url=' . urlencode($url) . '&text=' . urlencode('Check out this amazing event!'),
+            'twitter' => 'https://twitter.com/intent/tweet?url=' . urlencode($url) . '&text=' . urlencode($event->title),
+            'linkedin' => 'https://www.linkedin.com/sharing/share-offsite/?url=' . urlencode($url),
+        ];
+
+        return response()->json([
+            'success' => true,
+            'data' => $shareLinks
+        ]);
+    }
+
+    /**
+     * Get event copy link (Public)
+     */
+    public function getEventCopyLink($id)
+    {
+        $event = Events::find($id);
+
+        if (!$event) {
+            return response()->json(['message' => 'Event not found'], 404);
+        }
+
+        $publicLink = url("/events/" . $event->id);
+
+        return response()->json([
+            'success' => true,
+            'data' => ['link' => $publicLink]
+        ]);
+    }
+
+    // ==================== AUTHENTICATED ROUTES (User must be logged in) ====================
+
+    /**
+     * Get detailed event info (Authenticated users only)
+     */
+    public function show($id)
+    {
+        $event = Events::with(['group', 'photos', 'feedbacks' => function($q) {
+            $q->where('status', 'approved');
+        }])->findOrFail($id);
+
+        return response()->json([
+            'success' => true,
+            'data' => $event
+        ]);
+    }
+
+    /**
+     * Get nearby events (Authenticated users)
+     */
+    public function notifyNearbyEvents(Request $request, $userId)
+    {
+        $request->validate([
+            'lat' => 'required|numeric',
+            'lng' => 'required|numeric',
+            'radius' => 'nullable|numeric|min:1|max:100',
+        ]);
+
+        $user = User::findOrFail($userId);
+        $lat = $request->lat;
+        $lng = $request->lng;
+        $radius = $request->radius ?? 10;
+
+        // Find nearby events using Haversine formula
+        $events = Events::where('is_active', true)
+            ->where('status', 'scheduled')
+            ->selectRaw("*, (6371 * acos(cos(radians(?)) * cos(radians(latitude)) * cos(radians(longitude) - radians(?)) + sin(radians(?)) * sin(radians(latitude)))) AS distance", [$lat, $lng, $lat])
+            ->having('distance', '<=', $radius)
+            ->orderBy('distance', 'asc')
+            ->get();
+
+        // Find nearby camping zones (if you have that model)
+        $zones = [];
+        if (class_exists('App\Models\CampingZone')) {
+            $zones = CampingZone::where('status', true)
+                ->where('is_closed', false)
+                ->selectRaw("*, (6371 * acos(cos(radians(?)) * cos(radians(latitude)) * cos(radians(longitude) - radians(?)) + sin(radians(?)) * sin(radians(latitude)))) AS distance", [$lat, $lng, $lat])
+                ->having('distance', '<=', $radius)
+                ->orderBy('distance', 'asc')
+                ->get();
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'events' => $events,
+                'camping_zones' => $zones,
+            ]
+        ]);
+    }
+
+    // ==================== GROUP ONLY ROUTES (Group role required) ====================
+
+    /**
+     * Create a new event (Groups only)
+     */
+    public function store(Request $request)
     {
         $user = Auth::user();
-        $event = Events::where('group_id', $user->id)->findOrFail($id);
+        
+        // Check if user is group (role_id = 2)
+        if ($user->role_id !== 2) {
+            return response()->json(['message' => 'Only groups can create events.'], 403);
+        }
+
+        $validated = $request->validate([
+            // Event fields
+            'title' => 'required|string|max:255',
+            'description' => 'nullable|string',
+            'event_type' => 'required|in:camping,hiking,voyage',
+            'start_date' => 'required|date',
+            'end_date' => 'required|date|after_or_equal:start_date',
+            'capacity' => 'required|integer|min:1',
+            'price' => 'required|numeric|min:0',
+            
+            // Camping specific fields
+            'camping_duration' => 'nullable|integer|min:1',
+            'camping_gear' => 'nullable|string',
+            'is_group_travel' => 'sometimes|boolean',
+            
+            // Trip/Voyage fields
+            'departure_city' => 'nullable|string',
+            'arrival_city' => 'nullable|string',
+            'departure_time' => 'nullable|date_format:H:i',
+            'estimated_arrival_time' => 'nullable|date_format:H:i',
+            'bus_company' => 'nullable|string',
+            'bus_number' => 'nullable|string',
+            'city_stops' => 'nullable|array',
+            'city_stops.*.city' => 'required|string',
+            'city_stops.*.arrival_time' => 'nullable|date_format:H:i',
+            'city_stops.*.departure_time' => 'nullable|date_format:H:i',
+            
+            // Location fields
+            'latitude' => 'nullable|numeric|between:-90,90',
+            'longitude' => 'nullable|numeric|between:-180,180',
+            'address' => 'nullable|string',
+            
+            // Hiking specific fields
+            'difficulty' => 'nullable|in:easy,moderate,difficult,expert',
+            'hiking_duration' => 'nullable|numeric|min:0.5|max:48',
+            'elevation_gain' => 'nullable|integer|min:0|max:8000',
+            
+            // Tags
+            'tags' => 'nullable|array',
+            'tags.*' => 'string',
+            
+            // Images
+            'images' => 'nullable|array',
+            'images.*' => 'image|mimes:jpeg,png,jpg,gif|max:25600', // 25MB max
+            'cover_image_index' => 'nullable|integer|min:0',
+        ]);
+
+        // Create the event
+        $event = Events::create([
+            'group_id' => $user->id,
+            'title' => $validated['title'],
+            'description' => $validated['description'] ?? null,
+            'event_type' => $validated['event_type'],
+            'start_date' => $validated['start_date'],
+            'end_date' => $validated['end_date'],
+            'capacity' => $validated['capacity'],
+            'price' => $validated['price'],
+            'remaining_spots' => $validated['capacity'],
+            'camping_duration' => $validated['camping_duration'] ?? null,
+            'camping_gear' => $validated['camping_gear'] ?? null,
+            'is_group_travel' => $request->boolean('is_group_travel', false),
+            'departure_city' => $validated['departure_city'] ?? null,
+            'arrival_city' => $validated['arrival_city'] ?? null,
+            'departure_time' => $validated['departure_time'] ?? null,
+            'estimated_arrival_time' => $validated['estimated_arrival_time'] ?? null,
+            'bus_company' => $validated['bus_company'] ?? null,
+            'bus_number' => $validated['bus_number'] ?? null,
+            'city_stops' => isset($validated['city_stops']) ? json_encode($validated['city_stops']) : null,
+            'latitude' => $validated['latitude'] ?? null,
+            'longitude' => $validated['longitude'] ?? null,
+            'address' => $validated['address'] ?? null,
+            'difficulty' => $validated['difficulty'] ?? null,
+            'hiking_duration' => $validated['hiking_duration'] ?? null,
+            'elevation_gain' => $validated['elevation_gain'] ?? null,
+            'tags' => isset($validated['tags']) ? json_encode($validated['tags']) : null,
+            'status' => 'pending',
+            'is_active' => false,
+        ]);
+
+        // Handle image uploads
+        if ($request->hasFile('images')) {
+            $coverIndex = $request->input('cover_image_index');
+            
+            foreach ($request->file('images') as $index => $image) {
+                // Store the image
+                $path = $image->store('events/' . $event->id, 'public');
+                
+                // Determine if this is the cover image
+                $isCover = ($coverIndex !== null && (int)$coverIndex === $index);
+                
+                // Create photo record
+                Photo::create([
+                    'path_to_img' => $path,
+                    'user_id' => $user->id,
+                    'event_id' => $event->id,
+                    'is_cover' => $isCover,
+                    'order' => $index,
+                ]);
+            }
+        }
+
+        // Notify followers
+        $this->notifyFollowers($user->id, $event);
+
+        // Load the photos relationship
+        $event->load('photos');
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Event created successfully. Waiting for admin approval.',
+            'data' => $event
+        ], 201);
+    }
+
+    /**
+     * Update an event (Group owner only)
+     */
+    public function update(Request $request, $id)
+    {
+        $user = Auth::user();
+        
+        $event = Events::where('id', $id)
+                      ->where('group_id', $user->id)
+                      ->firstOrFail();
+
+        // Only allow updates if event is still pending or scheduled (not started)
+        if (!in_array($event->status, ['pending', 'scheduled'])) {
+            return response()->json([
+                'message' => 'Cannot update event that has already started or finished'
+            ], 403);
+        }
+
+        $validated = $request->validate([
+            'title' => 'sometimes|string|max:255',
+            'description' => 'nullable|string',
+            'start_date' => 'sometimes|date',
+            'end_date' => 'sometimes|date|after_or_equal:start_date',
+            'capacity' => 'sometimes|integer|min:1',
+            'price' => 'sometimes|numeric|min:0',
+            'camping_duration' => 'nullable|integer|min:1',
+            'camping_gear' => 'nullable|string',
+            'departure_city' => 'nullable|string',
+            'arrival_city' => 'nullable|string',
+            'departure_time' => 'nullable|date_format:H:i',
+            'estimated_arrival_time' => 'nullable|date_format:H:i|after:departure_time',
+            'bus_company' => 'nullable|string',
+            'bus_number' => 'nullable|string',
+            'city_stops' => 'nullable|array',
+            'latitude' => 'nullable|numeric|between:-90,90',
+            'longitude' => 'nullable|numeric|between:-180,180',
+            'address' => 'nullable|string',
+            'difficulty' => 'nullable|in:easy,moderate,difficult,expert',
+            'hiking_duration' => 'nullable|numeric|min:0.5|max:48',
+            'elevation_gain' => 'nullable|integer|min:0|max:8000',
+            'tags' => 'nullable|array',
+            
+            // Image updates
+            'new_images' => 'nullable|array',
+            'new_images.*' => 'image|mimes:jpeg,png,jpg,gif|max:25600',
+            'cover_image_index' => 'nullable|integer|min:0',
+            'delete_images' => 'nullable|array',
+            'delete_images.*' => 'integer|exists:photos,id',
+        ]);
+
+        // Update only provided fields
+        foreach ($validated as $key => $value) {
+            if (in_array($key, ['tags', 'city_stops'])) {
+                $event->$key = $value ? json_encode($value) : null;
+            } elseif (!in_array($key, ['new_images', 'cover_image_index', 'delete_images'])) {
+                $event->$key = $value;
+            }
+        }
+
+        // If capacity changed, adjust remaining spots
+        if (isset($validated['capacity']) && $validated['capacity'] != $event->capacity) {
+            $bookedSpots = $event->capacity - $event->remaining_spots;
+            $event->remaining_spots = $validated['capacity'] - $bookedSpots;
+        }
+
+        $event->save();
+
+        // Handle image deletions
+        if ($request->has('delete_images')) {
+            $photoIds = $request->input('delete_images');
+            $photos = Photo::whereIn('id', $photoIds)
+                          ->where('event_id', $event->id)
+                          ->get();
+            
+            foreach ($photos as $photo) {
+                // Delete file from storage
+                Storage::disk('public')->delete($photo->path_to_img);
+                // Delete record
+                $photo->delete();
+            }
+        }
+
+        // Handle new image uploads
+        if ($request->hasFile('new_images')) {
+            $coverIndex = $request->input('cover_image_index');
+            $currentPhotoCount = $event->photos()->count();
+            
+            foreach ($request->file('new_images') as $index => $image) {
+                $path = $image->store('events/' . $event->id, 'public');
+                
+                $isCover = ($coverIndex !== null && (int)$coverIndex === $index);
+                
+                Photo::create([
+                    'path_to_img' => $path,
+                    'user_id' => $user->id,
+                    'event_id' => $event->id,
+                    'is_cover' => $isCover,
+                    'order' => $currentPhotoCount + $index,
+                ]);
+            }
+        }
+
+        // Update cover image if specified without new images
+        if ($request->has('cover_image_index') && !$request->hasFile('new_images')) {
+            $coverIndex = (int)$request->input('cover_image_index');
+            
+            // Get all photos ordered
+            $photos = $event->photos()->orderBy('order')->get();
+            
+            if ($photos->isNotEmpty() && $coverIndex < $photos->count()) {
+                // Unset all covers
+                $event->photos()->update(['is_cover' => false]);
+                
+                // Set the new cover
+                $coverPhoto = $photos[$coverIndex];
+                $coverPhoto->is_cover = true;
+                $coverPhoto->save();
+            }
+        }
+
+        // Load updated relationships
+        $event->load('photos');
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Event updated successfully',
+            'data' => $event
+        ]);
+    }
+
+    /**
+     * Delete an event (Group owner or Admin)
+     */
+    public function destroy($id)
+    {
+        $user = Auth::user();
+        
+        $event = Events::where('id', $id)->firstOrFail();
+        
+        // Check if user is group owner or admin
+        if ($event->group_id !== $user->id && $user->role_id !== 6) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        // Check if event has any confirmed reservations
+        if ($event->reservation()->whereIn('status', ['confirmée', 'en_attente_paiement'])->exists()) {
+            return response()->json([
+                'message' => 'Cannot delete event with active reservations'
+            ], 403);
+        }
+
+        // Delete associated photos from storage
+        foreach ($event->photos as $photo) {
+            Storage::disk('public')->delete($photo->path_to_img);
+        }
+
         $event->delete();
 
         return response()->json([
-            'status' => true,
-            'message' => 'Événement supprimé avec succès'
+            'success' => true,
+            'message' => 'Event deleted successfully'
         ]);
-}
+    }
 
-// Liste des participants d’un événement, avec filtre par statut
- public function participants($id, Request $request)
+    /**
+     * Get event participants (Group owner only)
+     */
+    public function participants($id, Request $request)
     {
-        $event = Events::where('group_id', auth()->id())->find($id);
-        if (!$event) {
-            return response()->json(['message' => 'Événement non trouvé'], 404);
-        }
+        $user = Auth::user();
+        
+        $event = Events::where('id', $id)
+                      ->where('group_id', $user->id)
+                      ->firstOrFail();
 
         $status = $request->query('status');
         $query = Reservations_events::with('user')->where('event_id', $id);
@@ -174,214 +647,152 @@ public function update(Request $request, $id)
         $participants = $query->get();
 
         return response()->json([
-            'event_id' => $id,
-            'participants' => $participants
+            'success' => true,
+            'data' => $participants
         ]);
-}
+    }
 
-// Mise à jour du statut d’un participant (par le groupe)
-public function updateStatus($id, Request $request)
+    /**
+     * Update participant status (Group owner only)
+     */
+    public function updateStatus($id, Request $request)
     {
+        $user = Auth::user();
 
-$request->validate([
-    'status' => [
-        'required',
-        Rule::in([
-            'en_attente_paiement',
-            'confirmée',
-            'en_attente_validation',
-            'refusée',
-            'annulée_par_utilisateur',
-            'annulée_par_organisateur',
-            'remboursement_en_attente',
-            'remboursée_partielle',
-            'remboursée_totale',
-        ]),
-    ],
-]);
-
+        $request->validate([
+            'status' => [
+                'required',
+                Rule::in([
+                    'en_attente_paiement',
+                    'confirmée',
+                    'en_attente_validation',
+                    'refusée',
+                    'annulée_par_utilisateur',
+                    'annulée_par_organisateur',
+                    'remboursement_en_attente',
+                    'remboursée_partielle',
+                    'remboursée_totale',
+                ]),
+            ],
+        ]);
 
         $reservation = Reservations_events::findOrFail($id);
-
-        $event = Events::where('group_id', auth()->id())->find($reservation->event_id);
-        if (!$event) {
-            return response()->json(['message' => 'Accès refusé à cette réservation.'], 403);
-        }
+        
+        $event = Events::where('id', $reservation->event_id)
+                      ->where('group_id', $user->id)
+                      ->firstOrFail();
 
         $reservation->status = $request->status;
         $reservation->save();
 
-        return response()->json(['message' => 'Statut mis à jour avec succès']);
- }
-
-// Recherche et listing d’événements actifs (front office)
- public function index(Request $request)
-    {
-        $query = Events::where('is_active', 1);
-
-        if ($request->has('title')) {
-            $query->where('title', 'like', '%' . $request->title . '%');
-        }
-
-        if ($request->has('category')) {
-            $query->where('category', $request->category);
-        }
-
-        if ($request->has('destination')) {
-            $query->where('ville_passente', 'like', '%' . $request->destination . '%');
-        }
-
-        if ($request->has('min_price')) {
-            $query->where('prix_place', '>=', $request->min_price);
-        }
-
-        if ($request->has('max_price')) {
-            $query->where('prix_place', '<=', $request->max_price);
-        }
-
-        if ($request->has('date_sortie')) {
-            $query->whereDate('date_sortie', '=', $request->date_sortie);
-        }
-
-        $events = $query->orderBy('date_sortie', 'asc')->get();
-
-        if ($events->isEmpty()) {
-            return response()->json([
-                'filters' => $request->all(),
-                'results' => [],
-                'message' => 'Aucun événement trouvé pour ces critères.'
-            ], 404);
+        // If reservation is confirmed, decrease available spots
+        if ($request->status === 'confirmée') {
+            $event->decrement('remaining_spots', $reservation->nbr_place);
         }
 
         return response()->json([
-            'filters' => $request->all(),
-            'results' => $events
-        ]);
- }
-
-    // Recherche d’événements par mot-clé
-    public function search(Request $request)
-    {
-        $keyword = trim($request->input('q'));
-
-        if (!$keyword) {
-            return response()->json(['message' => 'Veuillez entrer un mot-clé pour rechercher un événement.'], 400);
-        }
-
-        $events = Events::query()
-            ->where(function ($query) use ($keyword) {
-                $query->where('title', 'like', "%$keyword%")
-                      ->orWhere('description', 'like', "%$keyword%")
-                      ->orWhere('category', 'like', "%$keyword%")
-                      ->orWhere('ville_passente', 'like', "%$keyword%")
-                      ->orWhere('tags', 'like', "%$keyword%");
-            })
-            ->where('is_active', true)
-            ->orderBy('date_sortie', 'asc')
-            ->get();
-
-        if ($events->isEmpty()) {
-            return response()->json([
-                'message' => 'Aucun événement trouvé pour "' . $keyword . '".'
-            ], 404);
-        }
-
-        return response()->json([
-            'message' => 'Résultats pour "' . $keyword . '"',
-            'results' => $events
+            'success' => true,
+            'message' => 'Status updated successfully'
         ]);
     }
 
-    // Détails publics d’un événement
-    public function getEventDetails($id)
-    {
-        $event = Events::with('circuit')->find($id);
+    // ==================== ADMIN ONLY ROUTES ====================
 
-        if (!$event) {
-            return response()->json(['message' => 'Événement non trouvé'], 404);
+    /**
+     * Approve or reject event (Admin only)
+     */
+    public function moderate(Request $request, $id)
+    {
+        $user = Auth::user();
+        
+        // Check if admin (role_id = 6)
+        if ($user->role_id !== 6) {
+            return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        return response()->json([
-            'event' => $event,
-            'circuit' => $event->circuit,
-        ]);
-    }
-
-    // Générer les liens de partage de l’événement
-    public function getEventShareLinks($id)
-    {
-        $event = Events::find($id);
-
-        if (!$event || !$event->is_active) {
-            return response()->json(['message' => 'Événement introuvable.'], 404);
-        }
-
-        $url = url('/public/event/' . $event->id);
-
-        $shareLinks = [
-            'facebook' => 'https://www.facebook.com/sharer/sharer.php?u=' . urlencode($url),
-            'whatsapp' => 'https://api.whatsapp.com/send?text=' . urlencode("Découvre cet événement : " . $url),
-            'telegram' => 'https://t.me/share/url?url=' . urlencode($url) . '&text=' . urlencode('Découvre cet événement incroyable !'),
-            'messenger' => 'https://www.facebook.com/dialog/send?app_id=TON_APP_ID_FACEBOOK&link=' . urlencode($url) . '&redirect_uri=' . urlencode(config('app.url'))
-        ];
-
-        return response()->json([
-            'event_id' => $event->id,
-            'share_links' => $shareLinks
-        ]);
-    }
-
-    // Générer le lien de copie de l’événement
-    public function getEventCopyLink($id)
-    {
-        $event = Events::find($id);
-
-        if (!$event) {
-            return response()->json(['message' => 'Événement non trouvé'], 404);
-        }
-
-        $publicLink = url("/public/event/" . $event->id);
-
-        return response()->json([
-            'link' => $publicLink
-        ]);
-    }
-
-
-    // prévenir si un événement/camping est proche de sa position
-        public function notifyNearbyEvents(Request $request, $userId)
-    {
         $request->validate([
-            'lat' => 'required|numeric',
-            'lng' => 'required|numeric',
-            'radius' => 'nullable|numeric', // km, par défaut 10 km
+            'action' => 'required|in:approve,reject',
+            'rejection_reason' => 'required_if:action,reject|string'
         ]);
 
-        $user = User::findOrFail($userId);
-        $lat = $request->lat;
-        $lng = $request->lng;
-        $radius = $request->radius ?? 10; // rayon par défaut 10 km
+        $event = Events::findOrFail($id);
 
-        // --- Recherche des événements proches ---
-        $events = Events::where('is_active', true)
-            ->selectRaw("*, (6371 * acos(cos(radians(?)) * cos(radians(lat)) * cos(radians(lng) - radians(?)) + sin(radians(?)) * sin(radians(lat)))) AS distance", [$lat, $lng, $lat])
-            ->having('distance', '<=', $radius)
-            ->orderBy('distance', 'asc')
-            ->get();
+        if ($request->action === 'approve') {
+            $event->is_active = true;
+            $event->status = 'scheduled';
+            $message = 'Event approved successfully';
+        } else {
+            $event->status = 'rejected';
+            $event->is_active = false;
+            $event->rejection_reason = $request->rejection_reason;
+            $message = 'Event rejected';
+        }
 
-        // --- Recherche des campings proches ---
-        $zones = CampingZone::where('status', true)
-            ->where('is_closed', false)
-            ->selectRaw("*, (6371 * acos(cos(radians(?)) * cos(radians(lat)) * cos(radians(lng) - radians(?)) + sin(radians(?)) * sin(radians(lat)))) AS distance", [$lat, $lng, $lat])
-            ->having('distance', '<=', $radius)
-            ->orderBy('distance', 'asc')
-            ->get();
+        $event->save();
 
         return response()->json([
-            'user' => $user->name,
-            'events_nearby' => $events,
-            'campings_nearby' => $zones,
+            'success' => true,
+            'message' => $message
         ]);
+    }
+
+    /**
+     * Get all events for admin management
+     */
+    public function adminIndex(Request $request)
+    {
+        $user = Auth::user();
+        
+        if ($user->role_id !== 6) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $query = Events::with('group');
+
+        if ($request->has('status')) {
+            $query->where('status', $request->status);
+        }
+
+        if ($request->has('event_type')) {
+            $query->where('event_type', $request->event_type);
+        }
+
+        $events = $query->orderBy('created_at', 'desc')->paginate(20);
+
+        return response()->json([
+            'success' => true,
+            'data' => $events
+        ]);
+    }
+
+    // ==================== PRIVATE HELPER METHODS ====================
+
+    /**
+     * Notify followers about new event
+     */
+    private function notifyFollowers($groupId, $event)
+    {
+        try {
+            $profile = Profile::where('user_id', $groupId)->first();
+            if (!$profile) return;
+
+            $profileGroupe = ProfileGroupe::where('profile_id', $profile->id)->first();
+            if (!$profileGroupe) return;
+
+            $followersUserIds = FollowersGroupe::where('groupe_id', $profileGroupe->id)
+                                              ->pluck('user_id')
+                                              ->toArray();
+            
+            $users = User::whereIn('id', $followersUserIds)->get();
+
+            foreach ($users as $user) {
+                if ($user->email) {
+                    Mail::to($user->email)->send(new NewEventNotification($event, $user->name));
+                }
+            }
+        } catch (\Exception $e) {
+            // Log error but don't fail the request
+            \Log::error('Failed to send event notifications: ' . $e->getMessage());
+        }
     }
 }
-

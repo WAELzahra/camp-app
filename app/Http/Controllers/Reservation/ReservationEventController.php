@@ -47,7 +47,71 @@ class ReservationEventController extends Controller
             'participants' => $participants,
         ]);
     }
+    /**
+     * Get all participations for the authenticated user (camper)
+     */
+    public function myParticipations(Request $request)
+    {
+        $user = Auth::user();
+        
+        // Only campers (role_id = 1) can access their participations
+        if ($user->role_id !== 1) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Only campers can access their participations',
+                'data' => ['data' => []]
+            ], 200);
+        }
 
+        try {
+            $query = Reservations_events::where('user_id', $user->id)
+                ->with(['event' => function($q) {
+                    $q->with('photos');
+                }]);
+
+            // Optional filters
+            if ($request->has('status')) {
+                $query->where('status', $request->status);
+            }
+
+            if ($request->has('event_type') && $request->event_type) {
+                $query->whereHas('event', function($q) use ($request) {
+                    $q->where('event_type', $request->event_type);
+                });
+            }
+
+            // Sort options
+            $sortBy = $request->get('sort_by', 'created_at');
+            $sortOrder = $request->get('sort_order', 'desc');
+            $query->orderBy($sortBy, $sortOrder);
+
+            $participations = $query->paginate($request->get('per_page', 15));
+
+            // Transform events to include cover_image
+            $participations->getCollection()->transform(function($participation) {
+                if ($participation->event && $participation->event->photos->isNotEmpty()) {
+                    $coverPhoto = $participation->event->photos->firstWhere('is_cover', true);
+                    if ($coverPhoto) {
+                        $participation->event->cover_image = $coverPhoto->url;
+                    } else {
+                        $participation->event->cover_image = $participation->event->photos->first()->url;
+                    }
+                }
+                return $participation;
+            });
+
+            return response()->json([
+                'success' => true,
+                'data' => $participations
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch participations: ' . $e->getMessage(),
+                'data' => ['data' => []]
+            ], 500);
+        }
+    }
     /**
      * Statistiques du nombre de participants par statut pour un événement.
      */

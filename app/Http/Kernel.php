@@ -44,7 +44,8 @@ class Kernel extends HttpKernel
             \Illuminate\View\Middleware\ShareErrorsFromSession::class,
             \App\Http\Middleware\VerifyCsrfToken::class,
             \Illuminate\Routing\Middleware\SubstituteBindings::class,
-            
+            \App\Http\Middleware\TrackUserActivity::class, // Add this
+
         ],
         
         
@@ -52,6 +53,8 @@ class Kernel extends HttpKernel
             \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,
             \Illuminate\Routing\Middleware\ThrottleRequests::class.':api',
             \Illuminate\Routing\Middleware\SubstituteBindings::class,
+            \App\Http\Middleware\TrackUserActivity::class, 
+
         ],
     ];
 
@@ -79,7 +82,7 @@ class Kernel extends HttpKernel
         'centre' => \App\Http\Middleware\UserIsCentre::class,
         'fournisseur' => \App\Http\Middleware\UserIsFournisseur::class,
         'campeur_or_centre' => \App\Http\Middleware\CheckCampeurOrCentreRole::class,
-
+        'group' => \App\Http\Middleware\UserIsGroup::class,
 
     ];
 }

@@ -1,33 +1,32 @@
 <?php
 
 use Illuminate\Support\Facades\Broadcast;
-use App\Models\ChatGroupUser;
 
-/*
-|--------------------------------------------------------------------------
-| Broadcast Channels
-|--------------------------------------------------------------------------
-|
-| Here you may register all of the event broadcasting channels that your
-| application supports. The given channel authorization callbacks are
-| used to check if an authenticated user can listen to the channel.
-|
-*/
+Broadcast::channel('conversation.{conversationId}', function ($user, $conversationId) {
+    $conversation = \App\Models\Conversation::find($conversationId);
 
-// Register the broadcasting auth route
-// This is the key to making /broadcasting/auth available
-// Broadcast::routes(['middleware' => ['auth:sanctum']]); // or 'auth:api' if you use token auth
+    if (!$conversation || !$conversation->hasParticipant($user->id)) {
+        return false;
+    }
 
-// Private group channel
-Broadcast::channel('group.{groupId}', function ($user, $groupId) {
-    // Only allow active members of the group
-    return ChatGroupUser::where('chat_group_id', $groupId)
-        ->where('user_id', $user->id)
-        ->where('status', 'active')
-        ->exists();
+    return [
+        'id'         => $user->id,
+        'first_name' => $user->first_name,
+        'last_name'  => $user->last_name,
+        'avatar'     => $user->avatar,
+        'is_online'  => $user->isOnline(),
+        'last_seen'  => $user->last_login_at,
+    ];
 });
 
-// Optional: existing user channel
-Broadcast::channel('App.Models.User.{id}', function ($user, $id) {
-    return (int) $user->id === (int) $id;
+// ✅ NEW: each user has their own private channel for global real-time events
+// (new messages from any conversation, system alerts, etc.)
+Broadcast::channel('user.{userId}', function ($user, $userId) {
+    // Only the authenticated user can join their own channel
+    return (int) $user->id === (int) $userId;
+});
+
+Broadcast::channel('group.{groupId}', function ($user, $groupId) {
+    if (!$user) return false;
+    return true;
 });

@@ -125,10 +125,20 @@ class Photo extends Model
     }
 
     /**
-     * Get the URL of the photo.
+     * Get the full URL of the photo.
      */
     public function getUrlAttribute()
     {
-        return $this->path_to_img;
+        if (!$this->path_to_img) {
+            return null;
+        }
+        
+        // Check if it's already a full URL
+        if (filter_var($this->path_to_img, FILTER_VALIDATE_URL)) {
+            return $this->path_to_img;
+        }
+        
+        // Return the full URL with storage path
+        return url('storage/' . $this->path_to_img);
     }
 }

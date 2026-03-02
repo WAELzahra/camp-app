@@ -1,5 +1,4 @@
 <?php
-// database/seeders/ReservationServiceItemSeeder.php
 
 namespace Database\Seeders;
 
@@ -23,18 +22,9 @@ class ReservationServiceItemSeeder extends Seeder
             return;
         }
         
-        // Map reservation IDs to indices (reservations are seeded in order)
-        // Assuming reservations are seeded in this order:
-        // 1. Past reservation (completed) - User ID 2
-        // 2. Current reservation (pending) - User ID 2
-        // 3. Future reservation (approved) - User ID 2
-        // 4. Rejected reservation - User ID 2
-        // 5. Canceled reservation - User ID 2
-        // 6. Another user's reservation (pending) - User ID 3
-        // 7. Another user's reservation (approved) - User ID 4
-        
         $serviceItems = [
             // Reservation 1 (Basic Camping + Breakfast) - Past completed reservation
+            // Using different profile_center_service_id values to avoid duplicates
             [
                 'reservation_id' => $reservationIds[0] ?? 1,
                 'profile_center_service_id' => 1, // Basic Camping
@@ -43,7 +33,7 @@ class ReservationServiceItemSeeder extends Seeder
                 'unit_price' => 15.00,
                 'unit' => 'person/night',
                 'quantity' => 3,
-                'subtotal' => 135.00, // 3 people × 3 nights × 15.00 = 135.00
+                'subtotal' => 135.00,
                 'service_date_debut' => Carbon::now()->subDays(10)->format('Y-m-d'),
                 'service_date_fin' => Carbon::now()->subDays(7)->format('Y-m-d'),
                 'notes' => 'Bringing our own tent',
@@ -53,13 +43,13 @@ class ReservationServiceItemSeeder extends Seeder
             ],
             [
                 'reservation_id' => $reservationIds[0] ?? 1,
-                'profile_center_service_id' => 2, // Breakfast
+                'profile_center_service_id' => 2, // Breakfast (different from above)
                 'service_name' => 'Breakfast',
                 'service_description' => 'Continental breakfast with coffee, bread, jam, and fruits',
                 'unit_price' => 20.00,
                 'unit' => 'person',
                 'quantity' => 3,
-                'subtotal' => 60.00, // 3 people × 20.00
+                'subtotal' => 60.00,
                 'service_date_debut' => Carbon::now()->subDays(10)->format('Y-m-d'),
                 'service_date_fin' => Carbon::now()->subDays(7)->format('Y-m-d'),
                 'notes' => 'Vegetarian options needed',
@@ -71,12 +61,12 @@ class ReservationServiceItemSeeder extends Seeder
             // Reservation 2 (Cabin Rental) - Current pending reservation
             [
                 'reservation_id' => $reservationIds[1] ?? 2,
-                'profile_center_service_id' => 3, // Cabin Rental
+                'profile_center_service_id' => 3, // Cabin Rental (different from above)
                 'service_name' => 'Cabin Rental',
                 'service_description' => 'Cozy cabin accommodation with basic furniture, electricity, and shared facilities',
                 'unit_price' => 80.00,
                 'unit' => 'night',
-                'quantity' => 3, // 3 nights
+                'quantity' => 3,
                 'subtotal' => 240.00,
                 'service_date_debut' => Carbon::now()->addDays(5)->format('Y-m-d'),
                 'service_date_fin' => Carbon::now()->addDays(8)->format('Y-m-d'),
@@ -87,15 +77,16 @@ class ReservationServiceItemSeeder extends Seeder
             ],
             
             // Reservation 3 (Multiple services) - Future approved reservation
+            // Using all different profile_center_service_id values
             [
                 'reservation_id' => $reservationIds[2] ?? 3,
-                'profile_center_service_id' => 1, // Basic Camping
-                'service_name' => 'Basic Camping',
-                'service_description' => 'Sleep with your own tent - access to basic facilities',
-                'unit_price' => 15.00,
-                'unit' => 'person/night',
-                'quantity' => 4,
-                'subtotal' => 180.00, // 4 people × 3 nights × 15.00 = 180.00
+                'profile_center_service_id' => 4, // Tent Rental (different from above)
+                'service_name' => 'Tent Rental',
+                'service_description' => 'Rental of 2-person tent with sleeping mats',
+                'unit_price' => 25.00,
+                'unit' => 'night',
+                'quantity' => 2,
+                'subtotal' => 50.00,
                 'service_date_debut' => Carbon::now()->addDays(15)->format('Y-m-d'),
                 'service_date_fin' => Carbon::now()->addDays(18)->format('Y-m-d'),
                 'notes' => 'Two tents needed',
@@ -105,13 +96,13 @@ class ReservationServiceItemSeeder extends Seeder
             ],
             [
                 'reservation_id' => $reservationIds[2] ?? 3,
-                'profile_center_service_id' => 2, // Breakfast
+                'profile_center_service_id' => 5, // Breakfast (different from above)
                 'service_name' => 'Breakfast',
                 'service_description' => 'Continental breakfast',
                 'unit_price' => 20.00,
                 'unit' => 'person',
                 'quantity' => 4,
-                'subtotal' => 80.00, // 4 people × 20.00
+                'subtotal' => 80.00,
                 'service_date_debut' => Carbon::now()->addDays(15)->format('Y-m-d'),
                 'service_date_fin' => Carbon::now()->addDays(18)->format('Y-m-d'),
                 'notes' => null,
@@ -121,13 +112,13 @@ class ReservationServiceItemSeeder extends Seeder
             ],
             [
                 'reservation_id' => $reservationIds[2] ?? 3,
-                'profile_center_service_id' => 3, // Cabin Rental
+                'profile_center_service_id' => 6, // Cabin Rental (different from above)
                 'service_name' => 'Cabin Rental',
                 'service_description' => 'Cozy cabin accommodation',
                 'unit_price' => 80.00,
                 'unit' => 'night',
                 'quantity' => 1,
-                'subtotal' => 80.00, // 1 cabin for 1 night
+                'subtotal' => 80.00,
                 'service_date_debut' => Carbon::now()->addDays(15)->format('Y-m-d'),
                 'service_date_fin' => Carbon::now()->addDays(16)->format('Y-m-d'),
                 'notes' => 'For elderly family members',
@@ -139,13 +130,13 @@ class ReservationServiceItemSeeder extends Seeder
             // Reservation 4 (Rejected)
             [
                 'reservation_id' => $reservationIds[3] ?? 4,
-                'profile_center_service_id' => 1, // Basic Camping
-                'service_name' => 'Basic Camping',
-                'service_description' => 'Sleep with your own tent',
-                'unit_price' => 15.00,
-                'unit' => 'person/night',
+                'profile_center_service_id' => 7, // Sleeping Bag Rental (new)
+                'service_name' => 'Sleeping Bag Rental',
+                'service_description' => 'Rental of warm sleeping bag',
+                'unit_price' => 10.00,
+                'unit' => 'night',
                 'quantity' => 5,
-                'subtotal' => 225.00, // 5 people × 3 nights × 15.00 = 225.00
+                'subtotal' => 50.00,
                 'service_date_debut' => Carbon::now()->addDays(25)->format('Y-m-d'),
                 'service_date_fin' => Carbon::now()->addDays(28)->format('Y-m-d'),
                 'notes' => 'Large group booking',
@@ -157,13 +148,13 @@ class ReservationServiceItemSeeder extends Seeder
             // Reservation 5 (Canceled)
             [
                 'reservation_id' => $reservationIds[4] ?? 5,
-                'profile_center_service_id' => 3, // Cabin Rental
-                'service_name' => 'Cabin Rental',
-                'service_description' => 'Cozy cabin accommodation',
-                'unit_price' => 80.00,
-                'unit' => 'night',
+                'profile_center_service_id' => 8, // BBQ Equipment (new)
+                'service_name' => 'BBQ Equipment',
+                'service_description' => 'BBQ grill and utensils rental',
+                'unit_price' => 15.00,
+                'unit' => 'day',
                 'quantity' => 3,
-                'subtotal' => 240.00,
+                'subtotal' => 45.00,
                 'service_date_debut' => Carbon::now()->addDays(30)->format('Y-m-d'),
                 'service_date_fin' => Carbon::now()->addDays(33)->format('Y-m-d'),
                 'notes' => 'Canceled by user',
@@ -175,13 +166,13 @@ class ReservationServiceItemSeeder extends Seeder
             // Reservation 6 (Another user - pending)
             [
                 'reservation_id' => $reservationIds[5] ?? 6,
-                'profile_center_service_id' => 3, // Cabin Rental
-                'service_name' => 'Cabin Rental',
-                'service_description' => 'Cozy cabin accommodation',
-                'unit_price' => 80.00,
-                'unit' => 'night',
-                'quantity' => 3,
-                'subtotal' => 240.00,
+                'profile_center_service_id' => 9, // Firewood (new)
+                'service_name' => 'Firewood Bundle',
+                'service_description' => 'Bundle of firewood for campfire',
+                'unit_price' => 8.00,
+                'unit' => 'bundle',
+                'quantity' => 2,
+                'subtotal' => 16.00,
                 'service_date_debut' => Carbon::now()->addDays(3)->format('Y-m-d'),
                 'service_date_fin' => Carbon::now()->addDays(6)->format('Y-m-d'),
                 'notes' => 'Anniversary special request',
@@ -191,13 +182,13 @@ class ReservationServiceItemSeeder extends Seeder
             ],
             [
                 'reservation_id' => $reservationIds[5] ?? 6,
-                'profile_center_service_id' => 2, // Breakfast
-                'service_name' => 'Breakfast',
-                'service_description' => 'Continental breakfast',
-                'unit_price' => 20.00,
-                'unit' => 'person',
+                'profile_center_service_id' => 10, // Camping Chair Rental (new)
+                'service_name' => 'Camping Chair Rental',
+                'service_description' => 'Comfortable camping chair',
+                'unit_price' => 5.00,
+                'unit' => 'day',
                 'quantity' => 2,
-                'subtotal' => 40.00,
+                'subtotal' => 10.00,
                 'service_date_debut' => Carbon::now()->addDays(3)->format('Y-m-d'),
                 'service_date_fin' => Carbon::now()->addDays(6)->format('Y-m-d'),
                 'notes' => null,
@@ -209,13 +200,13 @@ class ReservationServiceItemSeeder extends Seeder
             // Reservation 7 (Another user - approved)
             [
                 'reservation_id' => $reservationIds[6] ?? 7,
-                'profile_center_service_id' => 1, // Basic Camping
-                'service_name' => 'Basic Camping',
-                'service_description' => 'Sleep with your own tent',
-                'unit_price' => 15.00,
-                'unit' => 'person/night',
+                'profile_center_service_id' => 11, // Lantern Rental (new)
+                'service_name' => 'Camping Lantern Rental',
+                'service_description' => 'LED camping lantern',
+                'unit_price' => 5.00,
+                'unit' => 'night',
                 'quantity' => 1,
-                'subtotal' => 30.00, // 1 person × 2 nights × 15.00 = 30.00
+                'subtotal' => 5.00,
                 'service_date_debut' => Carbon::now()->addDays(10)->format('Y-m-d'),
                 'service_date_fin' => Carbon::now()->addDays(12)->format('Y-m-d'),
                 'notes' => 'Solo backpacker',
@@ -224,6 +215,12 @@ class ReservationServiceItemSeeder extends Seeder
                 'updated_at' => Carbon::now()->subDays(3),
             ],
         ];
+
+        // Clear existing data for these reservations to avoid duplicates
+        $reservationIdsToClear = array_column($serviceItems, 'reservation_id');
+        DB::table('reservation_service_items')
+            ->whereIn('reservation_id', $reservationIdsToClear)
+            ->delete();
 
         DB::table('reservation_service_items')->insert($serviceItems);
         

@@ -30,10 +30,13 @@ use App\Http\Controllers\Comment\CommentController;
 
 // Authenticated Controllers
 use App\Http\Controllers\profile\ProfileController;
-use App\Http\Controllers\message_chat\PrivateChatController;
-use App\Http\Controllers\GroupChat\ChatGroupController;
 use App\Http\Controllers\Notification\NotificationController;
 use App\Http\Controllers\Favoris\FavorisController;
+use App\Http\Controllers\Message\ConversationController;
+use App\Http\Controllers\Admin\AdminNotificationController;
+use App\Http\Controllers\Message\MessageController;
+
+
 
 // Event Controllers
 use App\Http\Controllers\Event\EventInterestController;
@@ -66,7 +69,102 @@ use App\Http\Controllers\Admin\ServiceCategoryController;
 // API Services
 use App\Services\ZoneSearchService;
 use Illuminate\Support\Facades\Broadcast;
-// Broadcast::routes(['middleware' => ['auth:sanctum']]);
+
+Broadcast::routes(['middleware' => ['auth:sanctum']]);
+
+Route::middleware('auth:sanctum')->get('/user/{userId}/status', function ($userId) {
+    $user = \App\Models\User::find($userId);
+    
+    if (!$user) {
+        return response()->json(['error' => 'User not found'], 404);
+    }
+    
+    return response()->json([
+        'online' => $user->isOnline(),
+        'last_seen' => $user->last_login_at,
+        'is_active' => $user->is_active
+    ]);
+});
+
+// Add these routes to your api.php
+Route::middleware('auth:sanctum')->group(function () {
+
+    Route::prefix('conversations')->group(function () {
+        Route::get('/',                          [ConversationController::class, 'index']);
+        Route::post('/start',                    [ConversationController::class, 'start']);
+        Route::post('/start-with-group',         [ConversationController::class, 'startWithGroup']);
+        Route::get('/group/{groupId}',           [ConversationController::class, 'getGroupConversations']);
+        Route::get('/my-groups',                 [ConversationController::class, 'getMyGroupConversations']);
+        Route::get('/{conversationId}/messages', [ConversationController::class, 'messages']);
+        Route::post('/{conversationId}/messages',[ConversationController::class, 'sendMessage']);
+
+        Route::patch('/{conversationId}/read',          [ConversationController::class, 'markAsRead']);
+        Route::post('/{conversationId}/mark-as-read',   [ConversationController::class, 'markAsRead']); 
+
+        Route::patch('/{conversationId}/archive', [ConversationController::class, 'toggleArchive']);
+        Route::delete('/{conversationId}',        [ConversationController::class, 'destroy']);
+    });
+
+    Route::post('/messages/{message}/react',     [MessageController::class, 'react']); 
+
+    Route::prefix('messages')->group(function () {
+        Route::get('/{messageId}',               [MessageController::class, 'show']);
+        Route::put('/{messageId}',               [MessageController::class, 'update']);
+        Route::delete('/{messageId}',            [MessageController::class, 'destroy']);
+        Route::post('/{messageId}/react',        [MessageController::class, 'react']);
+        Route::get('/{messageId}/read-receipts', [MessageController::class, 'readReceipts']);
+    });
+
+});
+
+
+
+
+// ==================== USER NOTIFICATION ROUTES ====================
+Route::middleware('auth:sanctum')->prefix('notifications')->group(function () {
+    // Get notifications
+    Route::get('/', [NotificationController::class, 'index']);
+    
+    // Get unread count
+    Route::get('/unread/count', [NotificationController::class, 'getUnreadCount']);
+    
+    // Mark as read
+    Route::patch('/{id}/read', [NotificationController::class, 'markAsRead']);
+    
+    // Mark all as read
+    Route::patch('/read-all', [NotificationController::class, 'markAllAsRead']);
+    
+    // Archive notification
+    Route::patch('/{id}/archive', [NotificationController::class, 'archive']);
+    
+    // Delete notification
+    Route::delete('/{id}', [NotificationController::class, 'destroy']);
+    
+    // Notification preferences
+    Route::get('/preferences', [NotificationController::class, 'getPreferences']);
+    Route::put('/preferences', [NotificationController::class, 'updatePreferences']);
+    
+    // Statistics
+    Route::get('/stats', [NotificationController::class, 'getStats']);
+});
+
+// ==================== ADMIN NOTIFICATION ROUTES ====================
+Route::middleware(['auth:sanctum', 'admin'])->prefix('admin/notifications')->group(function () {
+    // Send notification
+    Route::post('/send', [AdminNotificationController::class, 'send']);
+    
+    // Templates
+    Route::get('/templates', [AdminNotificationController::class, 'getTemplates']);
+    Route::post('/templates', [AdminNotificationController::class, 'createTemplate']);
+    Route::put('/templates/{id}', [AdminNotificationController::class, 'updateTemplate']);
+    Route::delete('/templates/{id}', [AdminNotificationController::class, 'deleteTemplate']);
+    
+    // Logs and stats
+    Route::get('/logs', [AdminNotificationController::class, 'getLogs']);
+    Route::get('/stats', [AdminNotificationController::class, 'getAdminStats']);
+});
+
+
 
 // ==================== ROUTES PUBLIQUES (NO AUTH REQUIRED) ====================
 // Email Verification
@@ -131,13 +229,19 @@ Route::get('/materielle/index/{fournisseur_id}', [MaterielleController::class, '
 Route::get('/materielle/show/{materielle_id}', [MaterielleController::class, 'show']);
 
 // Public Events
-Route::get('/events/search', [EventController::class, 'search']);
-Route::get('/events/{id}/participants/stats', [ReservationEventController::class, 'participantStats']);
-Route::get('/events/{id}/participants', [ReservationEventController::class, 'participants']);
-Route::get('/events/{id}/share-links', [EventController::class, 'getEventShareLinks']);
-Route::get('/events/{id}/copy-link', [EventController::class, 'getEventCopyLink']);
-Route::get('/events/{id}', [EventController::class, 'getEventDetails']);
-Route::get('/events', [EventController::class, 'index']);
+Route::prefix('events')->group(function () {
+    // Public event listing and search
+    Route::get('/', [EventController::class, 'index']);              
+    Route::get('/search', [EventController::class, 'search']);       
+    Route::get('/groups/{groupId}', [EventController::class, 'getGroupEvents']);
+    Route::get('/my-events', [EventController::class, 'myEvents']);
+
+    // Share links (public)
+    Route::get('/{id}/share-links', [EventController::class, 'getEventShareLinks']);
+    Route::get('/{id}/copy-link', [EventController::class, 'getEventCopyLink']);
+    Route::get('/{id}', [EventController::class, 'getEventDetails']); 
+
+});
 
 // Public Groups
 Route::get('/groupes/search', [GroupController::class, 'searchGroups']);
@@ -219,40 +323,8 @@ Route::prefix('feedbacks')->group(function () {
 
 Route::middleware('auth:sanctum')->group(function () {
 
-    // Group Chat Routes
-    Route::prefix('group-chat')->group(function () {
-        // Group management
-        Route::post('/', [ChatGroupController::class, 'store']);
-        Route::get('/my-groups', [ChatGroupController::class, 'myGroups']);
-        Route::get('/my-memberships', [ChatGroupController::class, 'myMemberships']);
-        Route::delete('/{id}', [ChatGroupController::class, 'destroy']);
-        Route::patch('/{id}/archive', [ChatGroupController::class, 'archive']);
-        Route::put('/{id}/rename', [ChatGroupController::class, 'renameGroup']);
-        
-        // Invitations
-        Route::get('/join/{token}', [ChatGroupController::class, 'joinByToken']);
-        
-        // Messages
-        Route::get('/{chat_group_id}/messages', [ChatGroupController::class, 'getMessages']);
-        Route::post('/{chat_group_id}/message', [ChatGroupController::class, 'sendMessage']);
-        Route::post('/messages/{message_id}/react', [ChatGroupController::class, 'reactToMessage']);
-        Route::delete('/messages/{message_id}/react/{reaction}', [ChatGroupController::class, 'removeReaction']);
-        Route::patch('/messages/{message_id}/pin', [ChatGroupController::class, 'pinMessage']);
-        
-        // Members
-        Route::get('/{chat_group_id}/members', [ChatGroupController::class, 'getMembers']);
-        Route::delete('/{chat_group_id}/leave', [ChatGroupController::class, 'leaveGroup']);
-        Route::delete('/{chat_group_id}/members/{user_id}', [ChatGroupController::class, 'removeMember']);
-        Route::post('/{chat_group_id}/members/{user_id}/mute', [ChatGroupController::class, 'muteMember']);
-        Route::post('/{chat_group_id}/members/{user_id}/unmute', [ChatGroupController::class, 'unmuteMember']);
-        
-        // Typing status
-        Route::post('/{chat_group_id}/typing', [ChatGroupController::class, 'typingStatus']);
-        Route::get('/{chat_group_id}/typing', [ChatGroupController::class, 'typingUsers']);
-        
-        // Statistics
-        Route::get('/{chat_group_id}/stats', [ChatGroupController::class, 'getStats']);
-    });
+    Route::get('/reservations/my-participations', [ReservationEventController::class, 'myParticipations']);
+
     Route::post('/annonces/{id}/like', [AnnonceController::class, 'like']);
     Route::post('/annonces/{id}/unlike', [AnnonceController::class, 'unlike']);
     Route::get('/annonces/{id}/check-like', [AnnonceController::class, 'checkLike']);
@@ -316,13 +388,23 @@ Route::middleware('auth:sanctum')->group(function () {
     });
     
     // -------------------- EVENTS --------------------
-    Route::post('/events', [EventController::class, 'store']);
-    Route::put('/events/{id}', [EventController::class, 'update']);
-    Route::delete('/events/{id}', [EventController::class, 'destroy']);
-    Route::patch('/events/{event}/status', [EventController::class, 'updateStatus']);
-    Route::post('/events/{id}/interest', [EventInterestController::class, 'toggleInterest']);
-    Route::get('/events/nearby/{userId}', [EventController::class, 'notifyNearbyEvents']);
-    
+    Route::prefix('events')->group(function () {
+        Route::get('/{id}/details', [EventController::class, 'show']);
+        Route::get('/{id}/participants/stats', [ReservationEventController::class, 'participantStats']);
+        Route::post('/{id}/interest', [EventInterestController::class, 'toggleInterest']);
+        Route::get('/nearby/{userId}', [EventController::class, 'notifyNearbyEvents']);
+    });
+    Route::middleware(['group'])->prefix('events')->group(function () {
+        Route::post('/', [EventController::class, 'store']);             
+        Route::put('/{id}', [EventController::class, 'update']);          
+        Route::delete('/{id}', [EventController::class, 'destroy']);      
+        Route::get('/{id}/participants', [EventController::class, 'participants']);
+        Route::patch('/participants/{id}/status', [EventController::class, 'updateStatus']);
+    });
+    Route::middleware(['admin'])->prefix('admin/events')->group(function () {
+        Route::get('/', [EventController::class, 'adminIndex']);
+        Route::patch('/{id}/moderate', [EventController::class, 'moderate']);
+    });
     // -------------------- EVENT RESERVATIONS --------------------
     Route::post('/reservation-event', [ReservationEventController::class, 'createReservationWithPayment']);
     Route::put('/reservation-event/{id}/simulate-payment', [ReservationEventController::class, 'simulatePayment']);
@@ -352,16 +434,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/events/{event}/send-reminders', [NotificationController::class, 'sendRemindersForEvent']);
     
     // -------------------- CHAT --------------------
-    // Private Chat
-    Route::get('/chat/conversation/{receiver_id}/{event_id}', [PrivateChatController::class, 'conversation']);
-    Route::get('/chat/unread-count/{event_id}', [PrivateChatController::class, 'unreadCount']);
-    Route::post('/chat/send', [PrivateChatController::class, 'send']);
-    Route::delete('/chat/message/{id}', [PrivateChatController::class, 'deleteMessage']);
-    Route::post('/chat/archive', [PrivateChatController::class, 'archiveConversation']);
-    Route::get('/chat/conversations', [PrivateChatController::class, 'listConversations']);
-    
 
-    
     // -------------------- CAMPING ZONES --------------------
     Route::prefix('zones')->group(function () {
         Route::post('/', [CampingZonesController::class, 'store']);
