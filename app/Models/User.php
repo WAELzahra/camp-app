@@ -23,9 +23,9 @@ class User extends Authenticatable implements MustVerifyEmail
        'first_name',      
         'last_name',      
         'email',
-        'adresse',
         'phone_number',
         'password',
+        'addresse',
         'role_id',
         'is_active',
         'ville',               
@@ -264,4 +264,3 @@ class User extends Authenticatable implements MustVerifyEmail
 
 
 }
-

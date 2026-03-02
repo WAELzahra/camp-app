@@ -65,6 +65,10 @@ use App\Http\Controllers\Admin\SignaleZoneController;
 use App\Http\Controllers\Admin\CampingCentreController;
 use App\Http\Controllers\Admin\CampingZoneController;
 use App\Http\Controllers\Admin\ServiceCategoryController;
+use App\Http\Controllers\Admin\TestUserController;
+
+
+
 
 // API Services
 use App\Services\ZoneSearchService;
@@ -179,7 +183,7 @@ Route::prefix('profile')->group(function () {
 });
 // Authentication
 Route::post('/register', [RegisteredUserController::class, 'store']);
-Route::post('/login', [AuthenticatedSessionController::class, 'store']);
+Route::post('/login', [AuthenticatedSessionController::class, 'store'])->name('login');
 Route::post('/forgot-password', [NewPasswordController::class, 'sendResetEmail']);
 Route::post('/reset-password', [NewPasswordController::class, 'resetPassword']);
 Route::post('/verify-password', [NewPasswordController::class, 'verifyResetCode']);
@@ -559,14 +563,93 @@ Route::middleware('auth:sanctum')->group(function () {
     });
     
     // -------------------- ADMIN ROUTES --------------------
-    Route::middleware(['admin'])->prefix('admin')->group(function () {
-        // User Management
-        Route::get('/users', [AdminUserController::class, 'index']);
-        Route::get('/users/{id}', [AdminUserController::class, 'show']);
-        Route::put('/users/{id}', [AdminUserController::class, 'update']);
-        Route::delete('/users/{id}', [AdminUserController::class, 'destroy']);
-        Route::put('/users/{id}/toggle-activation', [AdminUserController::class, 'toggleActivation']);
-        Route::post('/feedbacks/{id}/moderate', [AdminUserController::class, 'moderate']);
+
+// routes/api.php
+
+
+
+// Routes protégées par authentification et rôle admin
+// Routes protégées par authentification et rôle admin
+Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function () {
+    
+    // Dashboard
+    
+    // ==================== GESTION DES UTILISATEURS ====================
+    Route::prefix('users')->group(function () {
+        
+        // Liste des utilisateurs avec filtres
+        Route::get('/', [AdminUserController::class, 'index']);
+        
+        // Statistiques des utilisateurs
+        Route::get('/stats/overview', [AdminUserController::class, 'stats']);
+        
+        // Récupérer tous les rôles
+        Route::get('/roles/all', function () {
+            return response()->json([
+                'success' => true,
+                'data' => \App\Models\Role::all()
+            ]);
+        });
+        
+        // Actions sur un utilisateur spécifique
+        Route::prefix('{id}')->group(function () {
+            
+            // Informations de base
+            Route::get('/', [AdminUserController::class, 'show']); // Profil complet
+            Route::put('/', [AdminUserController::class, 'update']); // Mise à jour
+            Route::delete('/', [AdminUserController::class, 'destroy']); // Suppression
+            
+            // Actions spéciales
+            Route::put('/toggle-activation', [AdminUserController::class, 'toggleActivation']); // Activer/Désactiver
+            Route::post('/reset-password', [AdminUserController::class, 'resetPassword']); // Réinitialiser mot de passe
+            Route::post('/send-email', [AdminUserController::class, 'sendEmail']); // Envoyer email
+            
+            // ==================== GESTION DES DOCUMENTS ====================
+            Route::prefix('documents')->group(function () {
+                
+                // Upload de document
+                Route::post('/', [AdminUserController::class, 'uploadDocument']);
+                
+                // Types de documents spécifiques
+                Route::get('/{documentType}/download', [AdminUserController::class, 'downloadDocument']); // Télécharger
+                Route::get('/{documentType}/view', [AdminUserController::class, 'viewDocument']); // Visualiser
+                Route::delete('/{documentType}', [AdminUserController::class, 'deleteDocument']); // Supprimer
+            });
+            
+            // ==================== GESTION DES PHOTOS (ALBUMS) ====================
+             Route::prefix('photos')->group(function () {
+            Route::post('/', [AdminUserController::class, 'uploadPhotos']);
+            Route::get('/', [AdminUserController::class, 'getPhotos']);
+            Route::delete('/{photoId}', [AdminUserController::class, 'deletePhoto']);
+        });
+        });
+    });
+    
+    // ==================== GESTION DES FEEDBACKS ====================
+    Route::prefix('feedbacks')->group(function () {
+        Route::post('/{id}/moderate', [AdminUserController::class, 'moderate']);
+    });
+    
+    // ==================== STATISTIQUES GLOBALES ====================
+    Route::get('/stats', [AdminUserController::class, 'stats']);
+});
+
+// Routes publiques (si nécessaire)
+Route::get('/roles', function () {
+    return response()->json([
+        'success' => true,
+        'data' => \App\Models\Role::all()
+    ]);
+});
+
+// Routes publiques (si nécessaire)
+Route::get('/roles', function () {
+    return response()->json([
+        'success' => true,
+        'data' => \App\Models\Role::all()
+    ]);
+});
+
         
         // Event Management
         Route::prefix('events')->group(function () {
@@ -698,7 +781,6 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{event_id}/stats', [ReservationEventController::class, 'participantStats']);
         Route::get('/{event_id}/search', [ReservationEventController::class, 'search']);
     });
-});
 
 // ==================== PUBLIC USER VERIFICATION ROUTE ====================
 // This route should be outside auth middleware since it's for public access

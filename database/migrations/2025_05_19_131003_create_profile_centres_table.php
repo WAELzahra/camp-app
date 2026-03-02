@@ -1,6 +1,5 @@
 <?php
-
-// database/migrations/2025_05_19_130714_create_profile_centres_table.php
+// database/migrations/2025_05_19_131003_create_profile_centres_table.php
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
@@ -13,7 +12,13 @@ return new class extends Migration {
             $table->foreignId('profile_id')->constrained('profiles')->onDelete('cascade');
             $table->integer('capacite')->nullable();
             $table->text('services_offerts')->nullable();
+            
+            // Document légal (simple)
             $table->string('document_legal')->nullable();
+            $table->string('document_legal_type')->nullable();
+            $table->date('document_legal_expiration')->nullable();
+            $table->string('document_legal_filename')->nullable();
+            
             $table->boolean('disponibilite')->default(true);
             $table->timestamps();
         });

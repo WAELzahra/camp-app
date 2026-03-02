@@ -30,7 +30,13 @@ class ProfileCentre extends Model
         'contact_email',
         'contact_phone',
         'manager_name',
-        'established_date'
+        'established_date',
+        // Nouveaux champs documents
+        'document_legal_path',
+        'document_legal_filename',
+        'document_legal_type',
+        'document_legal_expiration',
+        'adresse',
     ];
 
     protected $casts = [
@@ -40,6 +46,8 @@ class ProfileCentre extends Model
         'longitude' => 'decimal:8',
         'established_date' => 'date',
         'capacite' => 'integer',
+        'document_legal_expiration' => 'date',
+
     ];
 
     /**
@@ -249,6 +257,244 @@ class ProfileCentre extends Model
             'max_quantity' => $options['max_quantity'] ?? null,
         ]);
     }
+
+    // ========== NOUVELLES MÉTHODES POUR LES DOCUMENTS ==========
+
+    /**
+     * Get the document legal URL
+     */
+    public function getDocumentLegalUrlAttribute(): ?string
+    {
+        // Priorité au nouveau champ, fallback sur l'ancien
+        if ($this->document_legal_path) {
+            return asset('storage/' . $this->document_legal_path);
+        }
+        
+        if ($this->legal_document) {
+            return asset('storage/' . $this->legal_document);
+        }
+        
+        return null;
+    }
+
+    /**
+     * Get the document legal filename
+     */
+    public function getDocumentLegalDisplayNameAttribute(): ?string
+    {
+        if ($this->document_legal_filename) {
+            return $this->document_legal_filename;
+        }
+        
+        if ($this->document_legal_path) {
+            return basename($this->document_legal_path);
+        }
+        
+        if ($this->legal_document) {
+            return basename($this->legal_document);
+        }
+        
+        return null;
+    }
+
+    /**
+     * Get the document legal type label
+     */
+    public function getDocumentLegalTypeLabelAttribute(): ?string
+    {
+        $types = [
+            'registre_commerce' => 'Registre de Commerce',
+            'licence' => 'Licence d\'exploitation',
+            'agrement' => 'Agrément',
+            'carte_identite_fiscale' => 'Carte d\'Identité Fiscale',
+            'patente' => 'Patente',
+            'autre' => 'Autre document'
+        ];
+
+        return $types[$this->document_legal_type] ?? $this->document_legal_type ?? 'Document légal';
+    }
+
+    /**
+     * Check if document is valid (not expired)
+     */
+    public function isDocumentLegalValid(): bool
+    {
+        if (!$this->document_legal_expiration) {
+            return true; // Pas de date d'expiration = toujours valide
+        }
+        
+        return $this->document_legal_expiration->isFuture();
+    }
+
+    /**
+     * Check if document is expiring soon (within 30 days)
+     */
+    public function isDocumentLegalExpiringSoon(): bool
+    {
+        if (!$this->document_legal_expiration) {
+            return false;
+        }
+        
+        return $this->document_legal_expiration->isFuture() && 
+               $this->document_legal_expiration->diffInDays(now()) <= 30;
+    }
+
+    /**
+     * Check if document is expired
+     */
+    public function isDocumentLegalExpired(): bool
+    {
+        if (!$this->document_legal_expiration) {
+            return false;
+        }
+        
+        return $this->document_legal_expiration->isPast();
+    }
+
+    /**
+     * Check if profile has legal document
+     */
+    public function hasLegalDocument(): bool
+    {
+        return !is_null($this->document_legal_path) || !is_null($this->legal_document);
+    }
+
+    /**
+     * Get document status with color for UI
+     */
+    public function getDocumentLegalStatusAttribute(): array
+    {
+        if (!$this->hasLegalDocument()) {
+            return [
+                'label' => 'Document manquant',
+                'color' => 'red',
+                'icon' => 'fa-times-circle'
+            ];
+        }
+
+        if ($this->isDocumentLegalExpired()) {
+            return [
+                'label' => 'Document expiré',
+                'color' => 'red',
+                'icon' => 'fa-exclamation-circle'
+            ];
+        }
+
+        if ($this->isDocumentLegalExpiringSoon()) {
+            return [
+                'label' => 'Expire bientôt',
+                'color' => 'orange',
+                'icon' => 'fa-exclamation-triangle'
+            ];
+        }
+
+        return [
+            'label' => 'Document valide',
+            'color' => 'green',
+            'icon' => 'fa-check-circle'
+        ];
+    }
+
+    /**
+     * Upload legal document
+     */
+    public function uploadLegalDocument($file, string $type = null, string $filename = null): ?string
+    {
+        // Delete old document if exists
+        $this->deleteLegalDocument();
+        
+        // Store new document
+        $originalName = $filename ?? $file->getClientOriginalName();
+        $path = $file->store('documents/centres/' . $this->id, 'public');
+        
+        $this->update([
+            'document_legal_path' => $path,
+            'document_legal_filename' => $originalName,
+            'document_legal_type' => $type,
+        ]);
+        
+        return $path;
+    }
+
+    /**
+     * Delete legal document
+     */
+    public function deleteLegalDocument(): bool
+    {
+        $deleted = false;
+        
+        if ($this->document_legal_path && \Storage::disk('public')->exists($this->document_legal_path)) {
+            $deleted = \Storage::disk('public')->delete($this->document_legal_path);
+        }
+        
+        // Also delete old legal_document if exists
+        if ($this->legal_document && \Storage::disk('public')->exists($this->legal_document)) {
+            \Storage::disk('public')->delete($this->legal_document);
+        }
+        
+        $this->update([
+            'document_legal_path' => null,
+            'document_legal_filename' => null,
+            'document_legal_type' => null,
+            'document_legal_expiration' => null,
+        ]);
+        
+        return $deleted;
+    }
+
+    /**
+     * Set document expiration date
+     */
+    public function setDocumentLegalExpiration(string $date): void
+    {
+        $this->update([
+            'document_legal_expiration' => $date
+        ]);
+    }
+
+    /**
+     * Scope centers with valid documents
+     */
+    public function scopeWithValidDocuments($query)
+    {
+        return $query->where(function($q) {
+            $q->whereNotNull('document_legal_path')
+              ->orWhereNotNull('legal_document');
+        })->where(function($q) {
+            $q->whereNull('document_legal_expiration')
+              ->orWhere('document_legal_expiration', '>', now());
+        });
+    }
+
+    /**
+     * Scope centers with expiring documents
+     */
+    public function scopeWithExpiringDocuments($query, int $days = 30)
+    {
+        return $query->whereNotNull('document_legal_expiration')
+                     ->where('document_legal_expiration', '<=', now()->addDays($days))
+                     ->where('document_legal_expiration', '>', now());
+    }
+
+    /**
+     * Scope centers with expired documents
+     */
+    public function scopeWithExpiredDocuments($query)
+    {
+        return $query->whereNotNull('document_legal_expiration')
+                     ->where('document_legal_expiration', '<', now());
+    }
+
+    /**
+     * Scope centers without documents
+     */
+    public function scopeWithoutDocuments($query)
+    {
+        return $query->whereNull('document_legal_path')
+                     ->whereNull('legal_document');
+    }
+
+    // ========== FIN DES NOUVELLES MÉTHODES ==========
 
     /**
      * Scope available centers
