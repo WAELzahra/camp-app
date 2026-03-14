@@ -6,23 +6,19 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
     public function up(): void
     {
         Schema::create('boutiques', function (Blueprint $table) {
+            $table->id();
             $table->foreignId('fournisseur_id')->constrained('users')->onDelete('cascade');
-            $table->string("nom_boutique");
-            $table->string("description")->nullable();
-            $table->boolean('status')->default(false);
+            $table->string('nom_boutique');
+            $table->string('description')->nullable();
+            $table->string('path_to_img')->nullable();
+            $table->boolean('status')->default(false); 
             $table->timestamps();
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::dropIfExists('boutiques');

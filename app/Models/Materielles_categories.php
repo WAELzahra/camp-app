@@ -8,12 +8,19 @@ use Illuminate\Database\Eloquent\Model;
 class Materielles_categories extends Model
 {
     use HasFactory;
+
     protected $fillable = [
-        "nom",
-        "description",
-        "creation_date"
+        'nom',
+        'description',
+        // Removed 'creation_date' — use the standard created_at timestamp instead
     ];
-    public function materielle(){
-        return $this->hasMany(Materielles::class);
+
+    /**
+     * All materiels belonging to this category.
+     */
+    public function materielles()
+    {
+        // Fixed: was hasMany(Materielles::class) — correct, but method was named materielle (singular)
+        return $this->hasMany(Materielles::class, 'category_id');
     }
 }

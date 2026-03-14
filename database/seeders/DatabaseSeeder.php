@@ -23,7 +23,7 @@ class DatabaseSeeder extends Seeder
 
             EventSeeder::class,
             ReservationEventSeeder::class,
-
+            ShopSeeder::class,
         ]);
     }
 }

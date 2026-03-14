@@ -9,15 +9,14 @@ class ProfileGuide extends Model
 {
     use HasFactory;
 
+    protected $table = 'profile_guides';
+
     protected $fillable = [
         'profile_id',
         'experience',
         'tarif',
         'zone_travail',
-        'adresse',
-        // Nouveaux champs documents
         'certificat_path',
-        'certificat_filename',
         'certificat_type',
         'certificat_expiration',
     ];
@@ -47,7 +46,7 @@ class ProfileGuide extends Model
     public function isCertificatValid(): bool
     {
         if (!$this->certificat_expiration) {
-            return true; // Pas de date d'expiration = toujours valide
+            return true;
         }
         return $this->certificat_expiration->isFuture();
     }

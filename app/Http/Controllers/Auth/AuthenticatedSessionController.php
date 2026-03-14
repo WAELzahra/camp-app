@@ -19,10 +19,7 @@ class AuthenticatedSessionController extends Controller
 
         $user = Auth::user();
         
-        // ✅ Update last_login_at and is_active on successful login
         $user->last_login_at = now();
-        $user->is_active = 1; // Set as online
-        $user->save();
 
         return response()->json([
             'user' => $user
@@ -36,12 +33,6 @@ class AuthenticatedSessionController extends Controller
     {
         $user = Auth::user();
         
-        // ✅ Set user as offline before logging out
-        if ($user) {
-            $user->is_active = 0; // Set as offline
-            $user->save();
-        }
-
         // For session-based authentication (with cookies)
         Auth::guard('web')->logout();
         

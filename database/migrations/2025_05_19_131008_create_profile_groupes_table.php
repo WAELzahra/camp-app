@@ -14,13 +14,8 @@ return new class extends Migration {
             $table->unsignedBigInteger('id_annonce')->nullable();
             
             // Documents du groupe
-            $table->string('patente_path')->nullable(); // Chemin vers la patente
-            $table->string('patente_filename')->nullable(); // Nom original
+            $table->string('patente_path')->nullable();
             
-            // CIN du responsable (déjà présent, mais on ajoute le chemin)
-            $table->string('cin_responsable')->nullable(); // Numéro de CIN
-            $table->string('cin_responsable_path')->nullable(); // Image de la CIN
-            $table->string('cin_responsable_filename')->nullable(); // Nom original
             
             $table->timestamps();
         });

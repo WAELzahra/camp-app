@@ -13,7 +13,7 @@ return new class extends Migration
             $table->string('name')->nullable()->after('profile_id');
             $table->decimal('price_per_night', 10, 2)->nullable()->after('capacite');
             $table->string('category')->nullable()->after('price_per_night'); // Budget, Standard, Premium, etc.
-            $table->decimal('latitude', 10, 8)->nullable()->after('adresse');
+            $table->decimal('latitude', 10, 8)->nullable();
             $table->decimal('longitude', 10, 8)->nullable()->after('latitude');
             $table->string('contact_email')->nullable()->after('longitude');
             $table->string('contact_phone')->nullable()->after('contact_email');
@@ -24,8 +24,6 @@ return new class extends Migration
             $table->renameColumn('document_legal', 'legal_document');
 
             
-            // Change services_offerts to be a general description field
-            $table->text('additional_services_description')->nullable()->after('services_offerts');
         });
     }
 
@@ -42,7 +40,6 @@ return new class extends Migration
                 'contact_phone',
                 'manager_name',
                 'established_date',
-                'additional_services_description'
             ]);
             
             $table->renameColumn('legal_document', 'document_legal');

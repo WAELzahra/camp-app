@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use App\Http\Controllers\Controller;
-
+use App\Mail\EventReservationCanceledNotifyOwner;
 
 
 class ReservationEventController extends Controller
@@ -111,6 +111,97 @@ class ReservationEventController extends Controller
                 'data' => ['data' => []]
             ], 500);
         }
+    }
+    public function cancelByUser(Request $request, $id)
+    {
+        $user = Auth::user();
+
+        // Find the reservation — must belong to this user
+        $reservation = \App\Models\Reservations_events::where('id', $id)
+            ->where('user_id', $user->id)
+            ->firstOrFail();
+
+        // Only allow cancellation on active statuses
+        $cancellableStatuses = ['en_attente_paiement', 'confirmée', 'en_attente_validation'];
+        if (!in_array($reservation->status, $cancellableStatuses)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This reservation cannot be canceled in its current status.',
+            ], 422);
+        }
+
+        // Load the event
+        $event = \App\Models\Events::findOrFail($reservation->event_id);
+
+        // ── Fee calculation ──────────────────────────────────────────────────────
+        $totalPrice = $reservation->nbr_place * $event->price;
+
+        // Check if this is a "late" cancellation (within 48h of event start)
+        $isLate = now()->diffInHours(\Carbon\Carbon::parse($event->start_date), false) <= 48
+                && \Carbon\Carbon::parse($event->start_date)->isFuture();
+
+        $cancellationFeePercent = $isLate
+            ? (float) config('app.late_cancellation_fee_percent', 50)
+            : (float) config('app.cancellation_fee_percent', 15);
+
+        $processingFeePercent = (float) config('app.processing_fee_percent', 2);
+
+        $cancellationFee = round($totalPrice * $cancellationFeePercent / 100, 2);
+        $processingFee   = round($totalPrice * $processingFeePercent  / 100, 2);
+        $refundAmount    = max(0, round($totalPrice - $cancellationFee - $processingFee, 2));
+
+        // ── Update reservation status ────────────────────────────────────────────
+        $reservation->update([
+            'status'     => 'annulée_par_utilisateur',
+            'updated_at' => now(),
+        ]);
+
+        // ── Restore remaining spots on the event ────────────────────────────────
+        $event->increment('remaining_spots', $reservation->nbr_place);
+
+        // ── Send email to camper ─────────────────────────────────────────────────
+        try {
+            Mail::to($user->email)->send(new \App\Mail\EventReservationCanceledByUser(
+                user:            $user,
+                event:           $event,
+                reservation:     $reservation,
+                refundAmount:    $refundAmount,
+                cancellationFee: $cancellationFee,
+                processingFee:   $processingFee,
+            ));
+        } catch (\Exception $e) {
+            \Log::error('Failed to send cancellation email to user: ' . $e->getMessage());
+        }
+
+        // ── Send email to event owner ────────────────────────────────────────────
+        try {
+            $owner = \App\Models\User::find($event->group_id);
+            if ($owner) {
+                Mail::to($owner->email)->send(new \App\Mail\EventReservationCanceledNotifyOwner(
+                    owner:       $owner,
+                    user:        $user,
+                    event:       $event,
+                    reservation: $reservation,
+                ));
+            }
+        } catch (\Exception $e) {
+            \Log::error('Failed to send cancellation notification to owner: ' . $e->getMessage());
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Reservation canceled successfully.',
+            'data'    => [
+                'reservation_id'          => $reservation->id,
+                'status'                  => 'annulée_par_utilisateur',
+                'total_price'             => $totalPrice,
+                'cancellation_fee'        => $cancellationFee,
+                'cancellation_fee_percent'=> $cancellationFeePercent,
+                'processing_fee'          => $processingFee,
+                'refund_amount'           => $refundAmount,
+                'is_late_cancellation'    => $isLate,
+            ],
+        ]);
     }
     /**
      * Statistiques du nombre de participants par statut pour un événement.

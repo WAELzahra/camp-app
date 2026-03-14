@@ -301,7 +301,6 @@ class UserSeeder extends Seeder
                 'type' => $profileType, // Maintenant toujours une valeur valide
                 'activities' => json_encode($this->generateActivities($profileType)),
                 'cin_path' => $this->getDocumentPath('cin', $user->id),
-                'cin_filename' => $this->getDocumentFilename('cin', $user->first_name, $user->last_name),
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
@@ -355,7 +354,6 @@ class UserSeeder extends Seeder
             DB::table('profile_centres')->insert([
                 'profile_id' => $profileId,
                 'capacite' => rand(50, 500),
-                'services_offerts' => 'Tente, électricité, eau, parking',
                 'document_legal' => $this->getDocumentPath('legal', $user->id),
                 'document_legal_type' => $this->getRandomLegalDocumentType(),
                 'document_legal_expiration' => $this->getRandomExpirationDate(),

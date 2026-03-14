@@ -4,6 +4,7 @@ use Illuminate\Http\Request;
 use Illuminate\Foundation\Auth\EmailVerificationRequest;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Controller;
+
 // Authentication Controllers
 use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
@@ -27,7 +28,6 @@ use App\Http\Controllers\zonecamping\PublicCampingController;
 use App\Http\Controllers\Api\CenterServiceApiController;
 use App\Http\Controllers\Comment\CommentController;
 
-
 // Authenticated Controllers
 use App\Http\Controllers\profile\ProfileController;
 use App\Http\Controllers\Notification\NotificationController;
@@ -35,8 +35,7 @@ use App\Http\Controllers\Favoris\FavorisController;
 use App\Http\Controllers\Message\ConversationController;
 use App\Http\Controllers\Admin\AdminNotificationController;
 use App\Http\Controllers\Message\MessageController;
-
-
+use App\Notifications\EventInviteNotification;
 
 // Event Controllers
 use App\Http\Controllers\Event\EventInterestController;
@@ -67,191 +66,70 @@ use App\Http\Controllers\Admin\CampingZoneController;
 use App\Http\Controllers\Admin\ServiceCategoryController;
 use App\Http\Controllers\Admin\TestUserController;
 
-
-
-
 // API Services
 use App\Services\ZoneSearchService;
 use Illuminate\Support\Facades\Broadcast;
 
+// ==================== BROADCAST ROUTES ====================
 Broadcast::routes(['middleware' => ['auth:sanctum']]);
 
-Route::middleware('auth:sanctum')->get('/user/{userId}/status', function ($userId) {
-    $user = \App\Models\User::find($userId);
-    
-    if (!$user) {
-        return response()->json(['error' => 'User not found'], 404);
-    }
-    
-    return response()->json([
-        'online' => $user->isOnline(),
-        'last_seen' => $user->last_login_at,
-        'is_active' => $user->is_active
-    ]);
-});
+// ==================== PUBLIC ROUTES (NO AUTH REQUIRED) ====================
 
-// Add these routes to your api.php
-Route::middleware('auth:sanctum')->group(function () {
-
-    Route::prefix('conversations')->group(function () {
-        Route::get('/',                          [ConversationController::class, 'index']);
-        Route::post('/start',                    [ConversationController::class, 'start']);
-        Route::post('/start-with-group',         [ConversationController::class, 'startWithGroup']);
-        Route::get('/group/{groupId}',           [ConversationController::class, 'getGroupConversations']);
-        Route::get('/my-groups',                 [ConversationController::class, 'getMyGroupConversations']);
-        Route::get('/{conversationId}/messages', [ConversationController::class, 'messages']);
-        Route::post('/{conversationId}/messages',[ConversationController::class, 'sendMessage']);
-
-        Route::patch('/{conversationId}/read',          [ConversationController::class, 'markAsRead']);
-        Route::post('/{conversationId}/mark-as-read',   [ConversationController::class, 'markAsRead']); 
-
-        Route::patch('/{conversationId}/archive', [ConversationController::class, 'toggleArchive']);
-        Route::delete('/{conversationId}',        [ConversationController::class, 'destroy']);
-    });
-
-    Route::post('/messages/{message}/react',     [MessageController::class, 'react']); 
-
-    Route::prefix('messages')->group(function () {
-        Route::get('/{messageId}',               [MessageController::class, 'show']);
-        Route::put('/{messageId}',               [MessageController::class, 'update']);
-        Route::delete('/{messageId}',            [MessageController::class, 'destroy']);
-        Route::post('/{messageId}/react',        [MessageController::class, 'react']);
-        Route::get('/{messageId}/read-receipts', [MessageController::class, 'readReceipts']);
-    });
-
-});
-
-
-
-
-// ==================== USER NOTIFICATION ROUTES ====================
-Route::middleware('auth:sanctum')->prefix('notifications')->group(function () {
-    // Get notifications
-    Route::get('/', [NotificationController::class, 'index']);
-    
-    // Get unread count
-    Route::get('/unread/count', [NotificationController::class, 'getUnreadCount']);
-    
-    // Mark as read
-    Route::patch('/{id}/read', [NotificationController::class, 'markAsRead']);
-    
-    // Mark all as read
-    Route::patch('/read-all', [NotificationController::class, 'markAllAsRead']);
-    
-    // Archive notification
-    Route::patch('/{id}/archive', [NotificationController::class, 'archive']);
-    
-    // Delete notification
-    Route::delete('/{id}', [NotificationController::class, 'destroy']);
-    
-    // Notification preferences
-    Route::get('/preferences', [NotificationController::class, 'getPreferences']);
-    Route::put('/preferences', [NotificationController::class, 'updatePreferences']);
-    
-    // Statistics
-    Route::get('/stats', [NotificationController::class, 'getStats']);
-});
-
-// ==================== ADMIN NOTIFICATION ROUTES ====================
-Route::middleware(['auth:sanctum', 'admin'])->prefix('admin/notifications')->group(function () {
-    // Send notification
-    Route::post('/send', [AdminNotificationController::class, 'send']);
-    
-    // Templates
-    Route::get('/templates', [AdminNotificationController::class, 'getTemplates']);
-    Route::post('/templates', [AdminNotificationController::class, 'createTemplate']);
-    Route::put('/templates/{id}', [AdminNotificationController::class, 'updateTemplate']);
-    Route::delete('/templates/{id}', [AdminNotificationController::class, 'deleteTemplate']);
-    
-    // Logs and stats
-    Route::get('/logs', [AdminNotificationController::class, 'getLogs']);
-    Route::get('/stats', [AdminNotificationController::class, 'getAdminStats']);
-});
-
-
-
-// ==================== ROUTES PUBLIQUES (NO AUTH REQUIRED) ====================
-// Email Verification
-Route::post('/send-verification', [VerifyEmailController::class, 'sendVerification']);
-Route::post('/verify-by-token', [VerifyEmailController::class, 'verifyByToken']);
-Route::post('/verify-by-code', [VerifyEmailController::class, 'verifyByCode']);
-Route::post('/resend-verification', [VerifyEmailController::class, 'resendVerification']);
-Route::get('/verification-status/{id}', [VerifyEmailController::class, 'verificationStatus']);
-// Public profile lookup - separate route group
-Route::prefix('profile')->group(function () {
-    Route::get('/public/{id}', [ProfileController::class, 'showById']);
-});
-// Authentication
+// -------------------- AUTHENTICATION & VERIFICATION --------------------
 Route::post('/register', [RegisteredUserController::class, 'store']);
 Route::post('/login', [AuthenticatedSessionController::class, 'store'])->name('login');
 Route::post('/forgot-password', [NewPasswordController::class, 'sendResetEmail']);
 Route::post('/reset-password', [NewPasswordController::class, 'resetPassword']);
 Route::post('/verify-password', [NewPasswordController::class, 'verifyResetCode']);
 
-// Email Verification Routes (Sanctum signed)
+// Email Verification
+Route::post('/send-verification', [VerifyEmailController::class, 'sendVerification']);
+Route::post('/verify-by-token', [VerifyEmailController::class, 'verifyByToken']);
+Route::post('/verify-by-code', [VerifyEmailController::class, 'verifyByCode']);
+Route::post('/resend-verification', [VerifyEmailController::class, 'resendVerification']);
+Route::get('/verification-status/{id}', [VerifyEmailController::class, 'verificationStatus']);
+
+// Email Verification Signed Route
 Route::middleware('signed')->get('/email/verify/{id}/{hash}', function (EmailVerificationRequest $request) {
     $request->fulfill();
     return response()->json(['message' => 'Email verified successfully']);
 })->name('verification.verify');
 
-// Social Auth (commented out but kept for reference)
-// Route::get('/auth/google/url', [SocialAuthController::class, 'getSocialAuthUrls']);
-// Route::get('/auth/google', [SocialAuthController::class, 'redirectToGoogle'])->name('google.redirect');
-// Route::get('/auth/google/callback', [SocialAuthController::class, 'handleGoogleCallback']);
-// Route::get('/auth/facebook', [SocialAuthController::class, 'redirectToFacebook'])->name('facebook.redirect');
-// Route::get('/auth/facebook/callback', [SocialAuthController::class, 'handleFacebookCallback']);
+// -------------------- PUBLIC ANNOUNCEMENTS --------------------
+Route::prefix('annonces')->group(function () {
+    Route::get('/show/{id}', [AnnonceController::class, 'show']);
+    Route::get('/user/{id}', [AnnonceController::class, 'index']);
+    Route::get('/{id}/likes', [AnnonceController::class, 'getLikes']);
+});
 
-// Public Announcements
-Route::get('/annonces/show/{id}', [AnnonceController::class, 'show']);
-Route::get('/annonces/user/{id}', [AnnonceController::class, 'index']);
-Route::get('/annonces/{id}/likes', [AnnonceController::class, 'getLikes']);
-
+// -------------------- PUBLIC COMMENTS (Read-only) --------------------
 Route::prefix('comments')->group(function () {
     Route::get('/annonce/{annonceId}', [CommentController::class, 'index']);
-    Route::post('/annonce/{annonceId}', [CommentController::class, 'store'])->middleware('auth:sanctum');
-    Route::post('/annonce/{annonceId}/reply/{parentId}', [CommentController::class, 'store'])->middleware('auth:sanctum');
-    Route::put('/{id}', [CommentController::class, 'update'])->middleware('auth:sanctum');
-    Route::delete('/{id}', [CommentController::class, 'destroy'])->middleware('auth:sanctum');
-    Route::post('/{id}/like', [CommentController::class, 'toggleLike'])->middleware('auth:sanctum');
-    
-    // Admin routes
-    Route::middleware(['auth:sanctum', 'admin'])->group(function () {
-        Route::post('/{id}/pin', [CommentController::class, 'togglePin']);
-        Route::post('/{id}/hide', [CommentController::class, 'toggleHide']);
-    });
 });
 
-// Public Shop
-Route::get('/boutique', [BoutiqueController::class, 'index']);
-Route::get('/boutique/show/{id}', [BoutiqueController::class, 'show']);
+// -------------------- PUBLIC SHOPS & EQUIPMENT --------------------
+Route::get('/boutiques', [BoutiqueController::class, 'index']);
+Route::get('/boutiques/{fournisseur_id}', [BoutiqueController::class, 'show']);
+Route::get('/materielles/fournisseur/{fournisseur_id}', [MaterielleController::class, 'index']);
+Route::get('/materielles/{materielle_id}', [MaterielleController::class, 'show']);
+Route::get('/materielles/compare/{id1}/{id2}', [MaterielleController::class, 'compare']);
 
-
-
-// Public Equipment
-Route::get('/materielle/compare/{id1}-{id2}', [MaterielleController::class, 'compare']);
-Route::get('/materielle/index/{fournisseur_id}', [MaterielleController::class, 'index']);
-Route::get('/materielle/show/{materielle_id}', [MaterielleController::class, 'show']);
-
-// Public Events
+// -------------------- PUBLIC EVENTS --------------------
 Route::prefix('events')->group(function () {
-    // Public event listing and search
-    Route::get('/', [EventController::class, 'index']);              
-    Route::get('/search', [EventController::class, 'search']);       
+    Route::get('/', [EventController::class, 'index']);
+    Route::get('/search', [EventController::class, 'search']);
     Route::get('/groups/{groupId}', [EventController::class, 'getGroupEvents']);
     Route::get('/my-events', [EventController::class, 'myEvents']);
-
-    // Share links (public)
     Route::get('/{id}/share-links', [EventController::class, 'getEventShareLinks']);
     Route::get('/{id}/copy-link', [EventController::class, 'getEventCopyLink']);
-    Route::get('/{id}', [EventController::class, 'getEventDetails']); 
-
+    Route::get('/{id}', [EventController::class, 'getEventDetails']);
 });
 
-// Public Groups
+// -------------------- PUBLIC GROUPS --------------------
 Route::get('/groupes/search', [GroupController::class, 'searchGroups']);
 Route::get('/groupes', [GroupController::class, 'listGroupsWithFeedbacks']);
 
-// Public Camping Zones
+// -------------------- PUBLIC CAMPING ZONES --------------------
 Route::prefix('zones')->group(function () {
     Route::get('/', [CampingZonesController::class, 'index']);
     Route::get('/export-geojson', [CampingZonesController::class, 'exportGeoJson']);
@@ -266,7 +144,7 @@ Route::prefix('zones')->group(function () {
     Route::get('/{id}/validate-coordinates', [CampingZonesController::class, 'validateCoordinates']);
 });
 
-// Public Camping Centers
+// -------------------- PUBLIC CAMPING CENTERS --------------------
 Route::prefix('centres')->group(function () {
     Route::get('/map', [CampingCentresController::class, 'getCentresMap']);
     Route::get('/search', [CampingCentresController::class, 'searchCentres']);
@@ -274,14 +152,7 @@ Route::prefix('centres')->group(function () {
     Route::get('/{id}', [CampingCentresController::class, 'showCentre'])->whereNumber('id');
 });
 
-// Public Zones with Centers
-Route::prefix('public-zones')->group(function () {
-    Route::get('/with-centres', [PublicCampingController::class, 'zonesWithCentres']);
-    Route::get('/filters', [PublicCampingController::class, 'zonesWithFilters']);
-    Route::get('/nearby', [PublicCampingController::class, 'nearbyZones']);
-});
-
-// General Public Routes
+// -------------------- PUBLIC CAMPING (Combined) --------------------
 Route::prefix('public')->group(function () {
     Route::get('/zones-centres', [PublicCampingController::class, 'zonesWithCentres']);
     Route::get('/centre/{id}', [PublicCampingController::class, 'showCentre']);
@@ -289,87 +160,103 @@ Route::prefix('public')->group(function () {
     Route::get('/zones-nearby', [PublicCampingController::class, 'nearbyZones']);
 });
 
-// Center Services API (Public)
-Route::prefix('v1')->group(function () {
-    Route::get('centers/services', [CenterServiceApiController::class, 'centersWithServices']);
-    Route::get('centers/{center}/services', [CenterServiceApiController::class, 'centerServices']);
-    Route::get('service-categories', [CenterServiceApiController::class, 'serviceCategories']);
-    Route::post('calculate-price', [CenterServiceApiController::class, 'calculatePrice']);
+// -------------------- PUBLIC CENTER SERVICES API --------------------
+Route::prefix('centers')->group(function () {
+    Route::get('/services', [CenterServiceApiController::class, 'centersWithServices']);
+    Route::get('/{center}/services', [CenterServiceApiController::class, 'centerServices']);
+    Route::get('/service-categories', [CenterServiceApiController::class, 'serviceCategories']);
+    Route::post('/calculate-price', [CenterServiceApiController::class, 'calculatePrice']);
 });
 
-// Payment Callback (Public)
-Route::get('/flouci/callback', [PaymentController::class, 'callback']);
-
-
-// Feedback routes - Place this after your public routes
+// -------------------- PUBLIC FEEDBACKS (Read-only) --------------------
 Route::prefix('feedbacks')->group(function () {
-    // Public/authenticated routes
-    Route::get('/', [FeedbackController::class, 'index'])->middleware('auth:sanctum');
     Route::get('/statistics', [FeedbackController::class, 'statistics']);
     Route::get('/target/{type}/{targetId}', [FeedbackController::class, 'getTargetFeedbacks']);
     Route::get('/zone/{zoneId}', [FeedbackController::class, 'listZone']);
-    
-    // Authenticated routes
-    Route::middleware('auth:sanctum')->group(function () {
-        Route::post('/', [FeedbackController::class, 'store']);
-        Route::put('/{id}', [FeedbackController::class, 'update']);
-        Route::delete('/{id}', [FeedbackController::class, 'destroy']);
-        Route::post('/zone/{zoneId}', [FeedbackController::class, 'storeZone']);
-    });
-    
-    // Admin routes
-    Route::middleware(['auth:sanctum', 'admin'])->group(function () {
-        Route::post('/{id}/moderate', [FeedbackController::class, 'moderate']);
-    });
 });
 
-// ==================== ROUTES AUTHENTIFIÉES (REQUIRE SANCTUM AUTH) ====================
+// -------------------- PUBLIC PROFILE LOOKUP --------------------
+Route::prefix('profile')->group(function () {
+    Route::get('/public/{id}', [ProfileController::class, 'showById']);
+});
 
+// -------------------- PUBLIC USER VERIFICATION --------------------
+Route::get('/user/{id}/verification-status', function ($id) {
+    $user = \App\Models\User::find($id);
+    if (!$user) {
+        return response()->json(['error' => 'User not found'], 404);
+    }
+    return response()->json([
+        'verified' => $user->hasVerifiedEmail(),
+        'email' => $user->email,
+    ]);
+});
+
+// -------------------- PAYMENT CALLBACKS (Public) --------------------
+Route::get('/flouci/callback', [PaymentController::class, 'callback']);
+
+// -------------------- ROLES (Public) --------------------
+Route::get('/roles', function () {
+    return response()->json([
+        'success' => true,
+        'data' => \App\Models\Role::all()
+    ]);
+});
+
+// ==================== AUTHENTICATED ROUTES (SANCTUM) ====================
 Route::middleware('auth:sanctum')->group(function () {
-
-    Route::get('/reservations/my-participations', [ReservationEventController::class, 'myParticipations']);
-
-    Route::post('/annonces/{id}/like', [AnnonceController::class, 'like']);
-    Route::post('/annonces/{id}/unlike', [AnnonceController::class, 'unlike']);
-    Route::get('/annonces/{id}/check-like', [AnnonceController::class, 'checkLike']);
-    // -------------------- USER & AUTH MANAGEMENT --------------------
+    
+    // -------------------- CURRENT USER --------------------
     Route::get('/user', fn(Request $request) => $request->user());
     Route::post('/logout', [AuthenticatedSessionController::class, 'destroy']);
+    Route::get('/user/{userId}/status', function ($userId) {
+        $user = \App\Models\User::find($userId);
+        if (!$user) {
+            return response()->json(['error' => 'User not found'], 404);
+        }
+        return response()->json([
+            'online' => $user->isOnline(),
+            'last_seen' => $user->last_login_at,
+            'is_active' => $user->is_active
+        ]);
+    });
+    
+    // -------------------- EMAIL VERIFICATION --------------------
     Route::post('/email/verification-notification', [EmailVerificationNotificationController::class, 'store']);
     Route::post('/send-verification-current', [VerifyEmailController::class, 'sendVerificationForCurrentUser']);
-    Route::put('/user/password', [PasswordController::class, 'update']);
-    
-    // Email verification status
     Route::get('/user/verification-status', function (Request $request) {
         return response()->json([
             'verified' => $request->user()->hasVerifiedEmail(),
             'email' => $request->user()->email,
         ]);
     });
+    Route::put('/user/password', [PasswordController::class, 'update']);
     
-    // Profile Management
+    // -------------------- PROFILE MANAGEMENT --------------------
     Route::prefix('profile')->group(function () {
+        // Basic profile
         Route::get('/', [ProfileController::class, 'show']);
         Route::put('/', [ProfileController::class, 'update']);
         Route::put('/change-password', [ProfileController::class, 'changePassword']);
         Route::post('/avatar', [ProfileController::class, 'updateAvatar']);
         Route::post('/updateInfo', [ProfileController::class, 'updateInfo']);
         
-        // Photos Management
-        Route::get('/photos', [ProfileController::class, 'getProfilePhotos']);
-        Route::post('/photos', [ProfileController::class, 'storeOrUpdateProfilePhotos']);
-        Route::delete('/photos/{photoId}', [ProfileController::class, 'deletePhoto']);
-        Route::put('/photos/{photoId}/cover', [ProfileController::class, 'setCoverPhoto']);
-        Route::put('/photos/reorder', [ProfileController::class, 'reorderPhotos']);
+        // Photos
+        Route::prefix('photos')->group(function () {
+            Route::get('/', [ProfileController::class, 'getProfilePhotos']);
+            Route::post('/', [ProfileController::class, 'storeOrUpdateProfilePhotos']);
+            Route::delete('/{photoId}', [ProfileController::class, 'deletePhoto']);
+            Route::put('/{photoId}/cover', [ProfileController::class, 'setCoverPhoto']);
+            Route::put('/reorder', [ProfileController::class, 'reorderPhotos']);
+        });
         
-        // Service Categories (public for selection)
+        // Service Categories
         Route::get('/service-categories', [ProfileController::class, 'getServiceCategories']);
         
-        // Center Management (for center users only)
+        // Center Management
         Route::prefix('center/{centerId}')->where(['centerId' => '[0-9]+'])->group(function () {
             Route::put('/', [ProfileController::class, 'updateCenter']);
             
-            // Center Services
             Route::prefix('services')->group(function () {
                 Route::get('/', [ProfileController::class, 'getCenterServices']);
                 Route::post('/', [ProfileController::class, 'updateCenterService']);
@@ -378,385 +265,141 @@ Route::middleware('auth:sanctum')->group(function () {
                 Route::post('/custom', [ProfileController::class, 'addCustomService']);
             });
             
-            // Center Equipment
             Route::prefix('equipment')->group(function () {
                 Route::get('/', [ProfileController::class, 'getCenterEquipment']);
                 Route::put('/', [ProfileController::class, 'updateCenterEquipment']);
             });
         });
         
-        // Profile lookup (should be last to avoid conflicts)
+        // Profile lookup (must be last)
         Route::get('/{type}/{userId}', [ProfileController::class, 'getProfileDetails'])
             ->where('type', 'guide|centre|groupe|fournisseur')
             ->where('userId', '[0-9]+');
     });
     
-    // -------------------- EVENTS --------------------
+    // -------------------- USER SEARCH --------------------
+    Route::get('/users/search', [ProfileController::class, 'searchUsers']);
+    
+    // -------------------- ANNOUNCEMENTS (Authenticated actions) --------------------
+    Route::prefix('annonces')->group(function () {
+        Route::post('/{id}/like', [AnnonceController::class, 'like']);
+        Route::post('/{id}/unlike', [AnnonceController::class, 'unlike']);
+        Route::get('/{id}/check-like', [AnnonceController::class, 'checkLike']);
+    });
+    
+    // -------------------- COMMENTS (Authenticated actions) --------------------
+    Route::prefix('comments')->group(function () {
+        Route::post('/annonce/{annonceId}', [CommentController::class, 'store']);
+        Route::post('/annonce/{annonceId}/reply/{parentId}', [CommentController::class, 'store']);
+        Route::put('/{id}', [CommentController::class, 'update']);
+        Route::delete('/{id}', [CommentController::class, 'destroy']);
+        Route::post('/{id}/like', [CommentController::class, 'toggleLike']);
+    });
+    
+    // -------------------- FEEDBACKS (Authenticated actions) --------------------
+    Route::prefix('feedbacks')->group(function () {
+        Route::get('/', [FeedbackController::class, 'index']);
+        Route::post('/', [FeedbackController::class, 'store']);
+        Route::put('/{id}', [FeedbackController::class, 'update']);
+        Route::delete('/{id}', [FeedbackController::class, 'destroy']);
+        Route::post('/zone/{zoneId}', [FeedbackController::class, 'storeZone']);
+    });
+    
+    // -------------------- NOTIFICATIONS --------------------
+    Route::prefix('notifications')->group(function () {
+        Route::get('/', [NotificationController::class, 'index']);
+        Route::get('/unread/count', [NotificationController::class, 'getUnreadCount']);
+        Route::get('/preferences', [NotificationController::class, 'getPreferences']);
+        Route::get('/stats', [NotificationController::class, 'getStats']);
+        Route::patch('/{id}/read', [NotificationController::class, 'markAsRead']);
+        Route::patch('/read-all', [NotificationController::class, 'markAllAsRead']);
+        Route::patch('/{id}/archive', [NotificationController::class, 'archive']);
+        Route::put('/preferences', [NotificationController::class, 'updatePreferences']);
+        Route::delete('/{id}', [NotificationController::class, 'destroy']);
+    });
+    
+    // -------------------- MESSAGES & CONVERSATIONS --------------------
+    Route::prefix('conversations')->group(function () {
+        Route::get('/', [ConversationController::class, 'index']);
+        Route::post('/start', [ConversationController::class, 'start']);
+        Route::post('/start-with-group', [ConversationController::class, 'startWithGroup']);
+        Route::get('/group/{groupId}', [ConversationController::class, 'getGroupConversations']);
+        Route::get('/my-groups', [ConversationController::class, 'getMyGroupConversations']);
+        Route::get('/{conversationId}/messages', [ConversationController::class, 'messages']);
+        Route::post('/{conversationId}/messages', [ConversationController::class, 'sendMessage']);
+        Route::patch('/{conversationId}/read', [ConversationController::class, 'markAsRead']);
+        Route::post('/{conversationId}/mark-as-read', [ConversationController::class, 'markAsRead']);
+        Route::patch('/{conversationId}/archive', [ConversationController::class, 'toggleArchive']);
+        Route::delete('/{conversationId}', [ConversationController::class, 'destroy']);
+    });
+    
+    Route::prefix('messages')->group(function () {
+        Route::get('/{messageId}', [MessageController::class, 'show']);
+        Route::put('/{messageId}', [MessageController::class, 'update']);
+        Route::delete('/{messageId}', [MessageController::class, 'destroy']);
+        Route::post('/{messageId}/react', [MessageController::class, 'react']);
+        Route::get('/{messageId}/read-receipts', [MessageController::class, 'readReceipts']);
+    });
+    
+    // -------------------- EVENTS (Authenticated) --------------------
     Route::prefix('events')->group(function () {
+        Route::get('/nearby/{userId}', [EventController::class, 'notifyNearbyEvents']);
+        Route::get('/{id}/participants', [EventController::class, 'participants']);
         Route::get('/{id}/details', [EventController::class, 'show']);
         Route::get('/{id}/participants/stats', [ReservationEventController::class, 'participantStats']);
         Route::post('/{id}/interest', [EventInterestController::class, 'toggleInterest']);
-        Route::get('/nearby/{userId}', [EventController::class, 'notifyNearbyEvents']);
+        
+        // Group event management
+        Route::middleware(['group'])->group(function () {
+            Route::post('/', [EventController::class, 'store']);
+            Route::put('/{id}', [EventController::class, 'update']);
+            Route::delete('/{id}', [EventController::class, 'destroy']);
+            Route::patch('/participants/{id}/status', [EventController::class, 'updateStatus']);
+            Route::post('/{id}/invite', [EventController::class, 'sendInvites']);
+        });
     });
-    Route::middleware(['group'])->prefix('events')->group(function () {
-        Route::post('/', [EventController::class, 'store']);             
-        Route::put('/{id}', [EventController::class, 'update']);          
-        Route::delete('/{id}', [EventController::class, 'destroy']);      
-        Route::get('/{id}/participants', [EventController::class, 'participants']);
-        Route::patch('/participants/{id}/status', [EventController::class, 'updateStatus']);
-    });
-    Route::middleware(['admin'])->prefix('admin/events')->group(function () {
-        Route::get('/', [EventController::class, 'adminIndex']);
-        Route::patch('/{id}/moderate', [EventController::class, 'moderate']);
-    });
+    
     // -------------------- EVENT RESERVATIONS --------------------
-    Route::post('/reservation-event', [ReservationEventController::class, 'createReservationWithPayment']);
-    Route::put('/reservation-event/{id}/simulate-payment', [ReservationEventController::class, 'simulatePayment']);
-    Route::post('/event/{eventId}/payer', [PaymentController::class, 'initPayment']);
-    Route::get('/reservation-event/{id}', [ReservationEventController::class, 'show']);
-    Route::put('/reservations/{id}', [ReservationEventController::class, 'updateReservation']);
-    Route::patch('/reservations/{id}/status', [ReservationEventController::class, 'updateStatus']);
-    Route::delete('/reservations/{id}', [ReservationEventController::class, 'destroy']);
-    Route::get('/reservations/passees', [ReservationEventController::class, 'mesReservationsPassees']);
-    
-    // Event participants
-    Route::post('/events/{event}/participants/manual', [ReservationEventController::class, 'addManualParticipant']);
-    Route::get('/events/{eventId}/participants/search', [ReservationEventController::class, 'search']);
-    Route::put('/participants/{id}/update', [ReservationEventController::class, 'updateManualParticipant']);
-    Route::get('/events/{event}/participants', [EventParticipantController::class, 'index']);
-    
-    // -------------------- GROUPS --------------------
-    Route::post('/groupes/{groupeId}/follow', [FollowGroupeController::class, 'follow']);
-    Route::delete('/groupes/{groupeId}/unfollow', [FollowGroupeController::class, 'unfollow']);
-    Route::get('/me/followed-groupes', [FollowGroupeController::class, 'myFollowedGroupes']);
-    Route::get('/groupes/{groupe}/feedbacks', [GroupController::class, 'listForGroup']);
-    
-    // -------------------- FEEDBACKS --------------------
-    Route::post('/feedbacks/zone/{zoneId}', [FeedbackController::class, 'storeZone']);
-    
-    // -------------------- NOTIFICATIONS --------------------
-    Route::post('/events/{event}/send-reminders', [NotificationController::class, 'sendRemindersForEvent']);
-    
-    // -------------------- CHAT --------------------
-
-    // -------------------- CAMPING ZONES --------------------
-    Route::prefix('zones')->group(function () {
-        Route::post('/', [CampingZonesController::class, 'store']);
-        Route::patch('/{id}', [CampingZonesController::class, 'update']);
-        Route::delete('/{id}', [CampingZonesController::class, 'destroy']);
-        Route::post('/{id}/gallery', [CampingZonesController::class, 'addGallery']);
-        Route::post('/{id}/review', [CampingZonesController::class, 'markForReview']);
-        Route::get('/recommend', [CampingZonesController::class, 'recommendZones']);
-        Route::get('/{id}/stats', [CampingZonesController::class, 'zoneStats']);
-        Route::get('/top', [CampingZonesController::class, 'topZones']);
-        Route::get('/{userId}/recommendations', [CampingZonesController::class, 'personalizedRecommendations']);
-        Route::get('/recommended/{userId}', [CampingZonesController::class, 'recommendedZones']);
-        Route::get('/personalized/{userId}', [CampingZonesController::class, 'personalizedRecommendations']);
+    Route::prefix('reservations')->group(function () {
+        Route::get('/my-participations', [ReservationEventController::class, 'myParticipations']);
+        Route::get('/passees', [ReservationEventController::class, 'mesReservationsPassees']);
+        Route::post('/event', [ReservationEventController::class, 'createReservationWithPayment']);
+        Route::put('/event/{id}/simulate-payment', [ReservationEventController::class, 'simulatePayment']);
+        Route::post('/event/{eventId}/cancel-by-user', [ReservationEventController::class, 'cancelByUser']);
+        Route::get('/event/{id}', [ReservationEventController::class, 'show']);
+        Route::put('/{id}', [ReservationEventController::class, 'updateReservation']);
+        Route::patch('/{id}/status', [ReservationEventController::class, 'updateStatus']);
+        Route::delete('/{id}', [ReservationEventController::class, 'destroy']);
+        
+        // Event participants
+        Route::post('/events/{event}/participants/manual', [ReservationEventController::class, 'addManualParticipant']);
+        Route::get('/events/{eventId}/participants/search', [ReservationEventController::class, 'search']);
+        Route::put('/participants/{id}/update', [ReservationEventController::class, 'updateManualParticipant']);
+        Route::get('/events/{event}/participants', [EventParticipantController::class, 'index']);
     });
-    
-    // -------------------- CAMPING CENTERS --------------------
-    Route::prefix('centres')->group(function () {
-        Route::post('/suggest', [CampingCentresController::class, 'suggestCentre']);
-        Route::get('/favoris', [CampingCentresController::class, 'listFavoris']);
-        Route::post('/{id}/favoris', [CampingCentresController::class, 'toggleFavoris']);
-        Route::get('/{centreId}/stats', [CampingCentresController::class, 'centreStats']);
-    });
-    
-    // -------------------- ZONE POLYGONS --------------------
-    Route::prefix('zone-polygons')->group(function () {
-        Route::post('/', [ZonePolygonController::class, 'store']);
-        Route::put('/{id}', [ZonePolygonController::class, 'update']);
-        Route::delete('/{id}', [ZonePolygonController::class, 'destroy']);
-        Route::get('/zone/{zoneId}', [ZonePolygonController::class, 'listByZone']);
-    });
-    
-    // -------------------- REPORTS --------------------
-    Route::post('/zones/{zoneId}/signales', [SignalementZoneController::class, 'store']);
-    
-    // -------------------- FAVORITES --------------------
-    Route::post('/zone/{id}/favoris', [FavorisController::class, 'toggleZone']);
-    Route::get('/liste/favoris', [FavorisController::class, 'listFavoris']);
     
     // -------------------- PAYMENTS --------------------
-    Route::get('/payment/confirm/{reservationId}', [PaymentController::class, 'confirmerPaiement']);
+    Route::prefix('payment')->group(function () {
+        Route::post('/event/{eventId}/payer', [PaymentController::class, 'initPayment']);
+        Route::get('/confirm/{reservationId}', [PaymentController::class, 'confirmerPaiement']);
+        Route::get('/konnect/success', [PaymentController::class, 'konnectCallback'])->name('konnect.success');
+        Route::get('/konnect/fail', [PaymentController::class, 'konnectCallback'])->name('konnect.fail');
+        Route::post('/konnect/webhook', [PaymentController::class, 'webhookKonnect']);
+    });
+    
+    // -------------------- RESERVATION TICKETS --------------------
     Route::get('/reservation/{id}/imprimer', [PaymentController::class, 'imprimerTicket']);
     Route::get('/reservation/{id}/telecharger', [PaymentController::class, 'telechargerTicket']);
-    Route::get('/konnect/success', [PaymentController::class, 'konnectCallback'])->name('konnect.success');
-    Route::get('/konnect/fail', [PaymentController::class, 'konnectCallback'])->name('konnect.fail');
-    Route::post('/konnect/webhook', [PaymentController::class, 'webhookKonnect']);
     
     // -------------------- RESERVATION CANCELLATION --------------------
     Route::post('/reservations/{id}/annuler', [ReservationCancellationController::class, 'annulerReservation']);
     
-    // ==================== ROLE-SPECIFIC ROUTES ====================
-    
-    // -------------------- CAMPING CENTER RESERVATIONS --------------------
-    Route::prefix('reservation')->group(function () {
-        // Routes accessible to both campers and centers
-        Route::middleware(['campeur_or_centre'])->group(function () {
-            Route::get('/{id}', [ReservationsCentreController::class, 'show']);
-            Route::get('/{id}/invoice', [ReservationsCentreController::class, 'downloadInvoice']);
-            Route::get('/{id}/user-history', [ReservationsCentreController::class, 'getUserReservationHistory']);
-            Route::patch('/centre/cancel/{id}', [ReservationsCentreController::class, 'destroy']);
-            Route::patch('/centre/approve-modified/{id}', [ReservationsCentreController::class, 'approveModified']);
-
-        });
-        
-        // Routes for campers only
-        Route::middleware(['campeur'])->group(function () {
-            Route::post('/centre', [ReservationsCentreController::class, 'store']);
-            Route::put('/centre/{id}', [ReservationsCentreController::class, 'update']);
-            Route::patch('/centre/destroy/{id}', [ReservationsCentreController::class, 'destroy']);
-            Route::get('/centre/index_user', [ReservationsCentreController::class, 'index_user']);
-            Route::get('/centre/user/statistics', [ReservationsCentreController::class, 'user_statistics']);
-            
-            // Equipment reservations
-            Route::post('/materielle/store', [ReservationMaterielleController::class, 'store']);
-            Route::patch('/materielle/destroy/{id}', [ReservationMaterielleController::class, 'destroy']);
-            Route::get('/materielle/index_user', [ReservationMaterielleController::class, 'index_user']);
-            
-            // // Feedback
-            // Route::post('/feedback/create', [FeedbackController::class, 'create']);
-            // Route::post('/feedback/store', [FeedbackController::class, 'store']);
-            // Route::post('/feedback/edit/{id}', [FeedbackController::class, 'edit']);
-            // Route::delete('/feedback/destroy/{id}', [FeedbackController::class, 'destroy']);
-            // Route::get('/feedback/index_user', [FeedbackController::class, 'index_user']);
-        });
-        
-        // Routes for centers only
-        Route::middleware(['centre'])->group(function () {
-            Route::get('/centre/index', [ReservationsCentreController::class, 'index']);
-            Route::patch('/centre/confirm/{id}', [ReservationsCentreController::class, 'confirm']);
-            Route::patch('/centre/reject/{id}', [ReservationsCentreController::class, 'reject']);
-            Route::patch('/centre/update_status', [ReservationsCentreController::class, 'update_status']);
-            Route::put('/centre/{id}/update', [ReservationsCentreController::class, 'update']);
-            Route::get('/centre/centre/statistics', [ReservationsCentreController::class, 'statistics']);
-            Route::get('/centre/availability', [ReservationsCentreController::class, 'availability']);
-            Route::patch('/centre/partial-accept/{id}', [ReservationsCentreController::class, 'partialAccept']);
-        });
-    });
-    
-    // -------------------- SUPPLIER ROUTES --------------------
-    Route::middleware(['fournisseur'])->group(function () {
-        // Shop
-        Route::get('/boutique/create', [BoutiqueController::class, 'create']);
-        Route::get('/boutique/edit', [BoutiqueController::class, 'edit']);
-        Route::post('/boutique/add', [BoutiqueController::class, 'add']);
-        Route::patch('/boutique/update', [BoutiqueController::class, 'update']);
-        Route::delete('/boutique/destroy', [BoutiqueController::class, 'destroy']);
-        
-        // Equipment
-        Route::post('/materielle/store', [MaterielleController::class, 'store']);
-        Route::patch('/materielle/update/{id}', [MaterielleController::class, 'update']);
-        Route::delete('/materielle/destroy/{id}', [MaterielleController::class, 'destroy']);
-        Route::get('/materielle/create', [MaterielleController::class, 'create']);
-        Route::get('/materielle/edit/{materielle_id}', [MaterielleController::class, 'edit']);
-        Route::patch('/materielles/{id}/activate', [MaterielleController::class, 'activate']);
-        Route::patch('/materielles/{id}/deactivate', [MaterielleController::class, 'deactivate']);
-        
-        // Equipment reservations
-        Route::get('/reservation/materielle/index/{idMaterielle}', [ReservationMaterielleController::class, 'index']);
-        Route::get('/reservation/materielle/show', [ReservationMaterielleController::class, 'show']);
-        Route::get('/reservation/materielle/create', [ReservationMaterielleController::class, 'create']);
-        Route::patch('/reservation/materielle/confirm/{id}', [ReservationMaterielleController::class, 'confirm']);
-        Route::patch('/reservation/materielle/reject/{id}', [ReservationMaterielleController::class, 'reject']);
-    });
-    
-    // -------------------- ADMIN ROUTES --------------------
-
-// routes/api.php
-
-
-
-// Routes protégées par authentification et rôle admin
-// Routes protégées par authentification et rôle admin
-Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function () {
-    
-    // Dashboard
-    
-    // ==================== GESTION DES UTILISATEURS ====================
-    Route::prefix('users')->group(function () {
-        
-        // Liste des utilisateurs avec filtres
-        Route::get('/', [AdminUserController::class, 'index']);
-        
-        // Statistiques des utilisateurs
-        Route::get('/stats/overview', [AdminUserController::class, 'stats']);
-        
-        // Récupérer tous les rôles
-        Route::get('/roles/all', function () {
-            return response()->json([
-                'success' => true,
-                'data' => \App\Models\Role::all()
-            ]);
-        });
-        
-        // Actions sur un utilisateur spécifique
-        Route::prefix('{id}')->group(function () {
-            
-            // Informations de base
-            Route::get('/', [AdminUserController::class, 'show']); // Profil complet
-            Route::put('/', [AdminUserController::class, 'update']); // Mise à jour
-            Route::delete('/', [AdminUserController::class, 'destroy']); // Suppression
-            
-            // Actions spéciales
-            Route::put('/toggle-activation', [AdminUserController::class, 'toggleActivation']); // Activer/Désactiver
-            Route::post('/reset-password', [AdminUserController::class, 'resetPassword']); // Réinitialiser mot de passe
-            Route::post('/send-email', [AdminUserController::class, 'sendEmail']); // Envoyer email
-            
-            // ==================== GESTION DES DOCUMENTS ====================
-            Route::prefix('documents')->group(function () {
-                
-                // Upload de document
-                Route::post('/', [AdminUserController::class, 'uploadDocument']);
-                
-                // Types de documents spécifiques
-                Route::get('/{documentType}/download', [AdminUserController::class, 'downloadDocument']); // Télécharger
-                Route::get('/{documentType}/view', [AdminUserController::class, 'viewDocument']); // Visualiser
-                Route::delete('/{documentType}', [AdminUserController::class, 'deleteDocument']); // Supprimer
-            });
-            
-            // ==================== GESTION DES PHOTOS (ALBUMS) ====================
-             Route::prefix('photos')->group(function () {
-            Route::post('/', [AdminUserController::class, 'uploadPhotos']);
-            Route::get('/', [AdminUserController::class, 'getPhotos']);
-            Route::delete('/{photoId}', [AdminUserController::class, 'deletePhoto']);
-        });
-        });
-    });
-    
-    // ==================== GESTION DES FEEDBACKS ====================
-    Route::prefix('feedbacks')->group(function () {
-        Route::post('/{id}/moderate', [AdminUserController::class, 'moderate']);
-    });
-    
-    // ==================== STATISTIQUES GLOBALES ====================
-    Route::get('/stats', [AdminUserController::class, 'stats']);
-});
-
-// Routes publiques (si nécessaire)
-Route::get('/roles', function () {
-    return response()->json([
-        'success' => true,
-        'data' => \App\Models\Role::all()
-    ]);
-});
-
-// Routes publiques (si nécessaire)
-Route::get('/roles', function () {
-    return response()->json([
-        'success' => true,
-        'data' => \App\Models\Role::all()
-    ]);
-});
-
-        
-        // Event Management
-        Route::prefix('events')->group(function () {
-            Route::get('/', [AdminEventController::class, 'index']);
-            Route::get('/{id}', [AdminEventController::class, 'show']);
-            Route::post('/', [AdminEventController::class, 'store']);
-            Route::put('/{id}', [AdminEventController::class, 'update']);
-            Route::delete('/{id}', [AdminEventController::class, 'destroy']);
-            Route::patch('/{id}/activate', [AdminEventController::class, 'activate']);
-            Route::patch('/{id}/deactivate', [AdminEventController::class, 'deactivate']);
-            Route::patch('/{id}/cancel', [AdminEventController::class, 'cancelEvent']);
-            Route::get('/{id}/reservations', [AdminEventController::class, 'reservations']);
-            Route::get('/{id}/statistics', [AdminEventController::class, 'statistics']);
-            Route::get('/{id}/export-csv', [AdminEventController::class, 'exportReservationsCsv']);
-        });
-        
-        // Reservation Management
-        Route::prefix('reservations')->group(function () {
-            Route::get('/', [AdminEventReservationController::class, 'listReservations']);
-            Route::get('/export', [AdminEventReservationController::class, 'exportReservations']);
-            Route::get('/{id}', [AdminEventReservationController::class, 'getReservationDetails']);
-            Route::delete('/{id}', [AdminEventReservationController::class, 'deleteReservation']);
-            Route::put('/{id}', [AdminEventReservationController::class, 'update']);
-            Route::post('/events/{eventId}/participants/manual', [AdminEventReservationController::class, 'addManualParticipant']);
-            Route::get('/stats', [AdminEventReservationController::class, 'stats']);
-        });
-        
-        // Feedback Management
-        // Route::prefix('feedbacks')->group(function () {
-        //     Route::post('/', [FeedbackController::class, 'store']);         
-        //     Route::put('/{id}', [FeedbackController::class, 'update']);
-        //     Route::delete('/{id}', [FeedbackController::class, 'destroy']);
-        // });
-        
-        // Announcement Management
-        // Route::prefix('annonces')->group(function () {
-        //     Route::get('/create', [AnnonceController::class, 'create']);
-        //     Route::get('/edit/{id}', [AnnonceController::class, 'edit']);
-        //     Route::delete('/destroy/{id}', [AnnonceController::class, 'destroy']);
-        //     Route::patch('/deactivate/{id}', [AnnonceController::class, 'deactivate']);
-        //     Route::patch('/activate/{id}', [AnnonceController::class, 'activate']);
-        // });
-        
-        // Shop Management
-        Route::prefix('boutique')->group(function () {
-            Route::patch('/update', [BoutiqueController::class, 'update']);
-            Route::delete('/destroy', [BoutiqueController::class, 'destroy']);
-            Route::get('/create', [BoutiqueController::class, 'create']);
-            Route::get('/edit', [BoutiqueController::class, 'edit']);
-        });
-        
-        // Center Reservation Management
-        Route::get('/reservation/centre/show/{id}', [ReservationsCentreController::class, 'show']);
-        
-        // Zone Reports
-        Route::prefix('signals')->group(function () {
-            Route::get('/zones/{zoneId}', [SignaleZoneController::class, 'index']);
-            Route::put('/{id}/validate', [SignaleZoneController::class, 'validateSignalement']);
-            Route::put('/{id}/reject', [SignaleZoneController::class, 'rejectSignalement']);
-        });
-        
-        // Camping Centers Management
-        Route::prefix('centres')->group(function () {
-            Route::get('/', [CampingCentreController::class, 'index']);
-            Route::post('/', [CampingCentreController::class, 'store']);
-            Route::get('/stats', [CampingCentreController::class, 'stats']);
-            Route::get('/registered', [CampingCentreController::class, 'registeredCentres']);
-            Route::get('/nearby', [CampingCentreController::class, 'nearby']);
-            Route::get('/suggest-zones', [CampingCentreController::class, 'suggestZones']);
-            Route::get('/search', [CampingCentreController::class, 'search']);
-            Route::get('/{id}', [CampingCentreController::class, 'show']);
-            Route::put('/{id}', [CampingCentreController::class, 'update']);
-            Route::post('/{id}/assign-zones', [CampingCentreController::class, 'assignZones']);
-            Route::patch('/{id}/toggle-status', [CampingCentreController::class, 'toggleStatus']);
-        });
-        
-        // Camping Zones Management
-        Route::prefix('zone')->group(function () {
-            Route::get('/stats', [CampingZoneController::class, 'stats']);
-            Route::post('/', [CampingZoneController::class, 'store']);
-            Route::put('/{id}', [CampingZoneController::class, 'update']);
-            Route::delete('/{id}', [CampingZoneController::class, 'destroy']);
-            Route::patch('/{id}/validate', [CampingZoneController::class, 'validateZone']);
-            Route::patch('/{id}/toggle-status', [CampingZoneController::class, 'toggleZoneStatus']);
-            Route::post('/merge', [CampingZoneController::class, 'merge']);
-            Route::post('/bulk-assign', [CampingZoneController::class, 'bulkAssignToCentre']);
-            Route::post('/zones/{id}/adjust-polygon', [CampingZoneController::class, 'adjustPolygonWithRoutes']);
-            Route::post('/zones/import-geojson', [CampingZoneController::class, 'importGeoJson']);
-        });
-        
-
-        
-        // Service Categories Management
-        Route::resource('service-categories', ServiceCategoryController::class);
-    });
-    // -------------------- PUBLISHER ROUTES --------------------
-    Route::middleware(['can.publish'])->prefix('annonces')->group(function () {
-        Route::post('/', [AnnonceController::class, 'store']);
-        Route::match(['put', 'post'], '/{id}', [AnnonceController::class, 'update']);
-        Route::delete('/{id}', [AnnonceController::class, 'destroy']); 
-        
-        // Additional publisher routes
-        Route::get('/archived/{userId}', [AnnonceController::class, 'getArchived']);
-        Route::patch('/{id}/archive', [AnnonceController::class, 'archive']);
-        Route::patch('/{id}/unarchive', [AnnonceController::class, 'unarchive']);
-        Route::post('/{id}/like', [AnnonceController::class, 'like']);
-        Route::post('/{id}/unlike', [AnnonceController::class, 'unlike']);
+    // -------------------- GROUPS --------------------
+    Route::prefix('groupes')->group(function () {
+        Route::post('/{groupeId}/follow', [FollowGroupeController::class, 'follow']);
+        Route::delete('/{groupeId}/unfollow', [FollowGroupeController::class, 'unfollow']);
+        Route::get('/me/followed-groupes', [FollowGroupeController::class, 'myFollowedGroupes']);
+        Route::get('/{groupe}/feedbacks', [GroupController::class, 'listForGroup']);
     });
     
     // -------------------- GROUP RESERVATION MANAGEMENT --------------------
@@ -775,35 +418,284 @@ Route::get('/roles', function () {
         Route::post('/{reservation_id}/simulate-payment', [ReservationEventController::class, 'simulatePayment']);
     });
     
-    // Group participants & advanced statistics
+    // -------------------- GROUP EVENTS STATISTICS --------------------
     Route::prefix('group/events')->group(function () {
         Route::get('/{event_id}/participants', [ReservationEventController::class, 'participants']);
         Route::get('/{event_id}/stats', [ReservationEventController::class, 'participantStats']);
         Route::get('/{event_id}/search', [ReservationEventController::class, 'search']);
     });
+    
+    // -------------------- CAMPING ZONES (Authenticated actions) --------------------
+    Route::prefix('zones')->group(function () {
+        Route::post('/', [CampingZonesController::class, 'store']);
+        Route::patch('/{id}', [CampingZonesController::class, 'update']);
+        Route::delete('/{id}', [CampingZonesController::class, 'destroy']);
+        Route::post('/{id}/gallery', [CampingZonesController::class, 'addGallery']);
+        Route::post('/{id}/review', [CampingZonesController::class, 'markForReview']);
+        Route::get('/recommend', [CampingZonesController::class, 'recommendZones']);
+        Route::get('/{id}/stats', [CampingZonesController::class, 'zoneStats']);
+        Route::get('/top', [CampingZonesController::class, 'topZones']);
+        Route::get('/{userId}/recommendations', [CampingZonesController::class, 'personalizedRecommendations']);
+        Route::get('/recommended/{userId}', [CampingZonesController::class, 'recommendedZones']);
+        Route::get('/personalized/{userId}', [CampingZonesController::class, 'personalizedRecommendations']);
+    });
+    
+    // -------------------- CAMPING CENTERS (Authenticated actions) --------------------
+    Route::prefix('centres')->group(function () {
+        Route::post('/suggest', [CampingCentresController::class, 'suggestCentre']);
+        Route::get('/favoris', [CampingCentresController::class, 'listFavoris']);
+        Route::post('/{id}/favoris', [CampingCentresController::class, 'toggleFavoris']);
+        Route::get('/{centreId}/stats', [CampingCentresController::class, 'centreStats']);
+    });
+    
+    // -------------------- ZONE POLYGONS --------------------
+    Route::prefix('zone-polygons')->group(function () {
+        Route::post('/', [ZonePolygonController::class, 'store']);
+        Route::put('/{id}', [ZonePolygonController::class, 'update']);
+        Route::delete('/{id}', [ZonePolygonController::class, 'destroy']);
+        Route::get('/zone/{zoneId}', [ZonePolygonController::class, 'listByZone']);
+    });
+    
+    // -------------------- FAVORITES --------------------
+    Route::prefix('favoris')->group(function () {
+        Route::post('/zone/{id}', [FavorisController::class, 'toggleZone']);
+        Route::get('/liste', [FavorisController::class, 'listFavoris']);
+    });
+    
+    // -------------------- REPORTS --------------------
+    Route::post('/zones/{zoneId}/signales', [SignalementZoneController::class, 'store']);
+    
+    // -------------------- EVENT REMINDERS --------------------
+    Route::post('/events/{event}/send-reminders', [NotificationController::class, 'sendRemindersForEvent']);
+    
+    // -------------------- ADDITIONAL RESERVATION ROUTES --------------------
+    Route::get('/reservation/fournisseur', [ReservationMaterielleController::class, 'show']);
+});
 
-// ==================== PUBLIC USER VERIFICATION ROUTE ====================
-// This route should be outside auth middleware since it's for public access
-Route::get('/user/{id}/verification-status', function ($id) {
-    $user = \App\Models\User::find($id);
+// ==================== ROLE-SPECIFIC ROUTES ====================
+
+// -------------------- PUBLISHER ROUTES --------------------
+Route::middleware(['auth:sanctum', 'can.publish'])->prefix('annonces')->group(function () {
+    Route::post('/', [AnnonceController::class, 'store']);
+    Route::match(['put', 'post'], '/{id}', [AnnonceController::class, 'update']);
+    Route::delete('/{id}', [AnnonceController::class, 'destroy']);
+    Route::get('/archived/{userId}', [AnnonceController::class, 'getArchived']);
+    Route::patch('/{id}/archive', [AnnonceController::class, 'archive']);
+    Route::patch('/{id}/unarchive', [AnnonceController::class, 'unarchive']);
+});
+        Route::patch('reservation/materiel/{id}/confirm',     [ReservationMaterielleController::class, 'confirm']);
+
+// -------------------- FOURNISSEUR ROUTES --------------------
+Route::middleware(['auth:sanctum', 'fournisseur'])->group(function () {
     
-    if (!$user) {
-        return response()->json(['error' => 'User not found'], 404);
-    }
+    // Boutiques
+    Route::prefix('boutiques')->group(function () {
+        Route::get('/edit/{boutique_id}', [BoutiqueController::class, 'edit']);
+        Route::post('/', [BoutiqueController::class, 'add']);
+        Route::post('/update', [BoutiqueController::class, 'update']);
+        Route::delete('/', [BoutiqueController::class, 'destroy']);
+    });
     
-    return response()->json([
-        'verified' => $user->hasVerifiedEmail(),
-        'email' => $user->email,
-    ]);
+    // Materielles
+    Route::prefix('materielles')->group(function () {
+        Route::get('/{materielle_id}/edit', [MaterielleController::class, 'edit']);
+        Route::post('/', [MaterielleController::class, 'store']);
+        Route::post('/{id}', [MaterielleController::class, 'update']);
+        Route::delete('/{id}', [MaterielleController::class, 'destroy']);
+        Route::patch('/{id}/activate', [MaterielleController::class, 'activate']);
+        Route::patch('/{id}/deactivate', [MaterielleController::class, 'deactivate']);
+    });
+    
+    // Equipment Reservations
+    Route::prefix('reservation/materiel')->group(function () {
+        Route::patch('/{id}/reject',      [ReservationMaterielleController::class, 'reject']);
+        Route::post('/{id}/verify-pin',   [ReservationMaterielleController::class, 'verifyPin']);
+        Route::patch('/{id}/returned',    [ReservationMaterielleController::class, 'markReturned']);
+        Route::patch('/{id}/cancel',      [ReservationMaterielleController::class, 'cancelByFournisseur']);
+    });
+    
+    Route::prefix('reservation/fournisseur')->group(function () {
+        Route::patch('/cancel/{id}', [ReservationMaterielleController::class, 'cancelByFournisseur']);
+    });
+});
+
+// -------------------- CAMPING CENTER RESERVATIONS --------------------
+Route::middleware(['auth:sanctum'])->prefix('reservation')->group(function () {
+    
+    // Routes for both campers and centers
+    Route::middleware(['campeur_or_centre'])->group(function () {
+        Route::get('/{id}', [ReservationsCentreController::class, 'show']);
+        Route::get('/{id}/invoice', [ReservationsCentreController::class, 'downloadInvoice']);
+        Route::get('/{id}/user-history', [ReservationsCentreController::class, 'getUserReservationHistory']);
+        Route::patch('/centre/cancel/{id}', [ReservationsCentreController::class, 'destroy']);
+        Route::patch('/centre/approve-modified/{id}', [ReservationsCentreController::class, 'approveModified']);
+    });
+    
+    // Routes for campers only
+    Route::middleware(['campeur'])->group(function () {
+        Route::get('/my', [ReservationMaterielleController::class, 'index_user']);
+        Route::post('/', [ReservationMaterielleController::class, 'store']);
+        Route::delete('/{id}', [ReservationMaterielleController::class, 'destroy']);
+        
+        Route::post('/centre', [ReservationsCentreController::class, 'store']);
+        Route::put('/centre/{id}', [ReservationsCentreController::class, 'update']);
+        Route::patch('/centre/destroy/{id}', [ReservationsCentreController::class, 'destroy']);
+        Route::get('/centre/index_user', [ReservationsCentreController::class, 'index_user']);
+        Route::get('/centre/user/statistics', [ReservationsCentreController::class, 'user_statistics']);
+    });
+    
+    // Routes for centers only
+    Route::middleware(['centre'])->group(function () {
+        Route::get('/centre/index', [ReservationsCentreController::class, 'index']);
+        Route::patch('/centre/confirm/{id}', [ReservationsCentreController::class, 'confirm']);
+        Route::patch('/centre/reject/{id}', [ReservationsCentreController::class, 'reject']);
+        Route::patch('/centre/update_status', [ReservationsCentreController::class, 'update_status']);
+        Route::put('/centre/{id}/update', [ReservationsCentreController::class, 'update']);
+        Route::get('/centre/statistics', [ReservationsCentreController::class, 'statistics']);
+        Route::get('/centre/availability', [ReservationsCentreController::class, 'availability']);
+        Route::patch('/centre/partial-accept/{id}', [ReservationsCentreController::class, 'partialAccept']);
+    });
+});
+
+// ==================== ADMIN ROUTES ====================
+Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function () {
+    
+    // Dashboard/Utility
+    Route::post('/restock-expired', [ReservationMaterielleController::class, 'restockExpiredReservations']);
+    
+    // -------------------- USER MANAGEMENT --------------------
+    Route::prefix('users')->group(function () {
+        Route::get('/', [AdminUserController::class, 'index']);
+        Route::get('/stats', [AdminUserController::class, 'stats']);
+        Route::get('/stats/overview', [AdminUserController::class, 'stats']);
+        Route::get('/roles/all', function () {
+            return response()->json([
+                'success' => true,
+                'data' => \App\Models\Role::all()
+            ]);
+        });
+        
+        Route::prefix('{id}')->group(function () {
+            Route::get('/', [AdminUserController::class, 'show']);
+            Route::put('/', [AdminUserController::class, 'update']);
+            Route::delete('/', [AdminUserController::class, 'destroy']);
+            Route::put('/toggle-activation', [AdminUserController::class, 'toggleActivation']);
+            Route::post('/reset-password', [AdminUserController::class, 'resetPassword']);
+            Route::post('/send-email', [AdminUserController::class, 'sendEmail']);
+            
+            // Documents
+            Route::prefix('documents')->group(function () {
+                Route::post('/', [AdminUserController::class, 'uploadDocument']);
+                Route::get('/{documentType}/download', [AdminUserController::class, 'downloadDocument']);
+                Route::get('/{documentType}/view', [AdminUserController::class, 'viewDocument']);
+                Route::delete('/{documentType}', [AdminUserController::class, 'deleteDocument']);
+            });
+            
+            // Photos
+            Route::prefix('photos')->group(function () {
+                Route::post('/', [AdminUserController::class, 'uploadPhotos']);
+                Route::get('/', [AdminUserController::class, 'getPhotos']);
+                Route::delete('/{photoId}', [AdminUserController::class, 'deletePhoto']);
+            });
+        });
+    });
+    
+    // -------------------- EVENT MANAGEMENT --------------------
+    Route::prefix('events')->group(function () {
+        Route::get('/', [AdminEventController::class, 'index']);
+        Route::get('/{id}', [AdminEventController::class, 'show']);
+        Route::post('/', [AdminEventController::class, 'store']);
+        Route::delete('/{id}', [AdminEventController::class, 'destroy']);
+        Route::patch('/{id}/activate', [AdminEventController::class, 'activate']);
+        Route::patch('/{id}/deactivate', [AdminEventController::class, 'deactivate']);
+        Route::patch('/{id}/cancel', [AdminEventController::class, 'cancelEvent']);
+        Route::get('/{id}/reservations', [AdminEventController::class, 'reservations']);
+        Route::get('/{id}/statistics', [AdminEventController::class, 'statistics']);
+        Route::get('/{id}/export-csv', [AdminEventController::class, 'exportReservationsCsv']);
+    });
+    
+    // -------------------- RESERVATION MANAGEMENT --------------------
+    Route::prefix('reservations')->group(function () {
+        Route::get('/', [AdminEventReservationController::class, 'listReservations']);
+        Route::get('/export', [AdminEventReservationController::class, 'exportReservations']);
+        Route::get('/stats', [AdminEventReservationController::class, 'stats']);
+        Route::get('/{id}', [AdminEventReservationController::class, 'getReservationDetails']);
+        Route::put('/{id}', [AdminEventReservationController::class, 'update']);
+        Route::delete('/{id}', [AdminEventReservationController::class, 'deleteReservation']);
+        Route::post('/events/{eventId}/participants/manual', [AdminEventReservationController::class, 'addManualParticipant']);
+    });
+    
+    // -------------------- FEEDBACK MANAGEMENT --------------------
+    Route::prefix('feedbacks')->group(function () {
+        Route::post('/{id}/moderate', [AdminUserController::class, 'moderate']);
+    });
+    
+    // -------------------- CENTER RESERVATION MANAGEMENT --------------------
+    Route::get('/reservation/centre/show/{id}', [ReservationsCentreController::class, 'show']);
+    
+    // -------------------- ZONE REPORTS --------------------
+    Route::prefix('signals')->group(function () {
+        Route::get('/zones/{zoneId}', [SignaleZoneController::class, 'index']);
+        Route::put('/{id}/validate', [SignaleZoneController::class, 'validateSignalement']);
+        Route::put('/{id}/reject', [SignaleZoneController::class, 'rejectSignalement']);
+    });
+    
+    // -------------------- CAMPING CENTERS MANAGEMENT --------------------
+    Route::prefix('centres')->group(function () {
+        Route::get('/', [CampingCentreController::class, 'index']);
+        Route::get('/stats', [CampingCentreController::class, 'stats']);
+        Route::get('/registered', [CampingCentreController::class, 'registeredCentres']);
+        Route::get('/nearby', [CampingCentreController::class, 'nearby']);
+        Route::get('/suggest-zones', [CampingCentreController::class, 'suggestZones']);
+        Route::get('/search', [CampingCentreController::class, 'search']);
+        Route::post('/', [CampingCentreController::class, 'store']);
+        Route::get('/{id}', [CampingCentreController::class, 'show']);
+        Route::put('/{id}', [CampingCentreController::class, 'update']);
+        Route::post('/{id}/assign-zones', [CampingCentreController::class, 'assignZones']);
+        Route::patch('/{id}/toggle-status', [CampingCentreController::class, 'toggleStatus']);
+    });
+    
+    // -------------------- CAMPING ZONES MANAGEMENT --------------------
+    Route::prefix('zone')->group(function () {
+        Route::get('/stats', [CampingZoneController::class, 'stats']);
+        Route::post('/', [CampingZoneController::class, 'store']);
+        Route::put('/{id}', [CampingZoneController::class, 'update']);
+        Route::delete('/{id}', [CampingZoneController::class, 'destroy']);
+        Route::patch('/{id}/validate', [CampingZoneController::class, 'validateZone']);
+        Route::patch('/{id}/toggle-status', [CampingZoneController::class, 'toggleZoneStatus']);
+        Route::post('/merge', [CampingZoneController::class, 'merge']);
+        Route::post('/bulk-assign', [CampingZoneController::class, 'bulkAssignToCentre']);
+        Route::post('/zones/{id}/adjust-polygon', [CampingZoneController::class, 'adjustPolygonWithRoutes']);
+        Route::post('/zones/import-geojson', [CampingZoneController::class, 'importGeoJson']);
+    });
+    
+    // -------------------- SERVICE CATEGORIES MANAGEMENT --------------------
+    Route::resource('service-categories', ServiceCategoryController::class);
+    
+    // -------------------- NOTIFICATIONS MANAGEMENT --------------------
+    Route::prefix('notifications')->group(function () {
+        Route::post('/send', [AdminNotificationController::class, 'send']);
+        Route::get('/templates', [AdminNotificationController::class, 'getTemplates']);
+        Route::post('/templates', [AdminNotificationController::class, 'createTemplate']);
+        Route::put('/templates/{id}', [AdminNotificationController::class, 'updateTemplate']);
+        Route::delete('/templates/{id}', [AdminNotificationController::class, 'deleteTemplate']);
+        Route::get('/logs', [AdminNotificationController::class, 'getLogs']);
+        Route::get('/stats', [AdminNotificationController::class, 'getAdminStats']);
+    });
+});
+
+// ==================== ADMIN COMMENT ROUTES ====================
+Route::middleware(['auth:sanctum', 'admin'])->prefix('comments')->group(function () {
+    Route::post('/{id}/pin', [CommentController::class, 'togglePin']);
+    Route::post('/{id}/hide', [CommentController::class, 'toggleHide']);
+});
+
+// ==================== ADMIN FEEDBACK ROUTES ====================
+Route::middleware(['auth:sanctum', 'admin'])->prefix('feedbacks')->group(function () {
+    Route::post('/{id}/moderate', [FeedbackController::class, 'moderate']);
 });
 
 // ==================== WEB ADMIN ROUTES (for web interface) ====================
 Route::middleware(['auth', 'role:admin'])->prefix('admin')->name('admin.')->group(function () {
     Route::resource('service-categories', ServiceCategoryController::class);
 });
-
-// ==================== SEASON AND RECOMMENDATION ROUTES ====================
-// These routes are commented out in your original code, keeping them for reference
-// Route::get('/season/current', [RecommendationController::class, 'getCurrentSeason']);
-// Route::get('/user/{id}/preferences', [RecommendationController::class, 'getUserPreferences']);
-// Route::get('/user/{id}/region', [RecommendationController::class, 'getUserRegion']);

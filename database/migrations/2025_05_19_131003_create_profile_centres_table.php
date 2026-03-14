@@ -11,13 +11,11 @@ return new class extends Migration {
             $table->id();
             $table->foreignId('profile_id')->constrained('profiles')->onDelete('cascade');
             $table->integer('capacite')->nullable();
-            $table->text('services_offerts')->nullable();
             
             // Document légal (simple)
             $table->string('document_legal')->nullable();
             $table->string('document_legal_type')->nullable();
             $table->date('document_legal_expiration')->nullable();
-            $table->string('document_legal_filename')->nullable();
             
             $table->boolean('disponibilite')->default(true);
             $table->timestamps();

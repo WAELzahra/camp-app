@@ -12,11 +12,6 @@ return new class extends Migration {
             $table->string('intervale_prix')->nullable();
             $table->string('product_category')->nullable();
             
-            // Documents du fournisseur
-            $table->string('cin_commercant_path')->nullable(); // CIN ou carte commerçant
-            $table->string('cin_commercant_filename')->nullable();
-            $table->string('registre_commerce_path')->nullable(); // Registre de commerce
-            $table->string('registre_commerce_filename')->nullable();
             
             $table->timestamps();
         });

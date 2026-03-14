@@ -2,25 +2,26 @@
 
 namespace App\Mail;
 
-use App\Models\Reservations_events;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
 use Illuminate\Queue\SerializesModels;
 
-class ReservationStatusUpdated extends Mailable
+class ReservationRejectedToUser extends Mailable
 {
     use Queueable, SerializesModels;
 
-    public $reservation;
+    public $camper;
+    public $reason;
 
-    public function __construct(Reservations_events $reservation)
+    public function __construct($camper, string $reason = '')
     {
-        $this->reservation = $reservation;
+        $this->camper = $camper;
+        $this->reason = $reason;
     }
 
     public function build()
     {
-        return $this->subject('Mise à jour de votre réservation')
-                    ->view('emails.reservation_status_updated');
+        return $this->subject('Your Reservation Request Has Been Rejected')
+                    ->markdown('emails.rejected_to_user');
     }
 }

@@ -9,24 +9,24 @@ class Profile extends Model
 {
     use HasFactory;
 
+    protected $table = 'profiles';
+
     protected $fillable = [
         'user_id',
         'bio',
         'cover_image',
-        'immatricule',
         'type',
         'activities',
-        // Nouveaux champs documents
         'cin_path',
-        'cin_filename',
-        'adresse', // Ajout de l'adresse si manquant
+        'city',
+        'address',
     ];
 
     protected $casts = [
         'activities' => 'array',
     ];
 
-    // Relations existantes
+    // Relations
     public function profileGuide()
     {
         return $this->hasOne(ProfileGuide::class);
@@ -47,15 +47,14 @@ class Profile extends Model
         return $this->hasOne(ProfileFournisseur::class);
     }
 
-    // Relation feedbacks reçus par ce profil (via user_id)
     public function feedbacks()
     {
-        return $this->hasMany(\App\Models\Feedbacks::class, 'target_id', 'user_id');
+        return $this->hasMany(Feedbacks::class, 'target_id', 'user_id');
     }
 
     public function album()
     {
-        return $this->hasOne(Album::class, 'profile_id'); 
+        return $this->hasOne(Album::class, 'profile_id');
     }
 
     public function user()

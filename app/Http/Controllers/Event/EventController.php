@@ -18,6 +18,7 @@ use App\Models\FollowersGroupe;
 use App\Models\Profile;
 use App\Models\Circuit;
 use Illuminate\Validation\Rule;
+use App\Notifications\EventInviteNotification;
 
 class EventController extends Controller
 {
@@ -461,137 +462,254 @@ class EventController extends Controller
             'data' => $event
         ], 201);
     }
+   /**
+     * Send event invitations to a list of users (Group owner only)
+     *
+     * POST /api/events/{id}/invite
+     * Body: { "user_ids": [1, 2, 3], "message": "optional custom message" }
+     */
+    public function sendInvites(Request $request, $id)
+    {
+        $sender = Auth::user();
 
+        // Must be a group
+        if ($sender->role_id !== 2) {
+            return response()->json(['message' => 'Only groups can invite participants.'], 403);
+        }
+
+        $event = Events::where('id', $id)
+                       ->where('group_id', $sender->id)
+                       ->firstOrFail();
+
+        $request->validate([
+            'user_ids'   => 'required|array|min:1',
+            'user_ids.*' => 'integer|exists:users,id',
+            'message'    => 'nullable|string|max:500',
+        ]);
+
+        $senderName = trim(($sender->first_name ?? '') . ' ' . ($sender->last_name ?? ''))
+                   ?: $sender->name
+                   ?: 'A group';
+
+        $eventPayload = [
+            'id'         => $event->id,
+            'title'      => $event->title,
+            'start_date' => $event->start_date,
+            'price'      => $event->price,
+            'event_type' => $event->event_type,
+        ];
+
+        $senderPayload = [
+            'id'   => $sender->id,
+            'name' => $senderName,
+        ];
+
+        $customMessage = $request->input('message', '');
+
+        $notified = 0;
+        $skipped  = 0;
+
+        foreach ($request->user_ids as $userId) {
+            // Don't notify yourself
+            if ($userId == $sender->id) {
+                $skipped++;
+                continue;
+            }
+
+            $recipient = User::find($userId);
+            if (!$recipient) {
+                $skipped++;
+                continue;
+            }
+
+            try {
+                $recipient->notify(
+                    new EventInviteNotification($eventPayload, $senderPayload, $customMessage)
+                );
+                $notified++;
+            } catch (\Exception $e) {
+                \Log::error("Failed to notify user {$userId}: " . $e->getMessage());
+                $skipped++;
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => "{$notified} invitation(s) sent successfully.",
+            'data'    => [
+                'notified' => $notified,
+                'skipped'  => $skipped,
+            ],
+        ]);
+    }
     /**
      * Update an event (Group owner only)
      */
-    public function update(Request $request, $id)
+   public function update(Request $request, $id)
     {
         $user = Auth::user();
-        
-        $event = Events::where('id', $id)
-                      ->where('group_id', $user->id)
-                      ->firstOrFail();
 
-        // Only allow updates if event is still pending or scheduled (not started)
+        $event = Events::where('id', $id)
+                       ->where('group_id', $user->id)
+                       ->firstOrFail();
+
+        // Only allow updates if event is still pending or scheduled
         if (!in_array($event->status, ['pending', 'scheduled'])) {
             return response()->json([
                 'message' => 'Cannot update event that has already started or finished'
             ], 403);
         }
 
-        $validated = $request->validate([
-            'title' => 'sometimes|string|max:255',
-            'description' => 'nullable|string',
-            'start_date' => 'sometimes|date',
-            'end_date' => 'sometimes|date|after_or_equal:start_date',
-            'capacity' => 'sometimes|integer|min:1',
-            'price' => 'sometimes|numeric|min:0',
-            'camping_duration' => 'nullable|integer|min:1',
-            'camping_gear' => 'nullable|string',
-            'departure_city' => 'nullable|string',
-            'arrival_city' => 'nullable|string',
-            'departure_time' => 'nullable|date_format:H:i',
-            'estimated_arrival_time' => 'nullable|date_format:H:i|after:departure_time',
-            'bus_company' => 'nullable|string',
-            'bus_number' => 'nullable|string',
-            'city_stops' => 'nullable|array',
-            'latitude' => 'nullable|numeric|between:-90,90',
-            'longitude' => 'nullable|numeric|between:-180,180',
-            'address' => 'nullable|string',
-            'difficulty' => 'nullable|in:easy,moderate,difficult,expert',
-            'hiking_duration' => 'nullable|numeric|min:0.5|max:48',
-            'elevation_gain' => 'nullable|integer|min:0|max:8000',
-            'tags' => 'nullable|array',
-            
-            // Image updates
-            'new_images' => 'nullable|array',
-            'new_images.*' => 'image|mimes:jpeg,png,jpg,gif|max:25600',
-            'cover_image_index' => 'nullable|integer|min:0',
-            'delete_images' => 'nullable|array',
-            'delete_images.*' => 'integer|exists:photos,id',
-        ]);
-
-        // Update only provided fields
-        foreach ($validated as $key => $value) {
-            if (in_array($key, ['tags', 'city_stops'])) {
-                $event->$key = $value ? json_encode($value) : null;
-            } elseif (!in_array($key, ['new_images', 'cover_image_index', 'delete_images'])) {
-                $event->$key = $value;
+        // ── Pre-process city_stops ────────────────────────────────────────────
+        // The frontend may send it as a JSON string (old behaviour) or as a
+        // real array via FormData array-notation (new behaviour).  Normalise to
+        // an array before validation so the `array` rule always passes.
+        if ($request->has('city_stops') && is_string($request->city_stops)) {
+            $decoded = json_decode($request->city_stops, true);
+            if (is_array($decoded)) {
+                $request->merge(['city_stops' => $decoded]);
             }
         }
 
-        // If capacity changed, adjust remaining spots
-        if (isset($validated['capacity']) && $validated['capacity'] != $event->capacity) {
-            $bookedSpots = $event->capacity - $event->remaining_spots;
+        // Same for tags
+        if ($request->has('tags') && is_string($request->tags)) {
+            $decoded = json_decode($request->tags, true);
+            if (is_array($decoded)) {
+                $request->merge(['tags' => $decoded]);
+            }
+        }
+
+        $validated = $request->validate([
+            'title'                   => 'sometimes|string|max:255',
+            'description'             => 'nullable|string',
+            'start_date'              => 'sometimes|date',
+            'end_date'                => 'sometimes|date|after_or_equal:start_date',
+            'capacity'                => 'sometimes|integer|min:1',
+            'price'                   => 'sometimes|numeric|min:0',
+
+            // Camping
+            'camping_duration'        => 'nullable|integer|min:1',
+            'camping_gear'            => 'nullable|string',
+            'is_group_travel'         => 'sometimes|boolean',
+
+            // Transport / voyage
+            'departure_city'          => 'nullable|string',
+            'arrival_city'            => 'nullable|string',
+            'departure_time'          => 'nullable|date_format:H:i',
+            // ↓ Removed `after:departure_time` — it fails when departure_time
+            //   is absent from the request. A simple format check is enough.
+            'estimated_arrival_time'  => 'nullable|date_format:H:i',
+            'bus_company'             => 'nullable|string',
+            'bus_number'              => 'nullable|string',
+
+            // city_stops — accepts array (FormData notation) or omitted
+            'city_stops'              => 'nullable|array',
+            'city_stops.*.city'       => 'required_with:city_stops|string',
+            'city_stops.*.arrival_time'   => 'nullable|date_format:H:i',
+            'city_stops.*.departure_time' => 'nullable|date_format:H:i',
+
+            // Location
+            'latitude'                => 'nullable|numeric|between:-90,90',
+            'longitude'               => 'nullable|numeric|between:-180,180',
+            'address'                 => 'nullable|string',
+
+            // Hiking
+            'difficulty'              => 'nullable|in:easy,moderate,difficult,expert',
+            'hiking_duration'         => 'nullable|numeric|min:0.5|max:48',
+            'elevation_gain'          => 'nullable|integer|min:0|max:8000',
+
+            // Tags
+            'tags'                    => 'nullable|array',
+            'tags.*'                  => 'string',
+
+            // Image management
+            'new_images'              => 'nullable|array',
+            'new_images.*'            => 'image|mimes:jpeg,png,jpg,gif|max:25600',
+            'cover_image_index'       => 'nullable|integer|min:0',
+            'delete_images'           => 'nullable|array',
+            'delete_images.*'         => 'integer|exists:photos,id',
+        ]);
+
+        // ── Apply scalar field updates ────────────────────────────────────────
+        $skip = ['new_images', 'cover_image_index', 'delete_images', 'tags', 'city_stops', 'is_group_travel'];
+
+        foreach ($validated as $key => $value) {
+            if (in_array($key, $skip)) continue;
+            $event->$key = $value;
+        }
+
+        // is_group_travel — use boolean() so "0"/"1"/true/false all work
+        if ($request->has('is_group_travel')) {
+            $event->is_group_travel = $request->boolean('is_group_travel');
+        }
+
+        // JSON-encode tags and city_stops for storage
+        if (array_key_exists('tags', $validated)) {
+            $event->tags = $validated['tags'] ? json_encode($validated['tags']) : null;
+        }
+
+        if (array_key_exists('city_stops', $validated)) {
+            $event->city_stops = $validated['city_stops'] ? json_encode($validated['city_stops']) : null;
+        }
+
+        // ── Adjust remaining_spots when capacity changes ──────────────────────
+        if (isset($validated['capacity']) && $validated['capacity'] != $event->getOriginal('capacity')) {
+            $bookedSpots = $event->getOriginal('capacity') - $event->getOriginal('remaining_spots');
             $event->remaining_spots = $validated['capacity'] - $bookedSpots;
         }
 
         $event->save();
 
-        // Handle image deletions
+        // ── Delete images ─────────────────────────────────────────────────────
         if ($request->has('delete_images')) {
-            $photoIds = $request->input('delete_images');
-            $photos = Photo::whereIn('id', $photoIds)
-                          ->where('event_id', $event->id)
-                          ->get();
-            
+            $photos = Photo::whereIn('id', $request->input('delete_images'))
+                           ->where('event_id', $event->id)
+                           ->get();
+
             foreach ($photos as $photo) {
-                // Delete file from storage
                 Storage::disk('public')->delete($photo->path_to_img);
-                // Delete record
                 $photo->delete();
             }
         }
 
-        // Handle new image uploads
+        // ── Upload new images ─────────────────────────────────────────────────
         if ($request->hasFile('new_images')) {
-            $coverIndex = $request->input('cover_image_index');
+            $coverIndex       = $request->input('cover_image_index');
             $currentPhotoCount = $event->photos()->count();
-            
+
             foreach ($request->file('new_images') as $index => $image) {
-                $path = $image->store('events/' . $event->id, 'public');
-                
-                $isCover = ($coverIndex !== null && (int)$coverIndex === $index);
-                
+                $path    = $image->store('events/' . $event->id, 'public');
+                $isCover = ($coverIndex !== null && (int) $coverIndex === $index);
+
                 Photo::create([
                     'path_to_img' => $path,
-                    'user_id' => $user->id,
-                    'event_id' => $event->id,
-                    'is_cover' => $isCover,
-                    'order' => $currentPhotoCount + $index,
+                    'user_id'     => $user->id,
+                    'event_id'    => $event->id,
+                    'is_cover'    => $isCover,
+                    'order'       => $currentPhotoCount + $index,
                 ]);
             }
         }
 
-        // Update cover image if specified without new images
+        // ── Update cover image (no new files) ─────────────────────────────────
         if ($request->has('cover_image_index') && !$request->hasFile('new_images')) {
-            $coverIndex = (int)$request->input('cover_image_index');
-            
-            // Get all photos ordered
-            $photos = $event->photos()->orderBy('order')->get();
-            
+            $coverIndex = (int) $request->input('cover_image_index');
+            $photos     = $event->photos()->orderBy('order')->get();
+
             if ($photos->isNotEmpty() && $coverIndex < $photos->count()) {
-                // Unset all covers
                 $event->photos()->update(['is_cover' => false]);
-                
-                // Set the new cover
-                $coverPhoto = $photos[$coverIndex];
-                $coverPhoto->is_cover = true;
-                $coverPhoto->save();
+                $photos[$coverIndex]->update(['is_cover' => true]);
             }
         }
 
-        // Load updated relationships
         $event->load('photos');
 
         return response()->json([
             'success' => true,
             'message' => 'Event updated successfully',
-            'data' => $event
+            'data'    => $event,
         ]);
     }
-
     /**
      * Delete an event (Group owner or Admin)
      */
@@ -631,11 +749,7 @@ class EventController extends Controller
      */
     public function participants($id, Request $request)
     {
-        $user = Auth::user();
-        
-        $event = Events::where('id', $id)
-                      ->where('group_id', $user->id)
-                      ->firstOrFail();
+        $event = Events::findOrFail($id);
 
         $status = $request->query('status');
         $query = Reservations_events::with('user')->where('event_id', $id);
@@ -651,7 +765,6 @@ class EventController extends Controller
             'data' => $participants
         ]);
     }
-
     /**
      * Update participant status (Group owner only)
      */
