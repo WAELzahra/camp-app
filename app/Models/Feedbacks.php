@@ -9,34 +9,46 @@ class Feedbacks extends Model
 {
     use HasFactory;
 
-   protected $fillable = [
-    "user_id",
-    "target_id",
-    "event_id",
-    "zone_id",
-    "contenu",
-    "response",
-    "note",
-    "type",
-    "status",
-];
+    protected $fillable = [
+        "user_id",
+        "target_id",
+        "event_id",
+        "zone_id",
+        "materielle_id",   
+        "contenu",
+        "response",
+        "note",
+        "type",
+        "status",
+    ];
 
-    public function user(){
+    public function user()
+    {
         return $this->belongsTo(User::class);
     }
-    public function user_target(){
-        return $this->belongsTo(User::class);
+
+    public function user_target()
+    {
+        return $this->belongsTo(User::class, 'target_id');
     }
-    public function materielle(){
-        return $this->belongsTo(Materielles::class);
+
+    public function materielle()
+    {
+        return $this->belongsTo(Materielles::class, 'materielle_id');
     }
-    public function event(){
-        return $this->belongsTo(Events::class);
+
+    public function event()
+    {
+        return $this->belongsTo(Events::class, 'event_id');
     }
-    public function reservation(){
+
+    public function reservation()
+    {
         return $this->belongsTo(Reservations_centre::class);
     }
-    public function zone(){
-        return $this->belongsTo(Camping_zones::class);
+
+    public function zone()
+    {
+        return $this->belongsTo(CampingZones::class, 'zone_id');
     }
 }

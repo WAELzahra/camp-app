@@ -35,20 +35,37 @@ class MaterielleController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Failed to retrieve materielles.'], 500);
         }
     }
-
+    /**
+     * Get all categories for marketplace filter.
+     */
+    public function categories()
+    {
+        try {
+            $categories = \App\Models\Materielles_categories::all();
+            return response()->json([
+                'status' => 'success',
+                'data' => $categories
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to fetch categories'
+            ], 500);
+        }
+    }
     /**
      * Show a specific materiel with its photos, category and feedbacks.
      */
     public function show(int $materielle_id)
     {
         try {
-            $materielle = Materielles::with(['photos', 'category', 'feedbacks', 'fournisseur'])
+            $materielle = Materielles::with(['photos', 'category', 'feedbacks', 'fournisseur.profile'])
                 ->find($materielle_id);
-
+    
             if (!$materielle) {
                 return response()->json(['status' => 'error', 'message' => 'Materielle not found.'], 404);
             }
-
+    
             return response()->json(['status' => 'success', 'data' => $materielle]);
         } catch (\Exception $e) {
             return response()->json(['status' => 'error', 'message' => 'Unable to retrieve materielle.'], 500);
@@ -238,10 +255,12 @@ class MaterielleController extends Controller
             'quantite_dispo'       => 'sometimes|integer|min:0',
             'livraison_disponible' => 'boolean',
             'frais_livraison'      => 'nullable|numeric|min:0',
-            'image'                => 'nullable|image|mimes:jpeg,png,jpg,webp|max:4096',
+            'images'               => 'nullable|array|max:8',
+            'images.*'             => 'image|mimes:jpeg,png,jpg,webp|max:5120',
+            'existing_photo_ids'   => 'nullable|array',
+            'existing_photo_ids.*' => 'integer|exists:photos,id',
         ]);
 
-        // Resolve listing types (fall back to current DB values)
         $isRentable = $request->has('is_rentable') ? $request->boolean('is_rentable') : $materielle->is_rentable;
         $isSellable = $request->has('is_sellable') ? $request->boolean('is_sellable') : $materielle->is_sellable;
 
@@ -254,32 +273,57 @@ class MaterielleController extends Controller
 
         DB::beginTransaction();
         try {
-            // Handle new photo upload
-            if ($request->hasFile('image')) {
-                // Delete old photos from storage
+
+            if ($request->hasFile('images') || $request->has('existing_photo_ids')) {
+
+                // 1. Resolve which existing photos to keep (in the submitted order)
+                $keepIds = $request->input('existing_photo_ids', []);
+
+                // 2. Delete photos NOT in the keep list
                 foreach ($materielle->photos as $photo) {
-                    Storage::disk('public')->delete($photo->path_to_img);
-                    $photo->delete();
+                    if (!in_array($photo->id, $keepIds)) {
+                        Storage::disk('public')->delete($photo->path_to_img);
+                        $photo->delete();
+                    }
                 }
 
-                $imagePath = $request->file('image')->store('materielles', 'public');
-                Photo::create([
-                    'materielle_id' => $materielle->id,
-                    'path_to_img'   => $imagePath,
-                ]);
+                // 3. Re-order / re-flag cover on kept photos
+                foreach ($keepIds as $order => $photoId) {
+                    Photo::where('id', $photoId)
+                        ->where('materielle_id', $materielle->id)
+                        ->update([
+                            'order'    => $order,
+                            'is_cover' => $order === 0,
+                        ]);
+                }
+
+                // 4. Append new files after the kept ones (guarded — only when files exist)
+                if ($request->hasFile('images')) {
+                    $offset = count($keepIds);
+                    foreach ($request->file('images') as $index => $file) {
+                        Photo::create([
+                            'materielle_id' => $materielle->id,
+                            'path_to_img'   => $file->store('materielles', 'public'),
+                            'is_cover'      => ($offset + $index) === 0,
+                            'order'         => $offset + $index,
+                        ]);
+                    }
+                }
             }
 
             $materielle->update([
-                'category_id'          => $validated['category_id'] ?? $materielle->category_id,
-                'nom'                  => $validated['nom'] ?? $materielle->nom,
-                'description'          => $validated['description'] ?? $materielle->description,
+                'category_id'          => $validated['category_id']   ?? $materielle->category_id,
+                'nom'                  => $validated['nom']            ?? $materielle->nom,
+                'description'          => $validated['description']    ?? $materielle->description,
                 'is_rentable'          => $isRentable,
                 'is_sellable'          => $isSellable,
                 'tarif_nuit'           => $isRentable ? ($validated['tarif_nuit'] ?? $materielle->tarif_nuit) : null,
                 'prix_vente'           => $isSellable ? ($validated['prix_vente'] ?? $materielle->prix_vente) : null,
                 'quantite_total'       => $validated['quantite_total'] ?? $materielle->quantite_total,
                 'quantite_dispo'       => $validated['quantite_dispo'] ?? $materielle->quantite_dispo,
-                'livraison_disponible' => $request->has('livraison_disponible') ? $request->boolean('livraison_disponible') : $materielle->livraison_disponible,
+                'livraison_disponible' => $request->has('livraison_disponible')
+                    ? $request->boolean('livraison_disponible')
+                    : $materielle->livraison_disponible,
                 'frais_livraison'      => $validated['frais_livraison'] ?? $materielle->frais_livraison,
             ]);
 
@@ -290,6 +334,7 @@ class MaterielleController extends Controller
                 'message'    => 'Matériel mis à jour avec succès.',
                 'materielle' => $materielle->fresh('photos'),
             ]);
+
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json([
@@ -298,7 +343,6 @@ class MaterielleController extends Controller
             ], 500);
         }
     }
-
     /**
      * Delete a materiel and its associated photos.
      * Only the owning fournisseur can delete.
@@ -386,4 +430,109 @@ class MaterielleController extends Controller
             'materielle' => $materielle,
         ]);
     }
+
+
+    public function marketplace(Request $request)
+    {
+        $perPage = min((int) $request->get('per_page', 12), 48);
+ 
+        $query = Materielles::with(['photos', 'category', 'fournisseur:id,first_name,last_name,avatar'])
+            ->where('status', 'up');
+ 
+        if ($request->filled('q')) {
+            $term = $request->q;
+            $query->where(function ($q) use ($term) {
+                $q->where('nom',         'like', "%{$term}%")
+                  ->orWhere('description','like', "%{$term}%");
+            });
+        }
+ 
+        if ($request->filled('category_id')) {
+            $query->where('category_id', $request->category_id);
+        }
+ 
+        switch ($request->get('type')) {
+            case 'location': $query->where('is_rentable', true);  break;
+            case 'vente':    $query->where('is_sellable', true);  break;
+            case 'both':
+                $query->where('is_rentable', true)
+                      ->where('is_sellable', true);
+                break;
+        }
+ 
+        // Uses the "most relevant" price: tarif_nuit for rentals, prix_vente for sales.
+        if ($request->filled('price_min') || $request->filled('price_max')) {
+            $min = (float) $request->get('price_min', 0);
+            $max = (float) $request->get('price_max', PHP_INT_MAX);
+ 
+            $query->where(function ($q) use ($min, $max) {
+                $q->whereBetween('tarif_nuit', [$min, $max])
+                  ->orWhereBetween('prix_vente', [$min, $max]);
+            });
+        }
+ 
+        if ($request->boolean('delivery')) {
+            $query->where('livraison_disponible', true);
+        }
+ 
+        switch ($request->get('sort', 'newest')) {
+            case 'price_asc':
+                // Order by the available price (rental preferred, then sale)
+                $query->orderByRaw('COALESCE(tarif_nuit, prix_vente) ASC');
+                break;
+            case 'price_desc':
+                $query->orderByRaw('COALESCE(tarif_nuit, prix_vente) DESC');
+                break;
+            case 'popular':
+                // Count confirmed + retrieved reservations as a popularity proxy.
+                // Swap for a rating column once reviews land on Materielles.
+                $query->withCount([
+                    'reservations as reservation_count' => fn($q) =>
+                        $q->whereIn('status', ['confirmed','paid','retrieved','returned']),
+                ])->orderByDesc('reservation_count');
+                break;
+            default: // 'newest'
+                $query->latest();
+        }
+ 
+        $results = $query->paginate($perPage);
+ 
+        $results->getCollection()->transform(function (Materielles $m) {
+            $cover = $m->photos->firstWhere('is_cover', true)
+                   ?? $m->photos->first();
+ 
+            return [
+                'id'                   => $m->id,
+                'nom'                  => $m->nom,
+                'description'          => $m->description,
+                'is_rentable'          => $m->is_rentable,
+                'is_sellable'          => $m->is_sellable,
+                'tarif_nuit'           => $m->tarif_nuit,
+                'prix_vente'           => $m->prix_vente,
+                'quantite_dispo'       => $m->quantite_dispo,
+                'livraison_disponible' => $m->livraison_disponible,
+                'frais_livraison'      => $m->frais_livraison,
+                'status'               => $m->status,
+                'cover_image'          => $cover ? asset('storage/' . $cover->path_to_img) : null,
+                'category'             => $m->category ? [
+                    'id'  => $m->category->id,
+                    'nom' => $m->category->nom,
+                ] : null,
+                'fournisseur'          => $m->fournisseur ? [
+                    'id'         => $m->fournisseur->id,
+                    'first_name' => $m->fournisseur->first_name,
+                    'last_name'  => $m->fournisseur->last_name,
+                    'avatar'     => $m->fournisseur->avatar,
+                ] : null,
+                'created_at'           => $m->created_at,
+            ];
+        });
+ 
+        return response()->json([
+            'status' => 'success',
+            'data'   => $results,
+        ]);
+    }
+
+    
 }

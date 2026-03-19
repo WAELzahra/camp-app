@@ -110,9 +110,13 @@ Route::prefix('comments')->group(function () {
 // -------------------- PUBLIC SHOPS & EQUIPMENT --------------------
 Route::get('/boutiques', [BoutiqueController::class, 'index']);
 Route::get('/boutiques/{fournisseur_id}', [BoutiqueController::class, 'show']);
+
+Route::get('/materielles/categories', [MaterielleController::class, 'categories']);
+
 Route::get('/materielles/fournisseur/{fournisseur_id}', [MaterielleController::class, 'index']);
 Route::get('/materielles/{materielle_id}', [MaterielleController::class, 'show']);
 Route::get('/materielles/compare/{id1}/{id2}', [MaterielleController::class, 'compare']);
+Route::get('/materielles', [MaterielleController::class, 'marketplace']);
 
 // -------------------- PUBLIC EVENTS --------------------
 Route::prefix('events')->group(function () {
@@ -131,17 +135,19 @@ Route::get('/groupes', [GroupController::class, 'listGroupsWithFeedbacks']);
 
 // -------------------- PUBLIC CAMPING ZONES --------------------
 Route::prefix('zones')->group(function () {
-    Route::get('/', [CampingZonesController::class, 'index']);
-    Route::get('/export-geojson', [CampingZonesController::class, 'exportGeoJson']);
-    Route::get('/search', [CampingZonesController::class, 'search']);
-    Route::get('/nearby', [CampingZonesController::class, 'nearby']);
-    Route::get('/cluster', [CampingZonesController::class, 'clusterZones']);
-    Route::get('/region', [CampingZonesController::class, 'zonesByRegion']);
-    Route::get('/top-by-season', [CampingZonesController::class, 'topZonesBySeason']);
-    Route::get('/exclude-non-relevant', [CampingZonesController::class, 'excludeNonRelevantZones']);
-    Route::post('/suggest', [CampingZonesController::class, 'suggestZone']);
-    Route::get('/{id}', [CampingZonesController::class, 'show']);
+    Route::get('/',[CampingZonesController::class, 'index']);
+    Route::get('/export-geojson',[CampingZonesController::class, 'exportGeoJson']);
+    Route::get('/search',[CampingZonesController::class, 'search']);
+    Route::get('/nearby',[CampingZonesController::class, 'nearby']);
+    Route::get('/cluster',[CampingZonesController::class, 'clusterZones']);
+    Route::get('/region',[CampingZonesController::class, 'zonesByRegion']);
+    Route::get('/top',[CampingZonesController::class, 'topZones']);
+    Route::get('/top-by-season',[CampingZonesController::class, 'topZonesBySeason']);
+    Route::get('/recommend',[CampingZonesController::class, 'recommendZones']);
+    Route::get('/exclude-non-relevant',[CampingZonesController::class, 'excludeNonRelevantZones']);
+    Route::get('/{id}',[CampingZonesController::class, 'show']);
     Route::get('/{id}/validate-coordinates', [CampingZonesController::class, 'validateCoordinates']);
+    Route::get('/{id}/stats',[CampingZonesController::class, 'zoneStats']);
 });
 
 // -------------------- PUBLIC CAMPING CENTERS --------------------
@@ -427,19 +433,13 @@ Route::middleware('auth:sanctum')->group(function () {
     
     // -------------------- CAMPING ZONES (Authenticated actions) --------------------
     Route::prefix('zones')->group(function () {
-        Route::post('/', [CampingZonesController::class, 'store']);
-        Route::patch('/{id}', [CampingZonesController::class, 'update']);
-        Route::delete('/{id}', [CampingZonesController::class, 'destroy']);
-        Route::post('/{id}/gallery', [CampingZonesController::class, 'addGallery']);
-        Route::post('/{id}/review', [CampingZonesController::class, 'markForReview']);
-        Route::get('/recommend', [CampingZonesController::class, 'recommendZones']);
-        Route::get('/{id}/stats', [CampingZonesController::class, 'zoneStats']);
-        Route::get('/top', [CampingZonesController::class, 'topZones']);
-        Route::get('/{userId}/recommendations', [CampingZonesController::class, 'personalizedRecommendations']);
-        Route::get('/recommended/{userId}', [CampingZonesController::class, 'recommendedZones']);
-        Route::get('/personalized/{userId}', [CampingZonesController::class, 'personalizedRecommendations']);
+        Route::post('/suggest',[CampingZonesController::class, 'suggestZone']);
+        Route::post('/{id}/gallery',[CampingZonesController::class, 'addGallery']);
+        Route::post('/{id}/review',[CampingZonesController::class, 'markForReview']);
+        Route::get('/recommended/{userId}',[CampingZonesController::class, 'recommendedZones']);
+        Route::get('/personalized/{userId}',[CampingZonesController::class, 'personalizedRecommendations']);
+        Route::get('/{userId}/recommendations',[CampingZonesController::class, 'personalizedRecommendations']);
     });
-    
     // -------------------- CAMPING CENTERS (Authenticated actions) --------------------
     Route::prefix('centres')->group(function () {
         Route::post('/suggest', [CampingCentresController::class, 'suggestCentre']);
@@ -667,6 +667,14 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
         Route::post('/bulk-assign', [CampingZoneController::class, 'bulkAssignToCentre']);
         Route::post('/zones/{id}/adjust-polygon', [CampingZoneController::class, 'adjustPolygonWithRoutes']);
         Route::post('/zones/import-geojson', [CampingZoneController::class, 'importGeoJson']);
+    });
+    // -------------------- CAMPING ZONES (Admin actions) --------------------
+    Route::prefix('zones')->group(function () {
+        Route::post('/',                    [CampingZonesController::class, 'store']);
+        Route::patch('/{id}',              [CampingZonesController::class, 'update']);
+        Route::delete('/{id}',             [CampingZonesController::class, 'destroy']);
+        Route::patch('/{id}/validate',     [CampingZonesController::class, 'validateZone']);
+        Route::patch('/{id}/toggle-status',[CampingZonesController::class, 'toggleZoneStatus']);
     });
     
     // -------------------- SERVICE CATEGORIES MANAGEMENT --------------------

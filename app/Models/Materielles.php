@@ -72,7 +72,6 @@ class Materielles extends Model
     {
         return $this->hasMany(Feedbacks::class, 'materielle_id');
     }
-
     /**
      * All reservations made for this materiel.
      */
