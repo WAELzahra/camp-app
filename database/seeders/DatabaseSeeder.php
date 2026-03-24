@@ -24,7 +24,10 @@ class DatabaseSeeder extends Seeder
             EventSeeder::class,
             ReservationEventSeeder::class,
             ShopSeeder::class,
-            CampingZonesSeeder::class
+            CampingZonesSeeder::class,
+            FeedbackSeeder::class,
+            AnnonceSeeder::class,
+
         ]);
     }
 }

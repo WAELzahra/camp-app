@@ -378,34 +378,45 @@ public function updateManualParticipant(Request $request, $reservationId)
 }
 
 
-    /**
-     * Créer une réservation avec paiement (intégration à compléter).
+/**
      * Créer une réservation avec le statut "en_attente_paiement".
+     *
+     * Accepts: event_id, nbr_place, group_id, name, email, phone
+     * Frontend sends name/email/phone explicitly — do NOT use $user->name
+     * because the User model uses first_name + last_name (no `name` column).
      */
     public function createReservationWithPayment(Request $request)
     {
-        $request->validate([
-            'event_id' => 'required|exists:events,id',
-            'nbr_place' => 'required|integer|min:1',
-            'group_id' => 'required|exists:users,id',
-        ]);
-
         $user = auth()->user();
 
-        $reservation = Reservations_events::create([
-            'user_id' => $user->id,
-            'group_id' => $request->group_id,
-            'event_id' => $request->event_id,
-            'name' => $user->name,
-            'email' => $user->email,
-            'phone' => $user->phone,
-            'nbr_place' => $request->nbr_place,
-            'status' => 'en_attente_paiement',
+        $request->validate([
+            'event_id'  => 'required|exists:events,id',
+            'nbr_place' => 'required|integer|min:1',
+            'group_id'  => 'required|exists:users,id',
+            'name'      => 'nullable|string|max:255',
+            'email'     => 'nullable|email|max:255',
+            'phone'     => 'nullable|string|max:50',
+        ]);
+
+        // Build a name that is never null — backend column is NOT NULL
+        $resolvedName = $request->name
+            ?? trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? ''))
+            ?: $user->email;
+
+        $reservation = \App\Models\Reservations_events::create([
+            'user_id'    => $user->id,
+            'group_id'   => $request->group_id,
+            'event_id'   => $request->event_id,
+            'name'       => $resolvedName,
+            'email'      => $request->email  ?? $user->email,
+            'phone'      => $request->phone  ?? $user->phone_number ?? null,
+            'nbr_place'  => $request->nbr_place,
+            'status'     => 'en_attente_paiement',
             'created_by' => $user->id,
         ]);
 
         return response()->json([
-            'message' => 'Réservation créée en attente de paiement.',
+            'message'     => 'Réservation créée en attente de paiement.',
             'reservation' => $reservation,
         ], 201);
     }

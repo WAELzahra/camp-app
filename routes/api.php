@@ -42,6 +42,7 @@ use App\Http\Controllers\Event\EventInterestController;
 use App\Http\Controllers\Event\EventParticipantController;
 use App\Http\Controllers\Reservation\ReservationEventController;
 use App\Http\Controllers\Reservation\ReservationCancellationController;
+use App\Http\Controllers\Reservation\UnifiedReservationController;
 use App\Http\Controllers\Groupe\FollowGroupeController;
 
 // Payment Controller
@@ -94,19 +95,28 @@ Route::middleware('signed')->get('/email/verify/{id}/{hash}', function (EmailVer
     $request->fulfill();
     return response()->json(['message' => 'Email verified successfully']);
 })->name('verification.verify');
+Route::middleware('auth:sanctum')->get('/annonces/user-likes', [AnnonceController::class, 'getUserLikes']);
 
 // -------------------- PUBLIC ANNOUNCEMENTS --------------------
 Route::prefix('annonces')->group(function () {
-    Route::get('/show/{id}', [AnnonceController::class, 'show']);
+    Route::get('/all', [AnnonceController::class, 'getAll']);
+    
+    Route::get('/{id}', [AnnonceController::class, 'show']);
     Route::get('/user/{id}', [AnnonceController::class, 'index']);
     Route::get('/{id}/likes', [AnnonceController::class, 'getLikes']);
 });
 
 // -------------------- PUBLIC COMMENTS (Read-only) --------------------
-Route::prefix('comments')->group(function () {
-    Route::get('/annonce/{annonceId}', [CommentController::class, 'index']);
+Route::get('/annonces/{annonceId}/comments', [CommentController::class, 'index']);
+Route::middleware('auth:sanctum')->group(function () {
+    Route::post ('/annonces/{annonceId}/comments/{commentId}/like',   [CommentController::class, 'like']);
+    Route::post ('/annonces/{annonceId}/comments/{commentId}/unlike', [CommentController::class, 'unlike']);
+    // Route::patch('/annonces/{annonceId}/comments/{commentId}/pin',    [CommentController::class, 'pin']);
+    // Route::patch('/annonces/{annonceId}/comments/{commentId}/unpin',  [CommentController::class, 'unpin']);
+    Route::post  ('/annonces/{annonceId}/comments', [CommentController::class, 'store']);
+    Route::put   ('/annonces/{annonceId}/comments/{commentId}', [CommentController::class, 'update']);
+    Route::delete('/annonces/{annonceId}/comments/{commentId}', [CommentController::class, 'destroy']);
 });
-
 // -------------------- PUBLIC SHOPS & EQUIPMENT --------------------
 Route::get('/boutiques', [BoutiqueController::class, 'index']);
 Route::get('/boutiques/{fournisseur_id}', [BoutiqueController::class, 'show']);
@@ -285,23 +295,25 @@ Route::middleware('auth:sanctum')->group(function () {
     
     // -------------------- USER SEARCH --------------------
     Route::get('/users/search', [ProfileController::class, 'searchUsers']);
-    
+    Route::get('/annonces/user-likes', [AnnonceController::class, 'getUserLikes']);
     // -------------------- ANNOUNCEMENTS (Authenticated actions) --------------------
     Route::prefix('annonces')->group(function () {
+        Route::get('/user/{userId}', [AnnonceController::class, 'index']);
+        Route::get('/archived/{userId}', [AnnonceController::class, 'getArchived']);
+        
+        Route::post('/', [AnnonceController::class, 'store']);
+        
+        Route::post('/{id}', [AnnonceController::class, 'update']);
+        Route::delete('/{id}', [AnnonceController::class, 'destroy']);
+        Route::patch('/{id}/archive', [AnnonceController::class, 'archive']);
+        Route::patch('/{id}/unarchive', [AnnonceController::class, 'unarchive']);
         Route::post('/{id}/like', [AnnonceController::class, 'like']);
         Route::post('/{id}/unlike', [AnnonceController::class, 'unlike']);
-        Route::get('/{id}/check-like', [AnnonceController::class, 'checkLike']);
+        Route::get('/{id}/likes', [AnnonceController::class, 'getLikes']);
+        Route::get('/{id}/likes/check', [AnnonceController::class, 'checkLike']);
+        Route::get('/{id}', [AnnonceController::class, 'show']);
+
     });
-    
-    // -------------------- COMMENTS (Authenticated actions) --------------------
-    Route::prefix('comments')->group(function () {
-        Route::post('/annonce/{annonceId}', [CommentController::class, 'store']);
-        Route::post('/annonce/{annonceId}/reply/{parentId}', [CommentController::class, 'store']);
-        Route::put('/{id}', [CommentController::class, 'update']);
-        Route::delete('/{id}', [CommentController::class, 'destroy']);
-        Route::post('/{id}/like', [CommentController::class, 'toggleLike']);
-    });
-    
     // -------------------- FEEDBACKS (Authenticated actions) --------------------
     Route::prefix('feedbacks')->group(function () {
         Route::get('/', [FeedbackController::class, 'index']);
@@ -482,6 +494,7 @@ Route::middleware(['auth:sanctum', 'can.publish'])->prefix('annonces')->group(fu
     Route::get('/archived/{userId}', [AnnonceController::class, 'getArchived']);
     Route::patch('/{id}/archive', [AnnonceController::class, 'archive']);
     Route::patch('/{id}/unarchive', [AnnonceController::class, 'unarchive']);
+
 });
         Route::patch('reservation/materiel/{id}/confirm',     [ReservationMaterielleController::class, 'confirm']);
 
@@ -521,8 +534,10 @@ Route::middleware(['auth:sanctum', 'fournisseur'])->group(function () {
 
 // -------------------- CAMPING CENTER RESERVATIONS --------------------
 Route::middleware(['auth:sanctum'])->prefix('reservation')->group(function () {
+    // ✅ Put specific routes BEFORE wildcard routes
+    Route::get('/all', [UnifiedReservationController::class, 'getAllReservations']);
     
-    // Routes for both campers and centers
+    // Then define routes with parameters
     Route::middleware(['campeur_or_centre'])->group(function () {
         Route::get('/{id}', [ReservationsCentreController::class, 'show']);
         Route::get('/{id}/invoice', [ReservationsCentreController::class, 'downloadInvoice']);
@@ -530,7 +545,7 @@ Route::middleware(['auth:sanctum'])->prefix('reservation')->group(function () {
         Route::patch('/centre/cancel/{id}', [ReservationsCentreController::class, 'destroy']);
         Route::patch('/centre/approve-modified/{id}', [ReservationsCentreController::class, 'approveModified']);
     });
-    
+
     // Routes for campers only
     Route::middleware(['campeur'])->group(function () {
         Route::get('/my', [ReservationMaterielleController::class, 'index_user']);
@@ -559,7 +574,11 @@ Route::middleware(['auth:sanctum'])->prefix('reservation')->group(function () {
 
 // ==================== ADMIN ROUTES ====================
 Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function () {
-    
+
+    Route::prefix('admin/annonces')->group(function () {
+        Route::patch('/{id}/activate',   [AnnonceController::class, 'activate']);
+        Route::patch('/{id}/deactivate', [AnnonceController::class, 'deactivate']);
+    });
     // Dashboard/Utility
     Route::post('/restock-expired', [ReservationMaterielleController::class, 'restockExpiredReservations']);
     
@@ -693,10 +712,7 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
 });
 
 // ==================== ADMIN COMMENT ROUTES ====================
-Route::middleware(['auth:sanctum', 'admin'])->prefix('comments')->group(function () {
-    Route::post('/{id}/pin', [CommentController::class, 'togglePin']);
-    Route::post('/{id}/hide', [CommentController::class, 'toggleHide']);
-});
+
 
 // ==================== ADMIN FEEDBACK ROUTES ====================
 Route::middleware(['auth:sanctum', 'admin'])->prefix('feedbacks')->group(function () {

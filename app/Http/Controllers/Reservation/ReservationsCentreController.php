@@ -78,8 +78,10 @@ class ReservationsCentreController extends Controller
     /**
      * Display a specific reservation by its ID with service items.
      */
-    public function show(int $idReservation)
+    public function show($idReservation)
     {
+        $idReservation = (int) $idReservation;
+
         $reservation = Reservations_centre::with([
             'serviceItems',
             'serviceItems.service',

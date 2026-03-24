@@ -126,19 +126,20 @@ class EventController extends Controller
      */
     public function index(Request $request)
     {
-        $query = Events::where('is_active', true)
+        $query = Events::with(['group', 'photos'])  
+                      ->where('is_active', true)
                       ->where('status', 'scheduled');
-
+ 
         // Search by title
         if ($request->has('title')) {
             $query->where('title', 'like', '%' . $request->title . '%');
         }
-
+ 
         // Filter by event type
         if ($request->has('event_type')) {
             $query->where('event_type', $request->event_type);
         }
-
+ 
         // Filter by destination (departure or arrival city)
         if ($request->has('destination')) {
             $destination = $request->destination;
@@ -148,38 +149,50 @@ class EventController extends Controller
                   ->orWhere('address', 'like', '%' . $destination . '%');
             });
         }
-
+ 
         // Price range filters
         if ($request->has('min_price')) {
             $query->where('price', '>=', $request->min_price);
         }
-
+ 
         if ($request->has('max_price')) {
             $query->where('price', '<=', $request->max_price);
         }
-
+ 
         // Date filters
         if ($request->has('start_date')) {
             $query->whereDate('start_date', '>=', $request->start_date);
         }
-
+ 
         if ($request->has('end_date')) {
             $query->whereDate('end_date', '<=', $request->end_date);
         }
-
+ 
         // Sort options
         $sortBy = $request->get('sort_by', 'start_date');
         $sortOrder = $request->get('sort_order', 'asc');
         $query->orderBy($sortBy, $sortOrder);
-
+ 
         $events = $query->paginate($request->get('per_page', 15));
-
+ 
+        // Add cover_image to each event for convenience
+        $events->getCollection()->transform(function ($event) {
+            if ($event->photos && $event->photos->isNotEmpty()) {
+                $cover = $event->photos->firstWhere('is_cover', true) ?? $event->photos->first();
+                $event->cover_image = $cover->url ?? (
+                    $cover->path_to_img
+                        ? url('storage/' . $cover->path_to_img)
+                        : null
+                );
+            }
+            return $event;
+        });
+ 
         return response()->json([
             'success' => true,
             'data' => $events
         ]);
     }
-
     /**
      * Get public event details (Public)
      */

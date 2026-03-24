@@ -72,7 +72,7 @@ class FeedbackController extends Controller
             return response()->json(['success' => false, 'message' => 'Type de cible non valide.'], 400);
         }
 
-        $query = Feedbacks::with('user')
+        $query = Feedbacks::with(['user', 'user_target', 'zone', 'event', 'materielle'])
             ->where('type', $type)
             ->where('status', 'approved')
             ->latest();
@@ -349,16 +349,20 @@ class FeedbackController extends Controller
             'materielle'  => Feedbacks::where('type', 'materielle')->count(),
         ];
     }
-
     private function formatFeedback($feedback): array
     {
         $formatted = [
             'id'           => $feedback->id,
             'user_id'      => $feedback->user_id,
-            'user_name'    => $feedback->user
-                                  ? $feedback->user->first_name . ' ' . $feedback->user->last_name
-                                  : null,
-            'user_email'   => $feedback->user?->email,
+            'user'         => $feedback->user ? [
+                'id'         => $feedback->user->id,
+                'first_name' => $feedback->user->first_name,
+                'last_name'  => $feedback->user->last_name,
+                'email'      => $feedback->user->email,
+                'avatar'     => $feedback->user->avatar ? asset('storage/' . $feedback->user->avatar) : null,                'role_id'    => $feedback->user->role_id,
+                'ville'      => $feedback->user->ville,
+                'is_active'  => $feedback->user->is_active,
+            ] : null,
             'target_id'    => $feedback->target_id,
             'event_id'     => $feedback->event_id,
             'zone_id'      => $feedback->zone_id,
@@ -372,6 +376,21 @@ class FeedbackController extends Controller
             'updated_at'   => $feedback->updated_at,
         ];
 
+        // Add target info for clickable profiles
+        if ($feedback->target_id) {
+            $targetUser = $feedback->user_target;
+            if ($targetUser) {
+                $formatted['target'] = [
+                    'id'         => $targetUser->id,
+                    'first_name' => $targetUser->first_name,
+                    'last_name'  => $targetUser->last_name,
+                    'avatar'     => $targetUser->avatar ? asset('storage/' . $targetUser->avatar) : null,
+                    'role_id'    => $targetUser->role_id,
+                ];
+            }
+        }
+
+        // Add target name for display (backward compatibility)
         switch ($feedback->type) {
             case 'zone':
                 if ($feedback->zone) {

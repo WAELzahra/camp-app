@@ -27,12 +27,12 @@ class MateriellesCategoriesSeeder extends Seeder
     public function run(): void
     {
         $categories = [
-            ['id' => 1, 'nom' => 'Tentes',            'description' => 'Tentes de camping toutes saisons — 1 à 8 personnes.'],
-            ['id' => 2, 'nom' => 'Sacs de couchage',  'description' => 'Sacs de couchage pour températures de -10°C à +20°C.'],
-            ['id' => 3, 'nom' => 'Réchauds & Cuisine','description' => 'Réchauds, gamelles, couverts et accessoires de cuisine outdoor.'],
-            ['id' => 4, 'nom' => 'Randonnée',          'description' => 'Sacs à dos, bâtons, boussoles et équipements de trek.'],
-            ['id' => 5, 'nom' => 'Éclairage',          'description' => 'Lampes frontales, lanternes et éclairages solaires.'],
-            ['id' => 6, 'nom' => 'Mobilier Camp',      'description' => 'Chaises pliantes, tables, hamacs et tapis de sol.'],
+            ['id' => 1, 'nom' => 'Tents',               'description' => 'All-season camping tents — 1 to 8 persons.'],
+            ['id' => 2, 'nom' => 'Sleeping Bags',       'description' => 'Sleeping bags for temperatures from -10°C to +20°C.'],
+            ['id' => 3, 'nom' => 'Stoves & Cooking',    'description' => 'Stoves, cookware, utensils and outdoor cooking accessories.'],
+            ['id' => 4, 'nom' => 'Hiking',              'description' => 'Backpacks, trekking poles, compasses and trekking equipment.'],
+            ['id' => 5, 'nom' => 'Lighting',            'description' => 'Headlamps, lanterns and solar lighting.'],
+            ['id' => 6, 'nom' => 'Camp Furniture',      'description' => 'Folding chairs, tables, hammocks and ground mats.'],
         ];
 
         foreach ($categories as $cat) {

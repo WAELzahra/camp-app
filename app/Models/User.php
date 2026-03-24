@@ -225,7 +225,11 @@ class User extends Authenticatable implements MustVerifyEmail
 
         return ['status' => 'offline', 'text' => 'Never logged in', 'color' => 'gray'];
     }
-
+    public function likedAnnonces()
+    {
+        return $this->belongsToMany(Annonce::class, 'annonce_likes', 'user_id', 'annonce_id')
+                    ->withTimestamps();
+    }
     public function getUnreadMessagesCountAttribute(): int
     {
         $count = 0;
