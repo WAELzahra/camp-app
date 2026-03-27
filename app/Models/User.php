@@ -135,6 +135,14 @@ class User extends Authenticatable implements MustVerifyEmail
     // -----------------------------------------------------------------------
 
     /**
+     * The camping centre owned by this user (role 3 — centre owner).
+     */
+    public function campingCentre()
+    {
+        return $this->hasOne(CampingCentre::class, 'user_id');
+    }
+
+    /**
      * The boutique owned by this supplier.
      * One supplier = one boutique.
      */

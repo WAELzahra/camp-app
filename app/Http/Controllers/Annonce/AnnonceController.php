@@ -38,7 +38,7 @@ class AnnonceController extends Controller
      */
     public function getAll(Request $request)
     {
-        $query = Annonce::with(['user', 'photos'])
+        $query = Annonce::with(['user.campingCentre', 'photos'])
             ->where('status', 'approved')
             ->where('is_archived', false);
 

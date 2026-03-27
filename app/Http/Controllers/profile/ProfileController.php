@@ -1016,8 +1016,38 @@ class ProfileController extends Controller
                     $data['details'] = $profile->profileCentre;
                     break;
                 case 'groupe':
-                    $data['details'] = $profile->profileGroupe;
-                    
+                    $profileGroupe = $profile->profileGroupe;
+                    $data['details'] = $profileGroupe;
+
+                    // Album + photos (cover photo used as banner)
+                    $album = \App\Models\Album::with('photos')
+                        ->where('user_id', $user->id)
+                        ->latest()
+                        ->first();
+
+                    $data['album'] = $album ? [
+                        'id'     => $album->id,
+                        'photos' => $album->photos->map(fn($p) => [
+                            'id'       => $p->id,
+                            'url'      => $p->url,
+                            'is_cover' => (bool) $p->is_cover,
+                        ])->values(),
+                    ] : null;
+
+                    // Co-owners
+                    $data['co_owners'] = $profileGroupe
+                        ? $profileGroupe->coOwners()
+                            ->select('users.id', 'users.first_name', 'users.last_name', 'users.email', 'users.avatar')
+                            ->get()
+                            ->map(fn($u) => [
+                                'id'         => $u->id,
+                                'first_name' => $u->first_name,
+                                'last_name'  => $u->last_name,
+                                'email'      => $u->email,
+                                'avatar'     => $u->avatar ? asset('storage/' . $u->avatar) : null,
+                            ])
+                        : [];
+
                     $feedbacks = \App\Models\Feedbacks::with('user')
                         ->where('target_id', $user->id)
                         ->where('type', 'groupe')

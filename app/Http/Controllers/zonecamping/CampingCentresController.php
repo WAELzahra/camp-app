@@ -189,6 +189,18 @@ class CampingCentresController extends Controller
 
 
 
+    /**
+     * Get a centre by its owner user_id — used by announcements "Visit Center" CTA.
+     */
+    public function getByUser($userId)
+    {
+        $centre = CampingCentre::where('user_id', $userId)->first();
+        if (!$centre) {
+            return response()->json(['message' => 'Centre not found'], 404);
+        }
+        return response()->json(['id' => $centre->id]);
+    }
+
         /**
      * Générer un lien de partage (Facebook, WhatsApp, etc.)
      */

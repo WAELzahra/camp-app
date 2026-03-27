@@ -30,6 +30,12 @@ class ProfileGroupe extends Model
         return $this->belongsToMany(User::class, 'follows')->withTimestamps();
     }
 
+    public function coOwners()
+    {
+        return $this->belongsToMany(User::class, 'groupe_co_owners', 'profile_groupe_id', 'user_id')
+            ->withTimestamps();
+    }
+
     public function album()
     {
         return $this->hasOne(Album::class, 'id', 'id_album_photo');

@@ -32,6 +32,7 @@ use App\Http\Controllers\Comment\CommentController;
 use App\Http\Controllers\profile\ProfileController;
 use App\Http\Controllers\Notification\NotificationController;
 use App\Http\Controllers\Favoris\FavorisController;
+use App\Http\Controllers\Favorites\FavoriteController;
 use App\Http\Controllers\Message\ConversationController;
 use App\Http\Controllers\Admin\AdminNotificationController;
 use App\Http\Controllers\Message\MessageController;
@@ -44,6 +45,7 @@ use App\Http\Controllers\Reservation\ReservationEventController;
 use App\Http\Controllers\Reservation\ReservationCancellationController;
 use App\Http\Controllers\Reservation\UnifiedReservationController;
 use App\Http\Controllers\Groupe\FollowGroupeController;
+use App\Http\Controllers\Groupe\GroupeCoOwnerController;
 
 // Payment Controller
 use App\Http\Controllers\Payment\PaymentController;
@@ -164,6 +166,7 @@ Route::prefix('zones')->group(function () {
 Route::prefix('centres')->group(function () {
     Route::get('/map', [CampingCentresController::class, 'getCentresMap']);
     Route::get('/search', [CampingCentresController::class, 'searchCentres']);
+    Route::get('/by-user/{userId}', [CampingCentresController::class, 'getByUser'])->whereNumber('userId');
     Route::get('/{id}/zones', [CampingCentresController::class, 'listZones'])->whereNumber('id');
     Route::get('/{id}', [CampingCentresController::class, 'showCentre'])->whereNumber('id');
 });
@@ -365,7 +368,10 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{id}/participants', [EventController::class, 'participants']);
         Route::get('/{id}/details', [EventController::class, 'show']);
         Route::get('/{id}/participants/stats', [ReservationEventController::class, 'participantStats']);
-        Route::post('/{id}/interest', [EventInterestController::class, 'toggleInterest']);
+        Route::post('/{id}/interest',          [EventInterestController::class, 'toggleInterest']);
+        Route::get('/my-interests',            [EventInterestController::class, 'myInterests']);
+        Route::get('/my-interest-ids',         [EventInterestController::class, 'myInterestIds']);
+        Route::get('/{id}/interest/check',     [EventInterestController::class, 'check']);
         
         // Group event management
         Route::middleware(['group'])->group(function () {
@@ -418,6 +424,16 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/{groupeId}/unfollow', [FollowGroupeController::class, 'unfollow']);
         Route::get('/me/followed-groupes', [FollowGroupeController::class, 'myFollowedGroupes']);
         Route::get('/{groupe}/feedbacks', [GroupController::class, 'listForGroup']);
+        // Join / leave / membership by the group's user ID
+        Route::post('/user/{groupUserId}/join',         [FollowGroupeController::class, 'joinGroup']);
+        Route::delete('/user/{groupUserId}/leave',      [FollowGroupeController::class, 'leaveGroup']);
+        Route::get('/user/{groupUserId}/membership',    [FollowGroupeController::class, 'checkMembership']);
+        // Co-owners (public list)
+        Route::get('/user/{groupUserId}/co-owners',     [GroupeCoOwnerController::class, 'list']);
+        // Co-owner management (authenticated group owner)
+        Route::get('/co-owners/search',                 [GroupeCoOwnerController::class, 'search']);
+        Route::post('/co-owners/{userId}',              [GroupeCoOwnerController::class, 'add']);
+        Route::delete('/co-owners/{userId}',            [GroupeCoOwnerController::class, 'remove']);
     });
     
     // -------------------- GROUP RESERVATION MANAGEMENT --------------------
@@ -468,10 +484,12 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/zone/{zoneId}', [ZonePolygonController::class, 'listByZone']);
     });
     
-    // -------------------- FAVORITES --------------------
-    Route::prefix('favoris')->group(function () {
-        Route::post('/zone/{id}', [FavorisController::class, 'toggleZone']);
-        Route::get('/liste', [FavorisController::class, 'listFavoris']);
+    // -------------------- FAVORITES (unified, polymorphic) --------------------
+    Route::prefix('favorites')->group(function () {
+        Route::post('/',                          [FavoriteController::class, 'toggle']);
+        Route::get('/',                           [FavoriteController::class, 'list']);
+        Route::get('/ids',                        [FavoriteController::class, 'ids']);
+        Route::get('/check/{type}/{id}',          [FavoriteController::class, 'check']);
     });
     
     // -------------------- REPORTS --------------------

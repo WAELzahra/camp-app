@@ -60,12 +60,11 @@ class ProfileCentre extends Model
      */
     public function services(): BelongsToMany
     {
-        return $this->belongsToMany(ServiceCategory::class, 'profile_center_services')
+        return $this->belongsToMany(ServiceCategory::class, 'profile_center_services', 'profile_center_id', 'service_category_id')
                     ->using(ProfileCenterService::class)
                     ->withPivot('price', 'unit', 'description', 'is_available', 'min_quantity', 'max_quantity', 'is_standard')
                     ->withTimestamps();
     }
-
     /**
      * Get center services pivot records
      */
@@ -96,18 +95,24 @@ class ProfileCentre extends Model
     /**
      * Get available services (excluding unavailable ones)
      */
-    public function availableServices()
+    public function availableServices(): BelongsToMany
     {
-        return $this->services()
+        return $this->belongsToMany(ServiceCategory::class, 'profile_center_services', 'profile_center_id', 'service_category_id')
+                    ->using(ProfileCenterService::class)
+                    ->withPivot('price', 'unit', 'description', 'is_available', 'min_quantity', 'max_quantity', 'is_standard')
+                    ->withTimestamps()
                     ->wherePivot('is_available', true);
     }
 
     /**
      * Get additional (paid) services
      */
-    public function additionalServices()
+    public function additionalServices(): BelongsToMany
     {
-        return $this->services()
+        return $this->belongsToMany(ServiceCategory::class, 'profile_center_services', 'profile_center_id', 'service_category_id')
+                    ->using(ProfileCenterService::class)
+                    ->withPivot('price', 'unit', 'description', 'is_available', 'min_quantity', 'max_quantity', 'is_standard')
+                    ->withTimestamps()
                     ->wherePivot('is_available', true)
                     ->wherePivot('is_standard', false);
     }
