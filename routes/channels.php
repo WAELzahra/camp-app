@@ -30,3 +30,8 @@ Broadcast::channel('group.{groupId}', function ($user, $groupId) {
     if (!$user) return false;
     return true;
 });
+
+// Admin-only alerts channel (new reports, system alerts)
+Broadcast::channel('admin-alerts', function ($user) {
+    return $user && $user->role_id === 6;
+});

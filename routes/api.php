@@ -73,6 +73,10 @@ use App\Http\Controllers\Admin\TestUserController;
 use App\Services\ZoneSearchService;
 use Illuminate\Support\Facades\Broadcast;
 
+// Report & Contact Controllers
+use App\Http\Controllers\Report\ReportController;
+use App\Http\Controllers\Contact\ContactController;
+
 // ==================== BROADCAST ROUTES ====================
 Broadcast::routes(['middleware' => ['auth:sanctum']]);
 
@@ -98,6 +102,12 @@ Route::middleware('signed')->get('/email/verify/{id}/{hash}', function (EmailVer
     return response()->json(['message' => 'Email verified successfully']);
 })->name('verification.verify');
 Route::middleware('auth:sanctum')->get('/annonces/user-likes', [AnnonceController::class, 'getUserLikes']);
+
+// -------------------- CONTACT FORM --------------------
+Route::middleware('throttle:10,1')->post('/contact', [ContactController::class, 'store']);
+
+// -------------------- REPORTS (public submission, auth optional) --------------------
+Route::middleware('throttle:5,1')->post('/reports', [ReportController::class, 'store']);
 
 // -------------------- PUBLIC ANNOUNCEMENTS --------------------
 Route::prefix('annonces')->group(function () {
@@ -671,6 +681,18 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     // -------------------- CENTER RESERVATION MANAGEMENT --------------------
     Route::get('/reservation/centre/show/{id}', [ReservationsCentreController::class, 'show']);
     
+    // -------------------- REPORTS MANAGEMENT --------------------
+    Route::prefix('reports')->group(function () {
+        Route::get('/', [ReportController::class, 'index']);
+        Route::put('/{id}', [ReportController::class, 'update']);
+    });
+
+    // -------------------- CONTACT MESSAGES MANAGEMENT --------------------
+    Route::prefix('contact-messages')->group(function () {
+        Route::get('/', [ContactController::class, 'index']);
+        Route::patch('/{id}/read', [ContactController::class, 'markRead']);
+    });
+
     // -------------------- ZONE REPORTS --------------------
     Route::prefix('signals')->group(function () {
         Route::get('/zones/{zoneId}', [SignaleZoneController::class, 'index']);
