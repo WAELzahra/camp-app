@@ -246,18 +246,18 @@ class ProfileController extends Controller
                     'type' => $this->determineUserType($user->role_id),
                 ];
                 
-                $profileFields = ['bio', 'cover_image', 'activities', 'city', 'address'];
+                $profileFields = ['bio', 'cover_image', 'activities', 'city', 'address', 'is_public'];
                 foreach ($profileFields as $field) {
                     if ($request->has($field)) {
                         $profileData[$field] = $request->$field;
                     }
                 }
-                
+
                 $profile = Profile::create($profileData);
                 \Log::info('Profile created:', ['profile_id' => $profile->id]);
             } else {
                 $profileUpdateData = [];
-                $profileFields = ['bio', 'cover_image', 'activities', 'city', 'address'];
+                $profileFields = ['bio', 'cover_image', 'activities', 'city', 'address', 'is_public'];
                 
                 foreach ($profileFields as $field) {
                     if ($request->has($field)) {
@@ -987,7 +987,26 @@ class ProfileController extends Controller
     public function showById($id)
     {
         $user = User::findOrFail($id);
-        
+
+        // Enforce visibility — if profile is private and the requester is not the owner, block it
+        $profile = $user->profile;
+        $requesterId = Auth::id();
+
+        if ($profile && !$profile->is_public && $requesterId !== $user->id) {
+            return response()->json([
+                'success' => false,
+                'message'  => 'This profile is private.',
+                'is_private' => true,
+                'user' => [
+                    'id'         => $user->id,
+                    'first_name' => $user->first_name,
+                    'last_name'  => $user->last_name,
+                    'avatar'     => $user->avatar,
+                    'role_id'    => $user->role_id,
+                ],
+            ], 403);
+        }
+
         $userData = [
             'id' => $user->id,
             'first_name' => $user->first_name,
@@ -997,8 +1016,9 @@ class ProfileController extends Controller
             'ville' => $user->ville,
             'avatar' => $user->avatar,
             'role_id' => $user->role_id,
+            'created_at' => $user->created_at,
         ];
-        
+
         if ($user->profile) {
             $profile = $user->profile;
             
@@ -1073,6 +1093,49 @@ class ProfileController extends Controller
                 case 'fournisseur':
                     $data['details'] = $profile->profileFournisseur;
                     break;
+            }
+
+            // Cover image URL (full URL for frontend)
+            if ($profile->cover_image) {
+                $data['cover_image_url'] = asset('storage/' . ltrim($profile->cover_image, '/'));
+            }
+
+            // Profile gallery photos (visible to everyone when profile is public)
+            $album = \App\Models\Album::with(['photos' => function ($q) {
+                    $q->orderBy('order', 'asc')->orderBy('created_at', 'desc');
+                }])
+                ->where('user_id', $user->id)
+                ->where('titre', 'Profile Gallery')
+                ->first();
+
+            if ($album) {
+                $data['photos'] = $album->photos->map(fn($p) => [
+                    'id'       => $p->id,
+                    'url'      => asset('storage/' . $p->path_to_img),
+                    'is_cover' => (bool) $p->is_cover,
+                    'order'    => $p->order,
+                ])->values();
+            }
+
+            // Feedback summary for all types (if not already set for groupe)
+            if (!isset($data['feedback_summary'])) {
+                $feedbackType = $profile->type;
+                $average = \App\Models\Feedbacks::where('target_id', $user->id)
+                    ->where('type', $feedbackType)
+                    ->where('status', 'approved')
+                    ->avg('note');
+
+                $count = \App\Models\Feedbacks::where('target_id', $user->id)
+                    ->where('type', $feedbackType)
+                    ->where('status', 'approved')
+                    ->count();
+
+                if ($count > 0) {
+                    $data['feedback_summary'] = [
+                        'average_note'    => round($average, 2),
+                        'feedback_count'  => $count,
+                    ];
+                }
             }
 
             return response()->json($data);

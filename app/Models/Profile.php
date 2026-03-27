@@ -20,10 +20,12 @@ class Profile extends Model
         'cin_path',
         'city',
         'address',
+        'is_public',
     ];
 
     protected $casts = [
         'activities' => 'array',
+        'is_public'  => 'boolean',
     ];
 
     // Relations

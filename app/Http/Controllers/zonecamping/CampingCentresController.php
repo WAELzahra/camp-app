@@ -7,6 +7,8 @@ use App\Http\Controllers\Controller;
 use App\Models\CampingCentre;
 use App\Models\Camping_zones;
 use App\Models\Favoris;
+use App\Models\ProfileCentre;
+use App\Models\Photo;
 use Illuminate\Support\Facades\Auth;
 class CampingCentresController extends Controller
 {
@@ -21,6 +23,46 @@ class CampingCentresController extends Controller
             'status' => 'success',
             'data' => $centres
         ]);
+    }
+
+    /**
+     * Returns all registered ProfileCentre records with coordinates + photos
+     * for the interactive map overlay.
+     */
+    public function registeredCentresMap()
+    {
+        $centres = ProfileCentre::with(['profile.user'])
+            ->whereNotNull('latitude')
+            ->whereNotNull('longitude')
+            ->where('disponibilite', true)
+            ->get();
+
+        $data = $centres->map(function ($centre) {
+            $userId = $centre->profile?->user_id;
+            $photos = [];
+            if ($userId) {
+                $photos = Photo::where('user_id', $userId)
+                    ->limit(5)
+                    ->pluck('path_to_img')
+                    ->map(fn($p) => asset('storage/' . $p))
+                    ->values()
+                    ->toArray();
+            }
+
+            return [
+                'id'          => $centre->id,
+                'name'        => $centre->name,
+                'description' => $centre->profile?->bio ?? '',
+                'latitude'    => (float) $centre->latitude,
+                'longitude'   => (float) $centre->longitude,
+                'photos'      => $photos,
+                'price'       => $centre->price_per_night,
+                'category'    => $centre->category,
+                'capacity'    => $centre->capacite,
+            ];
+        });
+
+        return response()->json(['status' => 'success', 'data' => $data]);
     }
 
     /**

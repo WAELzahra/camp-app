@@ -165,6 +165,7 @@ Route::prefix('zones')->group(function () {
 // -------------------- PUBLIC CAMPING CENTERS --------------------
 Route::prefix('centres')->group(function () {
     Route::get('/map', [CampingCentresController::class, 'getCentresMap']);
+    Route::get('/registered-map', [CampingCentresController::class, 'registeredCentresMap']);
     Route::get('/search', [CampingCentresController::class, 'searchCentres']);
     Route::get('/by-user/{userId}', [CampingCentresController::class, 'getByUser'])->whereNumber('userId');
     Route::get('/{id}/zones', [CampingCentresController::class, 'listZones'])->whereNumber('id');
