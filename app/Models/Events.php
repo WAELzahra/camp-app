@@ -49,8 +49,8 @@ class Events extends Model
         'tags' => 'array',
         'start_date' => 'date',
         'end_date' => 'date',
-        'departure_time' => 'datetime',
-        'estimated_arrival_time' => 'datetime',
+        'departure_time' => 'string',
+        'estimated_arrival_time' => 'string',
         'is_active' => 'boolean',
         'is_group_travel' => 'boolean',
         'latitude' => 'decimal:8',
@@ -134,10 +134,10 @@ class Events extends Model
     /**
      * Get available spots
      */
-    public function getAvailableSpotsAttribute(): int
-    {
-        return $this->remaining_spots;
-    }
+  public function getAvailableSpotsAttribute(): int
+{
+    return $this->remaining_spots ?? 0;
+}
 
     /**
      * Check if event is fully booked

@@ -9,6 +9,8 @@ class Reservation_guide extends Model
 {
     use HasFactory;
 
+    protected $table = 'reservation_guides';
+    
     protected $fillable = [
         "reserver_id",
         "guide_id",
@@ -17,10 +19,29 @@ class Reservation_guide extends Model
         "type",
         "discription"
     ];
-    public function circuit(){
-        return $this->hasOne(Circuit::class);
+
+    /**
+     * Relation avec le circuit
+     * Une réservation appartient à un circuit
+     */
+    public function circuit()
+    {
+        return $this->belongsTo(Circuit::class, 'circuit_id');
     }
-    public function user(){
-        return $this->belongsTo(User::class);
+
+    /**
+     * Relation avec l'utilisateur qui a fait la réservation
+     */
+    public function user()
+    {
+        return $this->belongsTo(User::class, 'reserver_id');
+    }
+
+    /**
+     * Relation avec le guide (utilisateur)
+     */
+    public function guide()
+    {
+        return $this->belongsTo(User::class, 'guide_id');
     }
 }

@@ -5,6 +5,7 @@ use App\Http\Controllers\Auth\SocialAuthController;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use Illuminate\Support\Facades\Mail;
+use App\Http\Controllers\Admin\AdminReservationsController;
 
 
 Route::get('/debug-auth', function () {
@@ -54,7 +55,14 @@ Route::get('/dashboard', function () {
 // Route::get('/{any}', function () {
 //     return view('app'); // Vue React compilée
 // })->where('any', '.*');
-
+Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function () {
+    Route::prefix('reservations')->group(function () {
+        // ... autres routes ...
+        
+        // Route pour envoyer l'email de confirmation
+        Route::post('/{type}/{id}/send-confirmation', [AdminReservationsController::class, 'sendConfirmationEmail']);
+    });
+});
 
 Route::get('/redis-test', function () {
     \Illuminate\Support\Facades\Redis::set('foo', 'bar');
