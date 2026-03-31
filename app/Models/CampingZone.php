@@ -74,6 +74,10 @@ class CampingZone extends Model
         'lng'                  => 'float',
     ];
 
+    protected $appends = [
+        'cover_image',
+        'images',
+    ];
 
     /**
      * Photos from the shared photos table (gallery).
@@ -90,6 +94,43 @@ class CampingZone extends Model
     public function coverPhoto()
     {
         return $this->hasOne(Photo::class, 'camping_zone_id')->where('is_cover', true);
+    }
+
+    /**
+     * Get the cover image URL.
+     */
+    public function getCoverImageAttribute()
+    {
+        $cover = $this->coverPhoto;
+        
+        if ($cover && $cover->path_to_img) {
+            // If it's already a full URL, return as is
+            if (filter_var($cover->path_to_img, FILTER_VALIDATE_URL)) {
+                return $cover->path_to_img;
+            }
+            
+            // Otherwise, prepend the storage URL
+            return url('storage/' . $cover->path_to_img);
+        }
+        
+        // Return null if no cover image exists
+        return null;
+    }
+
+    /**
+     * Get all gallery image URLs.
+     */
+    public function getImagesAttribute()
+    {
+        return $this->photos->map(function ($photo) {
+            // If it's already a full URL, return as is
+            if (filter_var($photo->path_to_img, FILTER_VALIDATE_URL)) {
+                return $photo->path_to_img;
+            }
+            
+            // Otherwise, prepend the storage URL
+            return url('storage/' . $photo->path_to_img);
+        })->toArray();
     }
 
     /**
@@ -116,7 +157,6 @@ class CampingZone extends Model
         return $this->hasMany(Feedbacks::class, 'zone_id');
     }
 
-
     public function scopeOpen($query)
     {
         return $query->where('status', true)->where('is_closed', false);
@@ -136,7 +176,6 @@ class CampingZone extends Model
     {
         return $query->where('region', $region);
     }
-
 
     /**
      * Returns the contact array in the shape ZoneDetail expects:
@@ -165,9 +204,10 @@ class CampingZone extends Model
 
     /**
      * All gallery image URLs from the photos table.
+     * @deprecated Use getImagesAttribute() instead
      */
     public function getGalleryImagesAttribute(): array
     {
-        return $this->photos->pluck('path_to_img')->toArray();
+        return $this->images;
     }
 }

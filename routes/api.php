@@ -512,7 +512,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/events/{event}/send-reminders', [NotificationController::class, 'sendRemindersForEvent']);
     Route::get('/reservation/fournisseur', [ReservationMaterielleController::class, 'show']);
 });
-
+});
 // ==================== ROLE-SPECIFIC ROUTES ====================
 
 // Publisher Routes

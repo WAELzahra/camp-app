@@ -17,6 +17,7 @@ class Photo extends Model
         'annonce_id',
         'materielle_id',
         'event_id',
+        'camping_zone_id',
         'album_id',
         'is_cover', 
         'order'     
@@ -140,5 +141,10 @@ class Photo extends Model
         
         // Return the full URL with storage path
         return url('storage/' . $this->path_to_img);
+    }
+    // Add this method to Photo model
+    public function campingZone()
+    {
+        return $this->belongsTo(CampingZone::class, 'camping_zone_id');
     }
 }

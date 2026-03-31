@@ -122,23 +122,43 @@ class CampingZonesController extends Controller
             'max_capacity'     => 'nullable|integer|min:1',
             'centre_id'        => 'nullable|exists:camping_centres,id',
             'is_protected_area'=> 'nullable|boolean',
+            'photos'           => 'nullable|array', 
+            'photos.*'         => 'string|max:255', 
         ]);
 
         $user = Auth::user();
         $isAdmin = $user && $user->role && $user->role->name === 'admin';
 
         $validated['added_by'] = $user->id;
-        $validated['status']   = $isAdmin;   // true if admin, false = pending
+        // Set status as 0 (pending) for all users, regardless of admin status
+        $validated['status']   = 0; // 0 = pending, 1 = approved
         $validated['source']   = $isAdmin ? 'admin' : 'utilisateur';
 
+        // Create the camping zone first
         $zone = CampingZone::create($validated);
 
+        // Handle photos if provided
+        if ($request->has('photos') && is_array($request->photos)) {
+            foreach ($request->photos as $index => $photoPath) {
+                // Determine if this should be the cover photo (first photo)
+                $isCover = ($index === 0);
+                
+                Photo::create([
+                    'path_to_img'      => $photoPath,
+                    'user_id'          => $user->id,
+                    'camping_zone_id'  => $zone->id, // Store the camping zone ID
+                    'is_cover'         => $isCover,
+                    'order'            => $index,
+                ]);
+            }
+        }
+
         return response()->json([
-            'message' => 'Zone submitted successfully.',
+            'message' => 'Zone submitted successfully and is pending admin approval.',
             'zone'    => $zone,
+            'status'  => 'pending', // Add status info in response
         ], 201);
     }
-
     /**
      * Admin: update any field on a zone.
      */
