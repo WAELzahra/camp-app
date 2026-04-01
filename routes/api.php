@@ -75,6 +75,9 @@ use Illuminate\Support\Facades\Broadcast;
 use App\Http\Controllers\Report\ReportController;
 use App\Http\Controllers\Contact\ContactController;
 
+// Centre Claim Controller
+use App\Http\Controllers\CentreClaimController;
+
 // ==================== BROADCAST ROUTES ====================
 Broadcast::routes(['middleware' => ['auth:sanctum']]);
 
@@ -177,6 +180,7 @@ Route::prefix('centres')->group(function () {
     Route::get('/map', [CampingCentresController::class, 'getCentresMap']);
     Route::get('/registered-map', [CampingCentresController::class, 'registeredCentresMap']);
     Route::get('/search', [CampingCentresController::class, 'searchCentres']);
+    Route::get('/search-unlinked', [CentreClaimController::class, 'searchUnlinked']); // partenariats
     Route::get('/by-user/{userId}', [CampingCentresController::class, 'getByUser'])->whereNumber('userId');
     Route::get('/{id}/zones', [CampingCentresController::class, 'listZones'])->whereNumber('id');
     Route::get('/{id}', [CampingCentresController::class, 'showCentre'])->whereNumber('id');
@@ -486,7 +490,12 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/favoris', [CampingCentresController::class, 'listFavoris']);
         Route::post('/{id}/favoris', [CampingCentresController::class, 'toggleFavoris']);
         Route::get('/{centreId}/stats', [CampingCentresController::class, 'centreStats']);
+        // Partenariats — soumettre une demande
+        Route::post('/{centreId}/claim', [CentreClaimController::class, 'submitClaim'])->whereNumber('centreId');
     });
+
+    // Partenariats — consulter ses propres demandes
+    Route::get('/my-centre-claim', [CentreClaimController::class, 'myClaim']);
     
     // Zone Polygons
     Route::prefix('zone-polygons')->group(function () {
@@ -681,19 +690,31 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
 
 // Routes pour les annonces admin
 Route::prefix('annonces')->group(function () {
-    Route::get('/', [AdminAnnonceController::class, 'index']);
-    Route::post('/', [AdminAnnonceController::class, 'store']);
-    Route::get('/statistics', [AdminAnnonceController::class, 'statistics']); // avant /{id} !
-    Route::get('/export', [AdminAnnonceController::class, 'export']);         // avant /{id} !
-    Route::get('/{id}', [AdminAnnonceController::class, 'show']);
-    Route::put('/{id}', [AdminAnnonceController::class, 'update']);
-    Route::delete('/{id}/force', [AdminAnnonceController::class, 'forceDelete']);
-    Route::delete('/{id}', [AdminAnnonceController::class, 'destroy']);
-    Route::post('/{id}/approve', [AdminAnnonceController::class, 'approve']);
-    Route::post('/{id}/reject', [AdminAnnonceController::class, 'reject']);
-    Route::post('/{id}/archive', [AdminAnnonceController::class, 'archive']);
-    Route::post('/{id}/unarchive', [AdminAnnonceController::class, 'unarchive']);
-    Route::post('/bulk-action', [AdminAnnonceController::class, 'bulkAction']);
+ 
+    // ── Routes sans paramètre dynamique (déclarées EN PREMIER) ────────────────
+ 
+    Route::get('/',               [AdminAnnonceController::class, 'index']);
+    Route::post('/',              [AdminAnnonceController::class, 'store']);
+ 
+    // FIX : bulk-action déplacé ici, avant /{id}, sinon "bulk-action" est
+    //       interprété comme un {id} et la route n'est jamais atteinte.
+    Route::post('/bulk-action',   [AdminAnnonceController::class, 'bulkAction']);
+ 
+    Route::get('/statistics',     [AdminAnnonceController::class, 'statistics']);
+    Route::get('/export',         [AdminAnnonceController::class, 'export']);
+ 
+    // ── Routes avec paramètre dynamique (déclarées EN DERNIER) ───────────────
+ 
+    Route::get('/{id}',           [AdminAnnonceController::class, 'show']);
+    Route::put('/{id}',           [AdminAnnonceController::class, 'update']);
+ 
+    Route::delete('/{id}/force',  [AdminAnnonceController::class, 'forceDelete']);
+    Route::delete('/{id}',        [AdminAnnonceController::class, 'destroy']);
+ 
+    Route::post('/{id}/approve',  [AdminAnnonceController::class, 'approve']);
+    Route::post('/{id}/reject',   [AdminAnnonceController::class, 'reject']);
+    Route::post('/{id}/archive',  [AdminAnnonceController::class, 'archive']);
+    Route::post('/{id}/unarchive',[AdminAnnonceController::class, 'unarchive']);
 });
 
     // -------------------- CENTER RESERVATIONS (Admin) --------------------
@@ -771,6 +792,13 @@ Route::prefix('annonces')->group(function () {
         Route::put('/{id}/reject', [SignaleZoneController::class, 'rejectSignalement']);
     });
     
+    // -------------------- PARTNERSHIP CLAIMS MANAGEMENT --------------------
+    Route::prefix('claims')->group(function () {
+        Route::get('/', [CentreClaimController::class, 'adminIndex']);
+        Route::post('/{id}/approve', [CentreClaimController::class, 'adminApprove']);
+        Route::post('/{id}/reject',  [CentreClaimController::class, 'adminReject']);
+    });
+
     // -------------------- CAMPING CENTERS MANAGEMENT --------------------
     Route::prefix('centres')->group(function () {
         Route::get('/', [CampingCentreController::class, 'index']);
@@ -779,32 +807,51 @@ Route::prefix('annonces')->group(function () {
         Route::get('/nearby', [CampingCentreController::class, 'nearby']);
         Route::get('/suggest-zones', [CampingCentreController::class, 'suggestZones']);
         Route::get('/search', [CampingCentreController::class, 'search']);
+        Route::get('/search-users', [CampingCentreController::class, 'searchUsers']);
         Route::post('/', [CampingCentreController::class, 'store']);
         Route::get('/{id}', [CampingCentreController::class, 'show']);
         Route::put('/{id}', [CampingCentreController::class, 'update']);
         Route::post('/{id}/assign-zones', [CampingCentreController::class, 'assignZones']);
         Route::patch('/{id}/toggle-status', [CampingCentreController::class, 'toggleStatus']);
+        Route::post('/{id}/link-user', [CampingCentreController::class, 'linkUser']);
+        Route::post('/{id}/unlink-user', [CampingCentreController::class, 'unlinkUser']);
+        Route::delete('/{id}', [CampingCentreController::class, 'destroy']);
+        // Photo management
+        Route::post('/{id}/photos', [CampingCentreController::class, 'addPhotos']);
+        Route::delete('/{centreId}/photos/{photoId}', [CampingCentreController::class, 'deletePhoto']);
+        Route::patch('/{centreId}/photos/{photoId}/cover', [CampingCentreController::class, 'setCoverPhoto']);
     });
-    
-    // -------------------- CAMPING ZONES MANAGEMENT --------------------
-    Route::prefix('zones')->group(function () {
-        Route::get('/stats', [CampingZoneController::class, 'stats']);
-        Route::post('/', [CampingZoneController::class, 'store']);
-        Route::put('/{id}', [CampingZoneController::class, 'update']);
-        Route::delete('/{id}', [CampingZoneController::class, 'destroy']);
-        Route::patch('/{id}/validate', [CampingZoneController::class, 'validateZone']);
-        Route::patch('/{id}/toggle-status', [CampingZoneController::class, 'toggleZoneStatus']);
-        Route::post('/merge', [CampingZoneController::class, 'merge']);
-        Route::post('/bulk-assign', [CampingZoneController::class, 'bulkAssignToCentre']);
-        Route::post('/zones/{id}/adjust-polygon', [CampingZoneController::class, 'adjustPolygonWithRoutes']);
-        Route::post('/zones/import-geojson', [CampingZoneController::class, 'importGeoJson']);
-        
-        Route::post('/suggest', [CampingZonesController::class, 'suggestZone']);
-        Route::patch('/{id}/update', [CampingZonesController::class, 'update']);
-        Route::delete('/{id}/delete', [CampingZonesController::class, 'destroy']);
-        Route::patch('/{id}/validate-zone', [CampingZonesController::class, 'validateZone']);
-        Route::patch('/{id}/toggle-status-zone', [CampingZonesController::class, 'toggleZoneStatus']);
-    });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CAMPING ZONES — routes admin
+//
+// RÈGLE ABSOLUE Laravel :
+//   Les routes statiques (/stats, /merge …) DOIVENT être déclarées AVANT
+//   les routes dynamiques (/{id}), sinon Laravel interprète "stats" comme
+//   une valeur de {id} et appelle show('stats') → 404 ou 500.
+// ─────────────────────────────────────────────────────────────────────────────
+
+Route::prefix('zones')->group(function () {
+
+    // ── Routes STATIQUES — sans {id} — EN PREMIER ─────────────────────────
+
+    Route::get('/',                [CampingZoneController::class, 'index']);             // GET  /admin/zones
+    Route::get('/stats',           [CampingZoneController::class, 'stats']);             // GET  /admin/zones/stats
+    Route::post('/',               [CampingZoneController::class, 'store']);             // POST /admin/zones
+    Route::post('/merge',          [CampingZoneController::class, 'merge']);             // POST /admin/zones/merge
+    Route::post('/bulk-assign',    [CampingZoneController::class, 'bulkAssignToCentre']); // POST /admin/zones/bulk-assign
+    Route::post('/import-geojson', [CampingZoneController::class, 'importGeoJson']);     // POST /admin/zones/import-geojson
+
+    // ── Routes DYNAMIQUES — avec {id} — EN DERNIER ────────────────────────
+
+    Route::get('/{id}',                 [CampingZoneController::class, 'show']);                   // GET    /admin/zones/{id}
+    Route::put('/{id}',                 [CampingZoneController::class, 'update']);                 // PUT    /admin/zones/{id}
+    Route::delete('/{id}',              [CampingZoneController::class, 'destroy']);                // DELETE /admin/zones/{id}
+    Route::patch('/{id}/validate',      [CampingZoneController::class, 'validateZone']);           // PATCH  /admin/zones/{id}/validate
+    Route::patch('/{id}/toggle-status', [CampingZoneController::class, 'toggleZoneStatus']);       // PATCH  /admin/zones/{id}/toggle-status
+    Route::post('/{id}/adjust-polygon', [CampingZoneController::class, 'adjustPolygonWithRoutes']); // POST  /admin/zones/{id}/adjust-polygon
+
+});
     
     // -------------------- SERVICE CATEGORIES MANAGEMENT --------------------
     Route::resource('service-categories', ServiceCategoryController::class);

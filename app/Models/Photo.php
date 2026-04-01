@@ -15,12 +15,14 @@ class Photo extends Model
         'path_to_img',
         'user_id',
         'annonce_id',
+        'camping_zone_id',
+        'camping_centre_id',
         'materielle_id',
         'event_id',
         'camping_zone_id',
         'album_id',
-        'is_cover', 
-        'order'     
+        'is_cover',
+        'order',
     ];
 
     protected $casts = [

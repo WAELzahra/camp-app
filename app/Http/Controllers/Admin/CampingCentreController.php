@@ -6,8 +6,12 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\CampingCentre;
 use App\Models\Camping_zones;
+use App\Models\Photo;
+use App\Models\Profile;
+use App\Models\ProfileCentre;
 use App\Models\User;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Storage;
 
 class CampingCentreController extends Controller
 {
@@ -35,32 +39,57 @@ class CampingCentreController extends Controller
     public function store(Request $request)
     {
         $request->validate([
-            'nom' => 'required|string',
-            'adresse' => 'required|string',
-            'lat' => 'required|numeric',
-            'lng' => 'required|numeric',
-            'type' => 'nullable|string',
-            'description' => 'nullable|string',
-            'image' => 'nullable|string',
-            'user_id' => 'nullable|exists:users,id', // lien avec user inscrit
+            'nom'               => 'required|string|max:255',
+            'adresse'           => 'required|string|max:255',
+            'lat'               => 'required|numeric',
+            'lng'               => 'required|numeric',
+            'type'              => 'nullable|string',
+            'description'       => 'nullable|string',
+            'status'            => 'nullable|boolean',
+            'validation_status' => 'nullable|in:pending,approved,rejected',
+            'user_id'           => 'nullable|exists:users,id',
+            // Photos : tableau de fichiers images
+            'photos'            => 'nullable|array',
+            'photos.*'          => 'file|image|max:4096',
+            'cover_index'       => 'nullable|integer|min:0',
         ]);
 
         $centre = CampingCentre::create([
-            'nom' => $request->nom,
-            'adresse' => $request->adresse,
-            'lat' => $request->lat,
-            'lng' => $request->lng,
-            'type' => $request->type,
-            'description' => $request->description,
-            'image' => $request->image,
-            'status' => 'active',
-            'added_by' => Auth::id(),
-            'user_id' => $request->user_id ?? null, // lien avec user si centre inscrit
+            'nom'               => $request->nom,
+            'adresse'           => $request->adresse,
+            'lat'               => $request->lat,
+            'lng'               => $request->lng,
+            'type'              => $request->type ?? 'centre',
+            'description'       => $request->description,
+            'status'            => $request->boolean('status', false),
+            'validation_status' => $request->input('validation_status', 'pending'),
+            'user_id'           => $request->user_id ?? null,
         ]);
+
+        // Stocker les photos dans la table photos
+        $coverIndex = (int) $request->input('cover_index', 0);
+        if ($request->hasFile('photos')) {
+            foreach ($request->file('photos') as $index => $file) {
+                $path     = $file->store('centres/photos', 'public');
+                $isCover  = ($index === $coverIndex);
+
+                $photo = Photo::create([
+                    'path_to_img'       => $path,
+                    'camping_centre_id' => $centre->id,
+                    'is_cover'          => $isCover,
+                    'order'             => $index,
+                ]);
+
+                // La première photo cover devient l'image principale du centre
+                if ($isCover) {
+                    $centre->update(['image' => $path]);
+                }
+            }
+        }
 
         return response()->json([
             'message' => 'Centre créé avec succès',
-            'centre' => $centre
+            'centre'  => $centre->load('photos'),
         ], 201);
     }
 
@@ -150,7 +179,8 @@ class CampingCentreController extends Controller
         $centre = CampingCentre::with([
             'user.profile',         // user inscrit
             'profileCentre',        // infos supplémentaires
-            'zones'                 // zones associées
+            'zones',                // zones associées
+            'photos',               // photos du centre
         ])->findOrFail($id);
 
         return response()->json([
@@ -271,6 +301,195 @@ class CampingCentreController extends Controller
         });
 
         return response()->json($suggestions);
+    }
+
+    /**
+     * DELETE /admin/centres/{id}
+     */
+    public function destroy($id)
+    {
+        $centre = CampingCentre::with('photos')->findOrFail($id);
+
+        // Supprimer les fichiers photos du stockage
+        foreach ($centre->photos as $photo) {
+            Storage::disk('public')->delete($photo->path_to_img);
+        }
+        // Supprimer l'image principale si elle existe
+        if ($centre->image) {
+            Storage::disk('public')->delete($centre->image);
+        }
+
+        $centre->delete();
+
+        return response()->json(['status' => 'success', 'message' => 'Centre supprimé avec succès.']);
+    }
+
+    /**
+     * POST /admin/centres/{id}/unlink-user
+     * Délier un centre de son utilisateur.
+     */
+    public function unlinkUser($id)
+    {
+        $centre = CampingCentre::findOrFail($id);
+        $centre->update(['user_id' => null, 'validation_status' => 'pending']);
+
+        return response()->json([
+            'status'  => 'success',
+            'message' => 'Utilisateur dissocié du centre.',
+            'centre'  => $centre->fresh(['zones', 'photos']),
+        ]);
+    }
+
+    /**
+     * POST /admin/centres/{id}/photos
+     * Ajouter des photos à un centre existant.
+     */
+    public function addPhotos(Request $request, $id)
+    {
+        $request->validate([
+            'photos'      => 'required|array',
+            'photos.*'    => 'file|image|max:4096',
+            'cover_index' => 'nullable|integer',
+        ]);
+
+        $centre     = CampingCentre::findOrFail($id);
+        $coverIndex = (int) $request->input('cover_index', -1);
+        $offset     = $centre->photos()->count();
+
+        foreach ($request->file('photos') as $index => $file) {
+            $path    = $file->store('centres/photos', 'public');
+            $isCover = ($index === $coverIndex);
+
+            Photo::create([
+                'path_to_img'       => $path,
+                'camping_centre_id' => $centre->id,
+                'is_cover'          => $isCover,
+                'order'             => $offset + $index,
+            ]);
+
+            if ($isCover) {
+                $centre->update(['image' => $path]);
+            }
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'photos' => $centre->fresh('photos')->photos->map(fn($p) => [
+                'id'         => $p->id,
+                'url'        => asset('storage/' . $p->path_to_img),
+                'path'       => $p->path_to_img,
+                'is_cover'   => (bool) $p->is_cover,
+                'order'      => $p->order,
+            ]),
+        ]);
+    }
+
+    /**
+     * DELETE /admin/centres/{centreId}/photos/{photoId}
+     */
+    public function deletePhoto($centreId, $photoId)
+    {
+        $centre = CampingCentre::findOrFail($centreId);
+        $photo  = Photo::where('camping_centre_id', $centreId)->findOrFail($photoId);
+
+        Storage::disk('public')->delete($photo->path_to_img);
+
+        // Si c'était la photo cover, retirer l'image du centre
+        if ($photo->is_cover) {
+            $centre->update(['image' => null]);
+        }
+
+        $photo->delete();
+
+        return response()->json(['status' => 'success', 'message' => 'Photo supprimée.']);
+    }
+
+    /**
+     * PATCH /admin/centres/{centreId}/photos/{photoId}/cover
+     * Définir une photo comme couverture principale.
+     */
+    public function setCoverPhoto($centreId, $photoId)
+    {
+        $centre = CampingCentre::findOrFail($centreId);
+
+        // Retirer l'ancien cover
+        Photo::where('camping_centre_id', $centreId)->update(['is_cover' => false]);
+
+        $photo = Photo::where('camping_centre_id', $centreId)->findOrFail($photoId);
+        $photo->update(['is_cover' => true]);
+        $centre->update(['image' => $photo->path_to_img]);
+
+        return response()->json(['status' => 'success', 'message' => 'Photo de couverture mise à jour.']);
+    }
+
+    /**
+     * POST /admin/centres/{id}/link-user
+     * Lier un centre existant à un utilisateur et fusionner avec son profil centre.
+     */
+    public function linkUser(Request $request, $id)
+    {
+        $request->validate([
+            'user_id' => 'required|exists:users,id',
+        ]);
+
+        $centre = CampingCentre::with('profileCentre')->findOrFail($id);
+        $user   = User::with('profile')->findOrFail($request->user_id);
+
+        // 1. Lier l'utilisateur au centre
+        $centre->user_id = $user->id;
+
+        // 2. Récupérer ou créer le profil de l'utilisateur
+        $profile = $user->profile;
+        if (!$profile) {
+            $profile = Profile::create(['user_id' => $user->id]);
+        }
+
+        // 3. Récupérer ou créer le profile_centre lié à ce profil
+        $profileCentre = ProfileCentre::firstOrCreate(
+            ['profile_id' => $profile->id],
+            ['disponibilite' => true]
+        );
+
+        // 4. Lier le profile_centre au centre
+        $centre->profile_centre_id = $profileCentre->id;
+        $centre->validation_status = 'approved';
+        $centre->save();
+
+        return response()->json([
+            'status'  => 'success',
+            'message' => 'Centre lié au profil utilisateur avec succès.',
+            'centre'  => $centre->fresh(['user', 'profileCentre', 'zones', 'photos']),
+        ]);
+    }
+
+    /**
+     * GET /admin/centres/search-users?q=xxx
+     * Recherche rapide d'utilisateurs pour l'assignation d'un centre.
+     */
+    public function searchUsers(Request $request)
+    {
+        $q = trim($request->query('q', ''));
+
+        $users = User::with('role')
+            ->when($q !== '', fn($query) =>
+                $query->where(function ($q2) use ($q) {
+                    $q2->where('first_name', 'like', "%{$q}%")
+                       ->orWhere('last_name',  'like', "%{$q}%")
+                       ->orWhere('email',       'like', "%{$q}%");
+                })
+            )
+            ->limit(10)
+            ->get()
+            ->map(fn($u) => [
+                'id'         => $u->id,
+                'first_name' => $u->first_name,
+                'last_name'  => $u->last_name,
+                'email'      => $u->email,
+                'avatar'     => $u->avatar,
+                'role'       => $u->role?->name,
+            ]);
+
+        return response()->json(['status' => 'success', 'data' => $users]);
     }
 
 }
