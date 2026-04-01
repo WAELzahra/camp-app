@@ -13,6 +13,12 @@ return new class extends Migration
     {
         Schema::create('platform_settings', function (Blueprint $table) {
             $table->id();
+            $table->string('key')->unique();
+            $table->text('value')->nullable();
+            $table->string('label');
+            $table->text('description')->nullable();
+            $table->enum('type', ['boolean', 'string', 'json', 'integer'])->default('string');
+            $table->string('group')->default('general');
             $table->timestamps();
         });
     }

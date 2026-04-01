@@ -114,6 +114,23 @@ Route::middleware('auth:sanctum')->get('/annonces/user-likes', [AnnonceControlle
 // -------------------- CONTACT FORM --------------------
 Route::middleware('throttle:10,1')->post('/contact', [ContactController::class, 'store']);
 
+// -------------------- PUBLIC SETTINGS (withdrawal days etc.) --------------------
+Route::get('/settings/public', [\App\Http\Controllers\Admin\AdminSettingsController::class, 'publicSettings']);
+
+// -------------------- PLATFORM STATS (landing page) --------------------
+Route::get('/platform/stats', function () {
+    $reservations = \DB::table('reservations_centres')->count()
+        + \DB::table('reservations_events')->count()
+        + \DB::table('reservations_materielles')->count();
+
+    return response()->json(['data' => [
+        'total_users'        => \App\Models\User::count(),
+        'total_centres'      => \DB::table('camping_centres')->count(),
+        'total_events'       => \DB::table('events')->count(),
+        'total_reservations' => $reservations,
+    ]]);
+});
+
 // -------------------- REPORTS (public submission, auth optional) --------------------
 Route::middleware('throttle:5,1')->post('/reports', [ReportController::class, 'store']);
 
@@ -270,6 +287,27 @@ Route::middleware('auth:sanctum')->group(function () {
             'methode'          => 'required|in:virement_bancaire,chèque,espèces,flouci',
             'details_paiement' => 'nullable|array',
         ]);
+
+        // Check if withdrawals are enabled
+        $enabled = \App\Models\PlatformSetting::get('withdrawal_enabled', true);
+        if (!$enabled) {
+            return response()->json(['success' => false, 'message' => 'Les retraits sont temporairement désactivés.'], 422);
+        }
+
+        // Check allowed days (1=Monday ... 7=Sunday, using isoWeekday convention)
+        $allowedDays = \App\Models\PlatformSetting::get('withdrawal_allowed_days', [1, 4]);
+        $todayDow = (int) now()->isoWeekday(); // 1=Mon, 7=Sun
+        if (!in_array($todayDow, $allowedDays)) {
+            $dayNames = [1 => 'Lundi', 2 => 'Mardi', 3 => 'Mercredi', 4 => 'Jeudi', 5 => 'Vendredi', 6 => 'Samedi', 7 => 'Dimanche'];
+            $allowedNames = implode(' et ', array_map(fn($d) => $dayNames[$d] ?? $d, $allowedDays));
+            return response()->json(['success' => false, 'message' => "Les retraits sont acceptés uniquement le $allowedNames."], 422);
+        }
+
+        // Check minimum amount
+        $minAmount = \App\Models\PlatformSetting::get('withdrawal_min_amount', 50);
+        if ($data['montant'] < $minAmount) {
+            return response()->json(['success' => false, 'message' => "Le montant minimum de retrait est {$minAmount} TND."], 422);
+        }
 
         $balance = \App\Models\Balance::forUser(auth()->id());
 
@@ -884,6 +922,12 @@ Route::prefix('annonces')->group(function () {
         Route::get('/stats',      [AdminExpenseController::class, 'stats']);
         Route::patch('/{id}/status', [AdminExpenseController::class, 'updateStatus']);
         Route::delete('/{id}',    [AdminExpenseController::class, 'destroy']);
+    });
+
+    // -------------------- PLATFORM SETTINGS --------------------
+    Route::prefix('settings')->group(function () {
+        Route::get('/',    [\App\Http\Controllers\Admin\AdminSettingsController::class, 'index']);
+        Route::put('/',    [\App\Http\Controllers\Admin\AdminSettingsController::class, 'update']);
     });
 
     // -------------------- ZONE REPORTS --------------------
