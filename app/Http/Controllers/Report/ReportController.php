@@ -106,7 +106,24 @@ class ReportController extends Controller
         ]);
 
         $report->update($validated);
+        $report->load(['reporter:id,first_name,last_name,email,avatar', 'reportedUser:id,first_name,last_name,email,avatar']);
 
         return response()->json(['status' => 'success', 'data' => $report]);
+    }
+
+    /**
+     * Admin: delete a report.
+     */
+    public function destroy($id)
+    {
+        $report = Report::findOrFail($id);
+
+        if ($report->screenshot_path) {
+            \Storage::disk('public')->delete($report->screenshot_path);
+        }
+
+        $report->delete();
+
+        return response()->json(['status' => 'success', 'message' => 'Report deleted.']);
     }
 }

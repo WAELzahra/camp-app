@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Contact;
 use App\Http\Controllers\Controller;
 use App\Models\ContactMessage;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Mail;
 
 class ContactController extends Controller
 {
@@ -37,7 +38,16 @@ class ContactController extends Controller
     {
         $messages = ContactMessage::latest()
             ->when($request->filled('status'), fn($q) => $q->where('status', $request->status))
-            ->paginate(20);
+            ->when($request->filled('search'), function ($q) use ($request) {
+                $q->where(function ($sub) use ($request) {
+                    $sub->where('first_name', 'like', "%{$request->search}%")
+                        ->orWhere('last_name',  'like', "%{$request->search}%")
+                        ->orWhere('email',      'like', "%{$request->search}%")
+                        ->orWhere('subject',    'like', "%{$request->search}%")
+                        ->orWhere('message',    'like', "%{$request->search}%");
+                });
+            })
+            ->paginate($request->get('per_page', 20));
 
         return response()->json(['status' => 'success', 'data' => $messages]);
     }
@@ -50,6 +60,44 @@ class ContactController extends Controller
         $msg = ContactMessage::findOrFail($id);
         $msg->update(['status' => 'read']);
 
-        return response()->json(['status' => 'success']);
+        return response()->json(['status' => 'success', 'data' => $msg]);
+    }
+
+    /**
+     * Admin: reply to a contact message by email.
+     */
+    public function reply(Request $request, $id)
+    {
+        $msg = ContactMessage::findOrFail($id);
+
+        $request->validate([
+            'reply_message' => 'required|string|max:5000',
+        ]);
+
+        // Mark as read
+        $msg->update(['status' => 'read']);
+
+        // Send reply email
+        Mail::raw($request->reply_message, function ($mail) use ($msg, $request) {
+            $mail->to($msg->email, "{$msg->first_name} {$msg->last_name}")
+                 ->subject("Re: {$msg->subject}");
+        });
+
+        return response()->json([
+            'status'  => 'success',
+            'message' => 'Reply sent successfully.',
+            'data'    => $msg->fresh(),
+        ]);
+    }
+
+    /**
+     * Admin: delete a contact message.
+     */
+    public function destroy($id)
+    {
+        $msg = ContactMessage::findOrFail($id);
+        $msg->delete();
+
+        return response()->json(['status' => 'success', 'message' => 'Message deleted.']);
     }
 }

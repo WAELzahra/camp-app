@@ -68,6 +68,9 @@ use App\Http\Controllers\Admin\ServiceCategoryController;
 use App\Http\Controllers\Admin\AdminReservationsController;
 use App\Http\Controllers\Admin\AdminEventsController;
 use App\Http\Controllers\Admin\AdminAnnonceController;
+use App\Http\Controllers\Admin\AdminPaymentController;
+use App\Http\Controllers\Admin\AdminExpenseController;
+use App\Http\Controllers\ExpenseController;
 
 use Illuminate\Support\Facades\Broadcast;
 
@@ -243,6 +246,64 @@ Route::middleware('auth:sanctum')->group(function () {
     // Current User
     Route::get('/user', fn(Request $request) => $request->user());
     Route::post('/logout', [AuthenticatedSessionController::class, 'destroy']);
+
+    // ---- Expenses (per-user CRUD) ----
+    Route::prefix('my/expenses')->group(function () {
+        Route::get('/',          [ExpenseController::class, 'index']);
+        Route::get('/stats',     [ExpenseController::class, 'stats']);
+        Route::post('/',         [ExpenseController::class, 'store']);
+        Route::get('/{id}',      [ExpenseController::class, 'show']);
+        Route::put('/{id}',      [ExpenseController::class, 'update']);
+        Route::delete('/{id}',   [ExpenseController::class, 'destroy']);
+    });
+
+    // ---- Balance (per-user read) ----
+    Route::get('/my/balance', function () {
+        $balance = \App\Models\Balance::forUser(auth()->id());
+        return response()->json(['success' => true, 'data' => $balance]);
+    });
+
+    // ---- Withdrawal request (user submits) ----
+    Route::post('/my/withdrawal-request', function (\Illuminate\Http\Request $request) {
+        $data = $request->validate([
+            'montant'          => 'required|numeric|min:1',
+            'methode'          => 'required|in:virement_bancaire,chèque,espèces,flouci',
+            'details_paiement' => 'nullable|array',
+        ]);
+
+        $balance = \App\Models\Balance::forUser(auth()->id());
+
+        if (($balance->solde_disponible ?? 0) < $data['montant']) {
+            return response()->json(['success' => false, 'message' => 'Solde insuffisant.'], 422);
+        }
+
+        // Vérifier qu'il n'y a pas déjà une demande en attente
+        $existing = \App\Models\WithdrawalRequest::where('user_id', auth()->id())
+            ->whereIn('status', ['en_attente', 'en_cours'])
+            ->exists();
+
+        if ($existing) {
+            return response()->json(['success' => false, 'message' => 'Une demande est déjà en cours de traitement.'], 422);
+        }
+
+        $wd = \App\Models\WithdrawalRequest::create([
+            'user_id'          => auth()->id(),
+            'montant'          => $data['montant'],
+            'methode'          => $data['methode'],
+            'details_paiement' => $data['details_paiement'] ?? null,
+            'status'           => 'en_attente',
+        ]);
+
+        return response()->json(['success' => true, 'data' => $wd], 201);
+    });
+
+    // ---- My withdrawals (user reads own) ----
+    Route::get('/my/withdrawals', function (\Illuminate\Http\Request $request) {
+        $wds = \App\Models\WithdrawalRequest::where('user_id', auth()->id())
+            ->latest()
+            ->paginate($request->get('per_page', 10));
+        return response()->json(['success' => true, 'data' => $wds]);
+    });
     Route::get('/user/{userId}/status', function ($userId) {
         $user = \App\Models\User::find($userId);
         if (!$user) {
@@ -777,19 +838,61 @@ Route::prefix('annonces')->group(function () {
     Route::prefix('reports')->group(function () {
         Route::get('/', [ReportController::class, 'index']);
         Route::put('/{id}', [ReportController::class, 'update']);
+        Route::delete('/{id}', [ReportController::class, 'destroy']);
     });
 
     // -------------------- CONTACT MESSAGES MANAGEMENT --------------------
     Route::prefix('contact-messages')->group(function () {
         Route::get('/', [ContactController::class, 'index']);
         Route::patch('/{id}/read', [ContactController::class, 'markRead']);
+        Route::post('/{id}/reply', [ContactController::class, 'reply']);
+        Route::delete('/{id}', [ContactController::class, 'destroy']);
+    });
+
+    // -------------------- PAYMENT MANAGEMENT --------------------
+    Route::prefix('payments')->group(function () {
+        Route::get('/',              [AdminPaymentController::class, 'index']);
+        Route::get('/stats',         [AdminPaymentController::class, 'stats']);
+        Route::get('/{id}',          [AdminPaymentController::class, 'show']);
+        Route::put('/{id}/status',   [AdminPaymentController::class, 'updateStatus']);
+    });
+
+    // -------------------- REFUND REQUESTS --------------------
+    Route::prefix('refunds')->group(function () {
+        Route::get('/',              [AdminPaymentController::class, 'refunds']);
+        Route::post('/{id}/approve', [AdminPaymentController::class, 'approveRefund']);
+        Route::post('/{id}/reject',  [AdminPaymentController::class, 'rejectRefund']);
+    });
+
+    // -------------------- BALANCES --------------------
+    Route::prefix('balances')->group(function () {
+        Route::get('/',                      [AdminPaymentController::class, 'balances']);
+        Route::post('/adjust/{userId}',      [AdminPaymentController::class, 'adjustBalance']);
+    });
+
+    // -------------------- WITHDRAWAL REQUESTS --------------------
+    Route::prefix('withdrawals')->group(function () {
+        Route::get('/',                  [AdminPaymentController::class, 'withdrawals']);
+        Route::post('/{id}/approve',     [AdminPaymentController::class, 'approveWithdrawal']);
+        Route::post('/{id}/complete',    [AdminPaymentController::class, 'completeWithdrawal']);
+        Route::post('/{id}/reject',      [AdminPaymentController::class, 'rejectWithdrawal']);
+    });
+
+    // -------------------- EXPENSES (ADMIN VIEW) --------------------
+    Route::prefix('expenses')->group(function () {
+        Route::get('/',           [AdminExpenseController::class, 'index']);
+        Route::get('/stats',      [AdminExpenseController::class, 'stats']);
+        Route::patch('/{id}/status', [AdminExpenseController::class, 'updateStatus']);
+        Route::delete('/{id}',    [AdminExpenseController::class, 'destroy']);
     });
 
     // -------------------- ZONE REPORTS --------------------
     Route::prefix('signals')->group(function () {
+        Route::get('/', [SignaleZoneController::class, 'indexAll']);
         Route::get('/zones/{zoneId}', [SignaleZoneController::class, 'index']);
         Route::put('/{id}/validate', [SignaleZoneController::class, 'validateSignalement']);
         Route::put('/{id}/reject', [SignaleZoneController::class, 'rejectSignalement']);
+        Route::delete('/{id}', [SignaleZoneController::class, 'destroy']);
     });
     
     // -------------------- PARTNERSHIP CLAIMS MANAGEMENT --------------------
