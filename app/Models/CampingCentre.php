@@ -4,7 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use App\Models\Camping_Zones;
+use App\Models\Photo;
 
 class CampingCentre extends Model
 {
@@ -14,84 +14,90 @@ class CampingCentre extends Model
 
     protected $fillable = [
         'nom',
-        'type',              // centre / hors_centre
+        'type',
         'description',
         'adresse',
         'lat',
         'lng',
         'image',
-        'status',            // public (true) ou privé (false)
+        'status',
+        'validation_status',
         'user_id',
-        'profile_centre_id'
+        'profile_centre_id',
     ];
 
-    /**
-     * Profil du centre (infos supplémentaires si centre inscrit)
-     */
+    protected $casts = [
+        'status' => 'boolean',
+        'lat'    => 'float',
+        'lng'    => 'float',
+    ];
+
+    // ─── Relations ────────────────────────────────────────────────────────────
+
     public function profileCentre()
     {
         return $this->belongsTo(ProfileCentre::class, 'profile_centre_id');
     }
 
-    /**
-     * Zones liées au centre
-     */
     public function zones()
     {
         return $this->hasMany(Camping_Zones::class, 'centre_id');
     }
 
-    /**
-     * Utilisateur lié (si centre inscrit)
-     */
     public function user()
     {
         return $this->belongsTo(User::class, 'user_id');
     }
 
-    /**
-     * Vérifie si le centre est inscrit sur la plateforme
-     */
-    public function isRegistered()
+    public function photos()
+    {
+        return $this->hasMany(Photo::class, 'camping_centre_id')->orderBy('order');
+    }
+
+    public function coverPhoto()
+    {
+        return $this->hasOne(Photo::class, 'camping_centre_id')->where('is_cover', true);
+    }
+
+    // ─── Helpers ──────────────────────────────────────────────────────────────
+
+    public function isRegistered(): bool
     {
         return !is_null($this->user_id);
     }
 
-    /**
-     * Vérifie si le centre est public
-     */
-    public function isPublic()
+    public function isPublic(): bool
     {
         return (bool) $this->status;
     }
 
-
-    public function fullDetails()
-{
-    return [
-        'id' => $this->id,
-        'nom' => $this->nom,
-        'type' => $this->type,
-        'description' => $this->description,
-        'adresse' => $this->adresse,
-        'lat' => $this->lat,
-        'lng' => $this->lng,
-        'image' => $this->image,
-        'status' => $this->isPublic(),
-        'user' => $this->user ? [
-            'id' => $this->user->id,
-            'name' => $this->user->name,
-            'profile' => $this->user->profile,
-            'profileCentre' => $this->user->profileCentre,
-        ] : null,
-        'zones' => $this->zones ? $this->zones->map(fn($zone) => [
-            'id' => $zone->id,
-            'nom' => $zone->nom,
-            'lat' => $zone->lat,
-            'lng' => $zone->lng,
-            'description' => $zone->description,
-        ]) : [],
-    ];
-}
-
+    public function fullDetails(): array
+    {
+        return [
+            'id'          => $this->id,
+            'nom'         => $this->nom,
+            'type'        => $this->type,
+            'description' => $this->description,
+            'adresse'     => $this->adresse,
+            'lat'         => $this->lat,
+            'lng'         => $this->lng,
+            'image'       => $this->image,
+            'status'      => $this->isPublic(),
+            'user'        => $this->user ? [
+                'id'            => $this->user->id,
+                'name'          => $this->user->name,
+                'profile'       => $this->user->profile ?? null,
+                'profileCentre' => $this->user->profileCentre ?? null,
+            ] : null,
+            'zones' => $this->zones
+                ? $this->zones->map(fn($z) => [
+                    'id'          => $z->id,
+                    'nom'         => $z->nom,
+                    'lat'         => $z->lat,
+                    'lng'         => $z->lng,
+                    'description' => $z->description,
+                  ])->values()->toArray()
+                : [],
+        ];
+    }
 }

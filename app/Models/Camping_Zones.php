@@ -26,7 +26,7 @@ class Camping_Zones extends Model
         'commune',
         'access_type',
         'max_capacity',
-        'opening_season',
+        'opening_season',   // ← best_season côté frontend
         'facilities',
         'activities',
         'is_protected_area',
@@ -45,19 +45,39 @@ class Camping_Zones extends Model
     ];
 
     protected $casts = [
-        'facilities' => 'array',
-        'activities' => 'array',
-        'emergency_contacts' => 'array',
+        'facilities'          => 'array',
+        'activities'          => 'array',
+        'opening_season'      => 'array',
+        'emergency_contacts'  => 'array',
         'polygon_coordinates' => 'array',
-        'is_public' => 'boolean',
-        'status' => 'boolean',
-        'is_protected_area' => 'boolean',
-        'is_closed' => 'boolean',
+        'is_public'           => 'boolean',
+        'status'              => 'boolean',
+        'is_protected_area'   => 'boolean',
+        'is_closed'           => 'boolean',
+        'lat'                 => 'float',
+        'lng'                 => 'float',
+        'closure_start'       => 'date',
+        'closure_end'         => 'date',
+        'last_weather_update' => 'datetime',
     ];
 
-    /**
-     * Feedbacks liés à la zone
-     */
+    // ─── Relations ────────────────────────────────────────────────────────────
+
+    public function centre()
+    {
+        return $this->belongsTo(CampingCentre::class, 'centre_id');
+    }
+
+    public function photos()
+    {
+        return $this->hasMany(Photo::class, 'camping_zone_id')->orderBy('order');
+    }
+
+    public function coverPhoto()
+    {
+        return $this->hasOne(Photo::class, 'camping_zone_id')->where('is_cover', true);
+    }
+
     public function feedbacks()
     {
         return $this->hasMany(Feedbacks::class, 'zone_id')
@@ -65,36 +85,44 @@ class Camping_Zones extends Model
             ->where('status', 'approved');
     }
 
-    /**
-     * Centre lié
-     */
-    public function centre()
-    {
-        return $this->belongsTo(CampingCentre::class, 'centre_id');
-    }
-
-    /**
-     * Favoris liés (morph)
-     */
     public function favoris()
     {
         return $this->morphMany(Favoris::class, 'target');
     }
 
-    /**
-     * Champs calculés
-     */
+    public function addedBy()
+    {
+        return $this->belongsTo(User::class, 'added_by');
+    }
+
+    // ─── Appends ──────────────────────────────────────────────────────────────
+
     protected $appends = ['centre_nom', 'centre_inscrit'];
 
-    public function getCentreNomAttribute()
+    public function getCentreNomAttribute(): ?string
     {
         return $this->centre ? $this->centre->nom : null;
     }
 
-    public function getCentreInscritAttribute()
+    public function getCentreInscritAttribute(): bool
     {
         return $this->centre ? $this->centre->isRegistered() : false;
     }
 
-    
+    // ─── Scopes ───────────────────────────────────────────────────────────────
+
+    public function scopeOpen($query)
+    {
+        return $query->where('status', true)->where('is_closed', false);
+    }
+
+    public function scopePublic($query)
+    {
+        return $query->where('is_public', true);
+    }
+
+    public function scopeByRegion($query, string $region)
+    {
+        return $query->where('region', $region);
+    }
 }
