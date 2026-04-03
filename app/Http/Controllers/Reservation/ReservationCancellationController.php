@@ -6,8 +6,13 @@ use App\Http\Controllers\Controller;
 use App\Models\Reservations_events;
 use App\Models\RefundRequest;
 use App\Models\Payment;
+use App\Models\Events;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
+use App\Mail\EventReservationCanceledByUser;
+use App\Mail\EventReservationCanceledNotifyOwner;
 
 class ReservationCancellationController extends Controller
 {
@@ -49,6 +54,37 @@ class ReservationCancellationController extends Controller
         ]);
 
         DB::commit();
+
+        // Notify the user and event owner
+        try {
+            $event = Events::find($reservation->event_id);
+            $user  = User::find($reservation->user_id);
+            if ($event && $user) {
+                $totalPrice      = $reservation->nbr_place * ($event->price ?? 0);
+                $cancellationFee = $totalPrice - $montantRembourse;
+
+                Mail::to($user->email)->send(new EventReservationCanceledByUser(
+                    user:            $user,
+                    event:           $event,
+                    reservation:     $reservation,
+                    refundAmount:    $montantRembourse,
+                    cancellationFee: $cancellationFee,
+                    processingFee:   0,
+                ));
+
+                $owner = User::find($event->group_id);
+                if ($owner) {
+                    Mail::to($owner->email)->send(new EventReservationCanceledNotifyOwner(
+                        owner:       $owner,
+                        user:        $user,
+                        event:       $event,
+                        reservation: $reservation,
+                    ));
+                }
+            }
+        } catch (\Exception $e) {
+            \Log::error('Failed to send cancellation emails in annulerReservation: ' . $e->getMessage());
+        }
 
         return response()->json([
             'message' => 'Réservation annulée. Demande de remboursement générée.',

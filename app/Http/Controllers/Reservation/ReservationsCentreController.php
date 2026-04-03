@@ -14,11 +14,14 @@ use App\Mail\ReservationCanceledByCenter;
 use App\Mail\UserReservationCancellation; 
 use App\Mail\CenterReservationCancellation;
 use App\Models\Profile;
+use App\Models\PromoCode;
 use App\Mail\ReservationCanceledByUser;
 use App\Mail\CentreReservationConfirmed;
 use App\Mail\ReservationRejected;
 use App\Mail\NewReservationNotification;
 use App\Mail\ReservationModifiedByCenter;
+use App\Mail\ReservationCreatedToCamper;
+use App\Mail\ReservationUpdatedToCentre;
 class ReservationsCentreController extends Controller
 {
     /**
@@ -111,6 +114,7 @@ class ReservationsCentreController extends Controller
             'date_fin' => 'required|date|after_or_equal:date_debut',
             'nbr_place' => 'required|integer|min:1',
             'note' => 'nullable|string',
+            'promo_code' => 'nullable|string|max:50',
             'service_items' => 'required|array|min:1',
             'service_items.*.profile_center_service_id' => 'required|exists:profile_center_services,id',
             'service_items.*.quantity' => 'required|integer|min:1',
@@ -145,11 +149,30 @@ class ReservationsCentreController extends Controller
         DB::beginTransaction();
 
         try {
-            // Calculate total price
+            // Calculate base total price
             $totalPrice = 0;
             foreach ($request->service_items as $item) {
                 $subtotal = $item['unit_price'] * $item['quantity'];
                 $totalPrice += $subtotal;
+            }
+
+            // Apply promo code if provided
+            $promoCodeId    = null;
+            $discountAmount = 0;
+            if (!empty($request->promo_code)) {
+                $promo = PromoCode::where('code', strtoupper(trim($request->promo_code)))->first();
+                if (!$promo) {
+                    DB::rollBack();
+                    return response()->json(['message' => 'Invalid promo code.'], 422);
+                }
+                $check = $promo->isValid('centre', $totalPrice);
+                if (!$check['valid']) {
+                    DB::rollBack();
+                    return response()->json(['message' => $check['reason']], 422);
+                }
+                $discountAmount = $promo->calculateDiscount($totalPrice);
+                $totalPrice     = max(0, round($totalPrice - $discountAmount, 2));
+                $promoCodeId    = $promo->id;
             }
 
             // Get service types for the reservation type field
@@ -165,16 +188,18 @@ class ReservationsCentreController extends Controller
 
             // Create the main reservation
             $reservationCentre = Reservations_centre::create([
-                'user_id' => $userId,
-                'centre_id' => $request->centre_id,
-                'date_debut' => $request->date_debut,
-                'date_fin' => $request->date_fin,
-                'note' => $request->note,
-                'type' => $type,
-                'nbr_place' => $request->nbr_place,
-                'status' => 'pending',
-                'total_price' => $totalPrice,
-                'service_count' => count($request->service_items)
+                'user_id'         => $userId,
+                'centre_id'       => $request->centre_id,
+                'date_debut'      => $request->date_debut,
+                'date_fin'        => $request->date_fin,
+                'note'            => $request->note,
+                'type'            => $type,
+                'nbr_place'       => $request->nbr_place,
+                'status'          => 'pending',
+                'total_price'     => $totalPrice,
+                'service_count'   => count($request->service_items),
+                'promo_code_id'   => $promoCodeId,
+                'discount_amount' => $discountAmount,
             ]);
 
             // Create service items
@@ -197,13 +222,25 @@ class ReservationsCentreController extends Controller
                 ]);
             }
 
+            // Increment promo code usage
+            if ($promoCodeId) {
+                PromoCode::find($promoCodeId)?->incrementUsage();
+            }
+
             DB::commit();
 
-            // Send notification email
+            // Send notification email to centre
             $user = Auth::user();
             if ($centreUser) {
                 $reservationCentre->load(['serviceItems', 'user']);
                 Mail::to($centreUser->email)->send(new NewReservationNotification($centreUser, $user, $reservationCentre));
+            }
+
+            // Send confirmation email to camper
+            try {
+                Mail::to($user->email)->send(new ReservationCreatedToCamper($reservationCentre));
+            } catch (\Exception $e) {
+                \Log::error('Failed to send reservation confirmation to camper: ' . $e->getMessage());
             }
 
             return response()->json([
@@ -384,6 +421,19 @@ class ReservationsCentreController extends Controller
             $reservation->save();
             DB::commit();
 
+            // Notify centre when camper modifies a reservation
+            if ($reservation->user_id == $userId) {
+                try {
+                    $reservation->load(['serviceItems', 'user', 'centre']);
+                    $centreUser = \App\Models\User::find($reservation->centre_id);
+                    if ($centreUser) {
+                        Mail::to($centreUser->email)->send(new ReservationUpdatedToCentre($reservation));
+                    }
+                } catch (\Exception $e) {
+                    \Log::error('Failed to send reservation update notification to centre: ' . $e->getMessage());
+                }
+            }
+
             return response()->json([
                 'message' => 'Reservation updated successfully.',
                 'reservation' => $reservation->load('serviceItems')
@@ -551,31 +601,224 @@ class ReservationsCentreController extends Controller
             ], 200);
         }
 
-    // approve-modified
-    public function approveModified(int $id)
-        {
-            // Get reservation with relationships
-            $reservation = Reservations_centre::with(['user', 'serviceItems'])->findOrFail($id);
-            
-            // Update status
-            $reservation->status = 'approved';
-            $reservation->save();
-            
-            // Also approve all service items
-            ReservationServiceItem::where('reservation_id', $reservation->id)
-                ->update(['status' => 'approved']);
+    /**
+     * Center modifies a pending reservation (dates, capacity, services).
+     * Sets status to 'modified' with last_modified_by = 'center'.
+     * Camper must accept before it becomes approved.
+     */
+    public function centerModify(Request $request, int $id)
+    {
+        $reservation = Reservations_centre::with(['serviceItems', 'user'])->findOrFail($id);
 
-            // Send email - SIMPLE like verification
-            if ($reservation->user && $reservation->user->email) {
-                // Use the SAME pattern as verification service
-                \Mail::to($reservation->user->email)->send(new \App\Mail\CentreReservationConfirmed($reservation));
+        if ($reservation->centre_id != Auth::id()) {
+            return response()->json(['message' => 'Unauthorized.'], 403);
+        }
+
+        if ($reservation->status !== 'pending') {
+            return response()->json(['message' => 'Only pending reservations can be modified by the center.'], 400);
+        }
+
+        $validated = $request->validate([
+            'date_debut'    => 'sometimes|date',
+            'date_fin'      => 'sometimes|date|after_or_equal:date_debut',
+            'nbr_place'     => 'sometimes|integer|min:1',
+            'note'          => 'nullable|string',
+            'modification_reason' => 'nullable|string|max:500',
+            'service_items' => 'sometimes|array',
+            'service_items.*.id'          => 'nullable',
+            'service_items.*.service_id'  => 'required|exists:profile_center_services,id',
+            'service_items.*.service_name'=> 'sometimes|string',
+            'service_items.*.quantity'    => 'required|integer|min:1',
+            'service_items.*.unit_price'  => 'required|numeric|min:0',
+            'service_items.*.unit'        => 'sometimes|string',
+            'service_items.*.notes'       => 'nullable|string',
+            'service_items.*.is_new'      => 'sometimes|boolean',
+            'service_items.*.is_removed'  => 'sometimes|boolean',
+        ]);
+
+        DB::beginTransaction();
+        try {
+            if ($request->has('date_debut'))  $reservation->date_debut = $request->date_debut;
+            if ($request->has('date_fin'))    $reservation->date_fin   = $request->date_fin;
+            if ($request->has('nbr_place'))   $reservation->nbr_place  = $request->nbr_place;
+            if ($request->has('note'))        $reservation->note       = $request->note;
+
+            $totalPrice = 0;
+            $activeServiceCount = 0;
+
+            if ($request->has('service_items')) {
+                foreach ($request->service_items as $itemData) {
+                    if (isset($itemData['is_removed']) && $itemData['is_removed'] === true) {
+                        if (isset($itemData['id']) && is_numeric($itemData['id'])) {
+                            ReservationServiceItem::where('id', $itemData['id'])
+                                ->where('reservation_id', $reservation->id)
+                                ->delete();
+                        }
+                        continue;
+                    }
+
+                    $isNew    = (isset($itemData['is_new']) && $itemData['is_new'] === true)
+                                || !isset($itemData['id'])
+                                || (isset($itemData['id']) && str_starts_with((string)$itemData['id'], 'new-'));
+
+                    if ($isNew) {
+                        $newItem = ReservationServiceItem::create([
+                            'reservation_id'            => $reservation->id,
+                            'profile_center_service_id' => $itemData['service_id'],
+                            'service_name'              => $itemData['service_name'] ?? 'Service',
+                            'service_description'       => $itemData['service_description'] ?? null,
+                            'unit_price'                => $itemData['unit_price'] ?? 0,
+                            'unit'                      => $itemData['unit'] ?? 'item',
+                            'quantity'                  => $itemData['quantity'] ?? 1,
+                            'notes'                     => $itemData['notes'] ?? null,
+                            'subtotal'                  => ($itemData['unit_price'] ?? 0) * ($itemData['quantity'] ?? 1),
+                            'status'                    => 'pending',
+                            'service_date_debut'        => $reservation->date_debut,
+                            'service_date_fin'          => $reservation->date_fin,
+                        ]);
+                        $totalPrice += $newItem->subtotal;
+                        $activeServiceCount++;
+                        continue;
+                    }
+
+                    if (isset($itemData['id']) && is_numeric($itemData['id'])) {
+                        $serviceItem = ReservationServiceItem::where('id', $itemData['id'])
+                            ->where('reservation_id', $reservation->id)
+                            ->first();
+                        if (!$serviceItem) continue;
+
+                        if (isset($itemData['quantity'])) $serviceItem->quantity = $itemData['quantity'];
+                        if (isset($itemData['unit_price'])) $serviceItem->unit_price = $itemData['unit_price'];
+                        if (isset($itemData['notes']))     $serviceItem->notes = $itemData['notes'];
+                        $serviceItem->subtotal = $serviceItem->unit_price * $serviceItem->quantity;
+                        $serviceItem->save();
+
+                        $totalPrice += $serviceItem->subtotal;
+                        $activeServiceCount++;
+                    }
+                }
+
+                $reservation->service_count = $activeServiceCount;
+                if ($totalPrice > 0) $reservation->total_price = $totalPrice;
+            }
+
+            $reservation->status           = 'modified';
+            $reservation->last_modified_by = 'center';
+            $reservation->last_modified_at = now();
+            $reservation->save();
+
+            DB::commit();
+
+            // Notify camper
+            try {
+                $reservation->load(['serviceItems', 'user', 'centre']);
+                if ($reservation->user && $reservation->user->email) {
+                    $modificationData = [
+                        'general_reason' => $request->input('modification_reason', ''),
+                    ];
+                    Mail::to($reservation->user->email)->send(
+                        new \App\Mail\ReservationModifiedByCenter($reservation, $modificationData)
+                    );
+                }
+            } catch (\Exception $e) {
+                \Log::error('Failed to send center modification email: ' . $e->getMessage());
             }
 
             return response()->json([
-                'message' => 'Reservation approved and email sent',
-                'reservation' => $reservation
+                'message'     => 'Reservation modified. Camper has been notified and must accept the changes.',
+                'reservation' => $reservation->load('serviceItems'),
             ], 200);
+
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            return response()->json(['message' => 'Error: ' . $e->getMessage()], 500);
         }
+    }
+
+    /**
+     * Camper rejects a modification made by the center.
+     * Reverts status back to 'pending' so the center can review again.
+     */
+    public function rejectModification(int $id)
+    {
+        $reservation = Reservations_centre::with(['user', 'centre'])->findOrFail($id);
+
+        if ($reservation->user_id != Auth::id()) {
+            return response()->json(['message' => 'Unauthorized.'], 403);
+        }
+
+        if ($reservation->status !== 'modified' || $reservation->last_modified_by !== 'center') {
+            return response()->json(['message' => 'No center modification to reject.'], 400);
+        }
+
+        $reservation->status           = 'pending';
+        $reservation->last_modified_by = null;
+        $reservation->last_modified_at = null;
+        $reservation->save();
+
+        // Notify center
+        try {
+            if ($reservation->centre && $reservation->centre->email) {
+                Mail::to($reservation->centre->email)->send(
+                    new \App\Mail\CamperRejectedModification($reservation)
+                );
+            }
+        } catch (\Exception $e) {
+            \Log::error('Failed to send rejection notification to center: ' . $e->getMessage());
+        }
+
+        return response()->json([
+            'message'     => 'Modification declined. Reservation is back to pending.',
+            'reservation' => $reservation,
+        ], 200);
+    }
+
+    // approve-modified
+    public function approveModified(int $id)
+    {
+        $reservation = Reservations_centre::with(['user', 'serviceItems', 'centre'])->findOrFail($id);
+
+        $callerIsCenter = $reservation->centre_id == Auth::id();
+        $callerIsCamper = $reservation->user_id   == Auth::id();
+
+        if (!$callerIsCenter && !$callerIsCamper) {
+            return response()->json(['message' => 'Unauthorized.'], 403);
+        }
+
+        $lastModifiedBy = $reservation->last_modified_by;
+
+        $reservation->status           = 'approved';
+        $reservation->last_modified_by = null;
+        $reservation->last_modified_at = null;
+        $reservation->save();
+
+        ReservationServiceItem::where('reservation_id', $reservation->id)
+            ->update(['status' => 'approved']);
+
+        try {
+            // Camper approving center's modification → notify center + confirm to camper
+            if ($callerIsCamper && $lastModifiedBy === 'center') {
+                if ($reservation->user && $reservation->user->email) {
+                    \Mail::to($reservation->user->email)->send(new \App\Mail\CentreReservationConfirmed($reservation));
+                }
+                if ($reservation->centre && $reservation->centre->email) {
+                    \Mail::to($reservation->centre->email)->send(new \App\Mail\ReservationUpdatedToCentre($reservation));
+                }
+            } else {
+                // Center approving camper's modification → notify camper
+                if ($reservation->user && $reservation->user->email) {
+                    \Mail::to($reservation->user->email)->send(new \App\Mail\CentreReservationConfirmed($reservation));
+                }
+            }
+        } catch (\Exception $e) {
+            \Log::error('Failed to send approveModified emails: ' . $e->getMessage());
+        }
+
+        return response()->json([
+            'message'     => 'Reservation approved.',
+            'reservation' => $reservation,
+        ], 200);
+    }
 
 
     /**

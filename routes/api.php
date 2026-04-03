@@ -66,6 +66,7 @@ use App\Http\Controllers\Admin\CampingCentreController;
 use App\Http\Controllers\Admin\CampingZoneController;
 use App\Http\Controllers\Admin\ServiceCategoryController;
 use App\Http\Controllers\Admin\AdminReservationsController;
+use App\Http\Controllers\PromoCodeController;
 use App\Http\Controllers\Admin\AdminEventsController;
 use App\Http\Controllers\Admin\AdminAnnonceController;
 
@@ -519,7 +520,6 @@ Route::middleware('auth:sanctum')->group(function () {
     
     Route::post('/zones/{zoneId}/signales', [SignalementZoneController::class, 'store']);
     Route::post('/events/{event}/send-reminders', [NotificationController::class, 'sendRemindersForEvent']);
-    Route::get('/reservation/fournisseur', [ReservationMaterielleController::class, 'show']);
 });
 });
 // ==================== ROLE-SPECIFIC ROUTES ====================
@@ -562,6 +562,7 @@ Route::middleware(['auth:sanctum', 'fournisseur'])->group(function () {
     });
     
     Route::prefix('reservation/fournisseur')->group(function () {
+        Route::get('/', [ReservationMaterielleController::class, 'show']);
         Route::patch('/cancel/{id}', [ReservationMaterielleController::class, 'cancelByFournisseur']);
     });
 });
@@ -578,6 +579,16 @@ Route::middleware(['auth:sanctum'])->prefix('reservation')->group(function () {
         Route::get('/{id}/user-history', [ReservationsCentreController::class, 'getUserReservationHistory']);
         Route::patch('/centre/cancel/{id}', [ReservationsCentreController::class, 'destroy']);
         Route::patch('/centre/approve-modified/{id}', [ReservationsCentreController::class, 'approveModified']);
+    });
+
+    // Camper rejects a center modification
+    Route::middleware(['campeur'])->group(function () {
+        Route::patch('/centre/{id}/reject-modification', [ReservationsCentreController::class, 'rejectModification']);
+    });
+
+    // Center modifies a pending reservation
+    Route::middleware(['centre'])->group(function () {
+        Route::put('/centre/{id}/center-modify', [ReservationsCentreController::class, 'centerModify']);
     });
 
     // Routes for campers only
@@ -879,6 +890,24 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('feedbacks')->group(functio
     Route::prefix('comments')->group(function () {
         Route::post('/{id}/pin', [CommentController::class, 'togglePin']);
         Route::post('/{id}/hide', [CommentController::class, 'toggleHide']);
+    });
+});
+
+// ==================== PROMO CODE ROUTES ====================
+
+// Public: validate a promo code (used by booking forms — requires auth so we know who's applying)
+Route::middleware(['auth:sanctum'])->group(function () {
+    Route::post('/promo-code/validate', [PromoCodeController::class, 'validate']);
+});
+
+// Admin: full CRUD for promo codes
+Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function () {
+    Route::prefix('promo-codes')->group(function () {
+        Route::get('/',           [PromoCodeController::class, 'index']);
+        Route::post('/',          [PromoCodeController::class, 'store']);
+        Route::get('/{id}',       [PromoCodeController::class, 'show']);
+        Route::patch('/{id}/toggle', [PromoCodeController::class, 'toggle']);
+        Route::delete('/{id}',    [PromoCodeController::class, 'destroy']);
     });
 });
 

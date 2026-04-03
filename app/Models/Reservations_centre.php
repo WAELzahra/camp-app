@@ -23,6 +23,8 @@ class Reservations_centre extends Model
         'payments_id',
         'total_price',
         'service_count',
+        'promo_code_id',
+        'discount_amount',
         'last_modified_by',
         'last_modified_at'
     ];

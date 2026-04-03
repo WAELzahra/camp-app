@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Reservation;
 use App\Models\Reservations_events;
 use App\Models\Events;
 use App\Models\Payments;
+use App\Models\PromoCode;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
 use App\Mail\ReservationStatusUpdated;
@@ -17,6 +18,9 @@ use Illuminate\Support\Facades\Validator;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use App\Http\Controllers\Controller;
 use App\Mail\EventReservationCanceledNotifyOwner;
+use App\Mail\EventReservationCreated;
+use App\Mail\EventReservationStatusChanged;
+use App\Mail\EventReservationCanceledByGroup;
 
 
 class ReservationEventController extends Controller
@@ -390,10 +394,11 @@ public function updateManualParticipant(Request $request, $reservationId)
         $user = auth()->user();
 
         $request->validate([
-            'event_id'  => 'required|exists:events,id',
-            'nbr_place' => 'required|integer|min:1',
-            'group_id'  => 'required|exists:users,id',
-            'name'      => 'nullable|string|max:255',
+            'event_id'   => 'required|exists:events,id',
+            'nbr_place'  => 'required|integer|min:1',
+            'group_id'   => 'required|exists:users,id',
+            'promo_code' => 'nullable|string|max:50',
+            'name'       => 'nullable|string|max:255',
             'email'     => 'nullable|email|max:255',
             'phone'     => 'nullable|string|max:50',
         ]);
@@ -403,17 +408,47 @@ public function updateManualParticipant(Request $request, $reservationId)
             ?? trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? ''))
             ?: $user->email;
 
+        // Apply promo code if provided
+        $promoCodeId    = null;
+        $discountAmount = 0;
+        if (!empty($request->promo_code)) {
+            $event      = Events::findOrFail($request->event_id);
+            $basePrice  = (float) $event->price * (int) $request->nbr_place;
+            $promo      = PromoCode::where('code', strtoupper(trim($request->promo_code)))->first();
+            if (!$promo) {
+                return response()->json(['message' => 'Invalid promo code.'], 422);
+            }
+            $check = $promo->isValid('event', $basePrice);
+            if (!$check['valid']) {
+                return response()->json(['message' => $check['reason']], 422);
+            }
+            $discountAmount = $promo->calculateDiscount($basePrice);
+            $promoCodeId    = $promo->id;
+            $promo->incrementUsage();
+        }
+
         $reservation = \App\Models\Reservations_events::create([
-            'user_id'    => $user->id,
-            'group_id'   => $request->group_id,
-            'event_id'   => $request->event_id,
-            'name'       => $resolvedName,
-            'email'      => $request->email  ?? $user->email,
-            'phone'      => $request->phone  ?? $user->phone_number ?? null,
-            'nbr_place'  => $request->nbr_place,
-            'status'     => 'en_attente_paiement',
-            'created_by' => $user->id,
+            'user_id'         => $user->id,
+            'group_id'        => $request->group_id,
+            'event_id'        => $request->event_id,
+            'name'            => $resolvedName,
+            'email'           => $request->email  ?? $user->email,
+            'phone'           => $request->phone  ?? $user->phone_number ?? null,
+            'nbr_place'       => $request->nbr_place,
+            'status'          => 'en_attente_paiement',
+            'created_by'      => $user->id,
+            'promo_code_id'   => $promoCodeId,
+            'discount_amount' => $discountAmount,
         ]);
+
+        // Send booking confirmation to camper
+        try {
+            $event = Events::findOrFail($request->event_id);
+            Mail::to($reservation->email ?? $user->email)
+                ->send(new EventReservationCreated($reservation, $event));
+        } catch (\Exception $e) {
+            \Log::error('Failed to send event reservation confirmation: ' . $e->getMessage());
+        }
 
         return response()->json([
             'message'     => 'Réservation créée en attente de paiement.',
@@ -554,6 +589,16 @@ public function updateManualParticipant(Request $request, $reservationId)
     $reservation->status = $data['status'];
     $reservation->save();
 
+    // Notify participant of the status change
+    try {
+        $event = Events::find($reservation->event_id);
+        if ($event && $reservation->email) {
+            Mail::to($reservation->email)->send(new EventReservationStatusChanged($reservation, $event));
+        }
+    } catch (\Exception $e) {
+        \Log::error('Failed to send event status change email: ' . $e->getMessage());
+    }
+
     return response()->json(['message' => 'Statut mis à jour avec succès.']);
 }
 
@@ -573,6 +618,16 @@ public function updateManualParticipant(Request $request, $reservationId)
 
         $reservation->status = 'annulé';
         $reservation->save();
+
+        // Notify the participant that their reservation was cancelled by the group
+        try {
+            $event = Events::find($reservation->event_id);
+            if ($event && $reservation->email) {
+                Mail::to($reservation->email)->send(new EventReservationCanceledByGroup($reservation, $event));
+            }
+        } catch (\Exception $e) {
+            \Log::error('Failed to send group cancellation email to participant: ' . $e->getMessage());
+        }
 
         return response()->json(['message' => 'Réservation annulée et remboursement lancé.']);
     }

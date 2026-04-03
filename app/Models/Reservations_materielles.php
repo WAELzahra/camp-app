@@ -39,7 +39,8 @@ class Reservations_materielles extends Model
         'confirmed_at',
         'retrieved_at',
         'returned_at',
-
+        'promo_code_id',
+        'discount_amount',
     ];
 
     protected $casts = [

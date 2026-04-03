@@ -9,12 +9,16 @@ use Illuminate\Support\Facades\Auth;
 use App\Models\Reservations_materielles;
 use App\Models\Materielles;
 use App\Models\User;
+use App\Models\PromoCode;
 use Illuminate\Support\Facades\Mail;
 use App\Mail\NewReservationToFournisseur;
 use App\Mail\ReservationConfirmedToCamper;
 use App\Mail\ReservationCanceledToFournisseur;
 use App\Mail\ReservationRejectedToUser;
 use App\Mail\ReservationCanceledByFournisseurToCamper;
+use App\Mail\RentalReturnConfirmed;
+use App\Mail\ReservationDisputedToCamper;
+use App\Mail\ReservationDisputedToFournisseur;
 
 class ReservationMaterielleController extends Controller
 {
@@ -74,6 +78,7 @@ class ReservationMaterielleController extends Controller
             'mode_livraison'    => 'required|in:pickup,delivery',
             'adresse_livraison' => 'required_if:mode_livraison,delivery|nullable|string|max:500',
             'frais_livraison'   => 'nullable|numeric|min:0',
+            'promo_code'        => 'nullable|string|max:50',
         ]);
 
         $user     = Auth::user();
@@ -109,6 +114,24 @@ class ReservationMaterielleController extends Controller
             return response()->json(['status' => 'error', 'message' => "Insufficient stock. Available: {$materielle->quantite_dispo}."], 422);
         }
 
+        // Apply promo code if provided
+        $promoCodeId    = null;
+        $discountAmount = 0;
+        $montantTotal   = (float) $validated['montant_total'];
+        if (!empty($validated['promo_code'])) {
+            $promo = PromoCode::where('code', strtoupper(trim($validated['promo_code'])))->first();
+            if (!$promo) {
+                return response()->json(['status' => 'error', 'message' => 'Invalid promo code.'], 422);
+            }
+            $check = $promo->isValid('materiel', $montantTotal);
+            if (!$check['valid']) {
+                return response()->json(['status' => 'error', 'message' => $check['reason']], 422);
+            }
+            $discountAmount = $promo->calculateDiscount($montantTotal);
+            $montantTotal   = max(0, round($montantTotal - $discountAmount, 2));
+            $promoCodeId    = $promo->id;
+        }
+
         DB::beginTransaction();
         try {
             $reservation = Reservations_materielles::create([
@@ -119,13 +142,21 @@ class ReservationMaterielleController extends Controller
                 'date_debut'        => $validated['date_debut'] ?? null,
                 'date_fin'          => $validated['date_fin'] ?? null,
                 'quantite'          => $validated['quantite'],
-                'montant_total'     => $validated['montant_total'],
+                'montant_total'     => $montantTotal,
                 'mode_livraison'    => $validated['mode_livraison'],
                 'adresse_livraison' => $validated['adresse_livraison'] ?? null,
                 'frais_livraison'   => $validated['frais_livraison'] ?? 0,
                 'cin_camper'        => $isRental ? $user->profile->cin_path : null,
                 'status'            => 'pending',
+                'promo_code_id'     => $promoCodeId,
+                'discount_amount'   => $discountAmount,
             ]);
+
+            // Increment promo usage
+            if ($promoCodeId) {
+                PromoCode::find($promoCodeId)?->incrementUsage();
+            }
+
             DB::commit();
 
             Mail::to($fournisseur->email)->send(new NewReservationToFournisseur($reservation, $user));
@@ -269,6 +300,17 @@ class ReservationMaterielleController extends Controller
             $reservation->save();
             $reservation->materielle->increment('quantite_dispo', $reservation->quantite);
             DB::commit();
+
+            // Notify camper that their equipment return has been confirmed
+            try {
+                $reservation->load(['user', 'materielle', 'fournisseur']);
+                if ($reservation->user) {
+                    Mail::to($reservation->user->email)->send(new RentalReturnConfirmed($reservation));
+                }
+            } catch (\Exception $e) {
+                \Log::error('Failed to send return confirmation email: ' . $e->getMessage());
+            }
+
             return response()->json([
                 'message'          => 'Return confirmed.',
                 'reservation'      => $reservation,
@@ -361,6 +403,22 @@ class ReservationMaterielleController extends Controller
                 $reservation->update(['status' => 'disputed']);
             }
             DB::commit();
+
+            // Notify both parties for every disputed reservation
+            foreach ($overdue as $reservation) {
+                try {
+                    $reservation->load(['user', 'materielle', 'fournisseur']);
+                    if ($reservation->user) {
+                        Mail::to($reservation->user->email)->send(new ReservationDisputedToCamper($reservation));
+                    }
+                    if ($reservation->fournisseur) {
+                        Mail::to($reservation->fournisseur->email)->send(new ReservationDisputedToFournisseur($reservation));
+                    }
+                } catch (\Exception $e) {
+                    \Log::error('Failed to send dispute notification for reservation ' . $reservation->id . ': ' . $e->getMessage());
+                }
+            }
+
             return response()->json(['message' => count($overdue) . ' expired reservation(s) marked as disputed.']);
         } catch (\Exception $e) {
             DB::rollBack();

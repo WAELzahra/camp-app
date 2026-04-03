@@ -22,6 +22,8 @@ protected $table = 'reservations_events';
         'email',
         'phone',
         'created_by',
+        'promo_code_id',
+        'discount_amount',
     ];
 
     // 🔁 Relation : le groupe organisateur

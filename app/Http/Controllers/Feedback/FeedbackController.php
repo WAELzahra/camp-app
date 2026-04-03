@@ -28,6 +28,17 @@ class FeedbackController extends Controller
 
         if ($userRole == 1) {
             $query->where('user_id', $user->id);
+        } elseif ($userRole == 4) {
+            // Fournisseur: only feedbacks about their own profile or their materiels
+            $query->where(function ($q) use ($user) {
+                $q->where(function ($sub) use ($user) {
+                    $sub->where('type', 'fournisseur')
+                        ->where('target_id', $user->id);
+                })->orWhere(function ($sub) use ($user) {
+                    $sub->where('type', 'materielle')
+                        ->whereHas('materielle', fn ($m) => $m->where('fournisseur_id', $user->id));
+                });
+            });
         }
 
         if ($request->filled('status'))    $query->where('status', $request->status);
@@ -49,6 +60,16 @@ class FeedbackController extends Controller
         if ($request->filled('date_to'))   $query->whereDate('created_at', '<=', $request->date_to);
 
         $query->orderBy($request->get('sort_by', 'created_at'), $request->get('sort_order', 'desc'));
+
+        // Fournisseurs get all their feedbacks at once (already tightly scoped to their data).
+        // Everyone else gets paginated results.
+        if ($userRole == 4) {
+            $items     = $query->get()->map(fn ($f) => $this->formatFeedback($f));
+            return response()->json([
+                'success'   => true,
+                'feedbacks' => ['data' => $items],
+            ]);
+        }
 
         $feedbacks = $query->paginate($request->get('per_page', 15));
         $feedbacks->getCollection()->transform(fn ($f) => $this->formatFeedback($f));
