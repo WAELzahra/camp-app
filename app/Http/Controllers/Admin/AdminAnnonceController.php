@@ -61,7 +61,7 @@ class AdminAnnonceController extends Controller
 
         if ($request->filled('role') && $request->role !== 'all') {
             $query->whereHas('user', function ($q) use ($request) {
-                $q->where('role', $request->role);
+                $q->whereHas('role', fn ($r) => $r->where('name', $request->role));
             });
         }
 
@@ -132,7 +132,7 @@ class AdminAnnonceController extends Controller
             $userId = $request->user_id ?? Auth::id();
             $status = $request->status ?? 'pending';
 
-            if ($status === 'approved' && Auth::user()->role === 'admin') {
+            if ($status === 'approved' && Auth::user()->isAdmin()) {
                 $status = 'approved';
             }
 
@@ -457,9 +457,10 @@ class AdminAnnonceController extends Controller
                 'summer_camp' => Annonce::where('type', 'Summer Camp')->count(),
             ],
             'by_user_role' => [
-                'admin'     => Annonce::whereHas('user', fn ($q) => $q->where('role', 'admin'))->count(),
-                'moderator' => Annonce::whereHas('user', fn ($q) => $q->where('role', 'moderator'))->count(),
-                'user'      => Annonce::whereHas('user', fn ($q) => $q->where('role', 'user'))->count(),
+                'campeur'     => Annonce::whereHas('user', fn ($q) => $q->whereHas('role', fn ($r) => $r->where('name', 'campeur')))->count(),
+                'groupe'      => Annonce::whereHas('user', fn ($q) => $q->whereHas('role', fn ($r) => $r->where('name', 'groupe')))->count(),
+                'fournisseur' => Annonce::whereHas('user', fn ($q) => $q->whereHas('role', fn ($r) => $r->where('name', 'fournisseur')))->count(),
+                'admin'       => Annonce::whereHas('user', fn ($q) => $q->whereHas('role', fn ($r) => $r->where('name', 'admin')))->count(),
             ],
             'by_month' => Annonce::select(
                 DB::raw('DATE_FORMAT(created_at, "%Y-%m") as month'),
@@ -557,7 +558,7 @@ class AdminAnnonceController extends Controller
                 ? $annonce->start_date->format('M d') . ' - ' . $annonce->end_date->format('M d, Y')
                 : 'Date non définie',
             'status'      => $this->mapStatusForFrontend($annonce),
-            'role'        => $annonce->user->role ?? 'user',
+            'role'        => $annonce->user->role?->name ?? 'campeur',
             'dateCreated' => $annonce->created_at->format('Y-m-d'),
             'stats'       => [
                 'views'    => $annonce->views_count    ?? 0,

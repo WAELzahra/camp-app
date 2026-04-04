@@ -67,6 +67,7 @@ use App\Http\Controllers\Admin\CampingZoneController;
 use App\Http\Controllers\Admin\ServiceCategoryController;
 use App\Http\Controllers\Admin\AdminReservationsController;
 use App\Http\Controllers\PromoCodeController;
+use App\Http\Controllers\PopupController;
 use App\Http\Controllers\Admin\AdminEventsController;
 use App\Http\Controllers\Admin\AdminAnnonceController;
 use App\Http\Controllers\Admin\AdminPaymentController;
@@ -1061,4 +1062,23 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
 // ==================== WEB ADMIN ROUTES (for web interface) ====================
 Route::middleware(['auth', 'role:admin'])->prefix('admin')->name('admin.')->group(function () {
     Route::resource('service-categories', ServiceCategoryController::class);
+});
+
+// ==================== POPUP ROUTES ====================
+
+// Authenticated: fetch active (non-dismissed) popups & dismiss one
+Route::middleware(['auth:sanctum'])->group(function () {
+    Route::get('/admin-popups/active',           [PopupController::class, 'active']);
+    Route::post('/admin-popups/{popup}/dismiss', [PopupController::class, 'dismiss']);
+});
+
+// Admin: full CRUD for popups
+Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function () {
+    Route::prefix('popups')->group(function () {
+        Route::get('/',                    [PopupController::class, 'index']);
+        Route::post('/',                   [PopupController::class, 'store']);
+        Route::put('/{popup}',             [PopupController::class, 'update']);
+        Route::delete('/{popup}',          [PopupController::class, 'destroy']);
+        Route::patch('/{popup}/toggle',    [PopupController::class, 'toggle']);
+    });
 });
