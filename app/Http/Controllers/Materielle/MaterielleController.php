@@ -133,23 +133,17 @@ class MaterielleController extends Controller
             'category_id'          => 'required|exists:materielles_categories,id',
             'nom'                  => 'required|string|max:255',
             'description'          => 'required|string',
-            // Listing type — at least one must be true
             'is_rentable'          => 'boolean',
             'is_sellable'          => 'boolean',
-            // Pricing — required depending on type
             'tarif_nuit'           => 'nullable|numeric|min:0',
             'prix_vente'           => 'nullable|numeric|min:0',
-            // Stock
             'quantite_total'       => 'required|integer|min:1',
             'quantite_dispo'       => 'required|integer|min:0',
-            // Delivery
             'livraison_disponible' => 'boolean',
             'frais_livraison'      => 'nullable|numeric|min:0',
-            // Photo
             'image'                => 'required|image|mimes:jpeg,png,jpg,webp|max:4096',
         ]);
 
-        // At least one listing type must be selected
         $isRentable = $request->boolean('is_rentable', true);
         $isSellable = $request->boolean('is_sellable', false);
 
@@ -160,7 +154,6 @@ class MaterielleController extends Controller
             ], 422);
         }
 
-        // Cross-field price validation
         if ($isRentable && empty($validated['tarif_nuit'])) {
             return response()->json([
                 'status'  => 'error',
@@ -176,9 +169,11 @@ class MaterielleController extends Controller
         }
 
         $fournisseurId = Auth::id();
+        $user = Auth::user();
+        $isSupplier = $user->role_id === 4;
 
-        // Must have a boutique to list materiels
-        if (!Boutiques::where('fournisseur_id', $fournisseurId)->exists()) {
+        // Only suppliers need a boutique - campers can list equipment directly
+        if ($isSupplier && !Boutiques::where('fournisseur_id', $fournisseurId)->exists()) {
             return response()->json([
                 'status'  => 'error',
                 'message' => 'Vous devez d\'abord créer une boutique.',
@@ -187,7 +182,6 @@ class MaterielleController extends Controller
 
         DB::beginTransaction();
         try {
-            // Store the photo
             $imagePath = $request->file('image')->store('materielles', 'public');
 
             $materielle = Materielles::create([

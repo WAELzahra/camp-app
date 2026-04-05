@@ -79,7 +79,7 @@ class Feedback extends Model
      */
     public function zone()
     {
-        return $this->belongsTo(Camping_Zones::class, 'zone_id');
+        return $this->belongsTo(CampingZone::class, 'zone_id');
     }
 
     /*

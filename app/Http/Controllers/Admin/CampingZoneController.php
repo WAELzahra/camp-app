@@ -4,7 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
-use App\Models\Camping_Zones;
+use App\Models\CampingZone;
 use App\Models\CampingCentre;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Schema;
@@ -27,7 +27,7 @@ class CampingZoneController extends Controller
      * AdminZone côté TypeScript. Tous les champs sont toujours présents
      * (jamais de clé manquante) pour éviter les erreurs de rendu React.
      */
-    private function format(Camping_Zones $zone): array
+    private function format(CampingZone $zone): array
     {
         return [
             // ── Identité ──────────────────────────────────────────────────────
@@ -124,7 +124,7 @@ class CampingZoneController extends Controller
 
     public function index(Request $request)
     {
-        $query = Camping_Zones::with($this->relations());
+        $query = CampingZone::with($this->relations());
 
         // ── Filtres ───────────────────────────────────────────────────────────
         if ($request->filled('search')) {
@@ -185,12 +185,12 @@ class CampingZoneController extends Controller
         return response()->json([
             'success' => true,
             'data'    => [
-                'total_zones'       => (int) Camping_Zones::count(),
-                'zones_publiques'   => (int) Camping_Zones::where('is_public', true)->count(),
-                'zones_privees'     => (int) Camping_Zones::where('is_public', false)->count(),
-                'zones_danger_haut' => (int) Camping_Zones::whereIn('danger_level', ['high', 'extreme'])->count(),
-                'zones_par_centre'  => (int) Camping_Zones::whereNotNull('centre_id')->count(),
-                'zones_sans_centre' => (int) Camping_Zones::whereNull('centre_id')->count(),
+                'total_zones'       => (int) CampingZone::count(),
+                'zones_publiques'   => (int) CampingZone::where('is_public', true)->count(),
+                'zones_privees'     => (int) CampingZone::where('is_public', false)->count(),
+                'zones_danger_haut' => (int) CampingZone::whereIn('danger_level', ['high', 'extreme'])->count(),
+                'zones_par_centre'  => (int) CampingZone::whereNotNull('centre_id')->count(),
+                'zones_sans_centre' => (int) CampingZone::whereNull('centre_id')->count(),
             ],
         ]);
     }
@@ -201,7 +201,7 @@ class CampingZoneController extends Controller
 
     public function show($id)
     {
-        $zone = Camping_Zones::with($this->relations())->find($id);
+        $zone = CampingZone::with($this->relations())->find($id);
 
         if (!$zone) {
             return response()->json([
@@ -262,7 +262,7 @@ class CampingZoneController extends Controller
         $data['source']    = 'interne';
         $data['added_by']  = auth()->id();
 
-        $zone = Camping_Zones::create($data);
+        $zone = CampingZone::create($data);
         $zone->load('centre');
 
         return response()->json([
@@ -278,7 +278,7 @@ class CampingZoneController extends Controller
 
     public function update(Request $request, $id)
     {
-        $zone = Camping_Zones::find($id);
+        $zone = CampingZone::find($id);
         if (!$zone) {
             return response()->json(['success' => false, 'message' => 'Zone introuvable'], 404);
         }
@@ -344,7 +344,7 @@ class CampingZoneController extends Controller
 
     public function destroy($id)
     {
-        $zone = Camping_Zones::find($id);
+        $zone = CampingZone::find($id);
         if (!$zone) {
             return response()->json(['success' => false, 'message' => 'Zone introuvable'], 404);
         }
@@ -377,7 +377,7 @@ class CampingZoneController extends Controller
             return response()->json(['success' => false, 'message' => 'Accès refusé'], 403);
         }
 
-        $zone = Camping_Zones::find($id);
+        $zone = CampingZone::find($id);
         if (!$zone) {
             return response()->json(['success' => false, 'message' => 'Zone introuvable'], 404);
         }
@@ -407,7 +407,7 @@ class CampingZoneController extends Controller
 
         $request->validate(['status' => 'required|boolean']);
 
-        $zone = Camping_Zones::find($id);
+        $zone = CampingZone::find($id);
         if (!$zone) {
             return response()->json(['success' => false, 'message' => 'Zone introuvable'], 404);
         }
@@ -433,14 +433,14 @@ class CampingZoneController extends Controller
         }
 
         $data = $request->validate([
-            'primary_zone_id'   => 'required|exists:camping_zones,id',
-            'secondary_zone_id' => 'required|exists:camping_zones,id|different:primary_zone_id',
+            'primary_zone_id'   => 'required|exists:CampingZone,id',
+            'secondary_zone_id' => 'required|exists:CampingZone,id|different:primary_zone_id',
         ]);
 
-        $primary   = Camping_Zones::findOrFail($data['primary_zone_id']);
-        $secondary = Camping_Zones::findOrFail($data['secondary_zone_id']);
+        $primary   = CampingZone::findOrFail($data['primary_zone_id']);
+        $secondary = CampingZone::findOrFail($data['secondary_zone_id']);
 
-        foreach ((new Camping_Zones())->getFillable() as $key) {
+        foreach ((new CampingZone())->getFillable() as $key) {
             if (in_array($key, ['id', 'created_at', 'updated_at'])) continue;
             if (empty($primary->$key) && !empty($secondary->$key)) {
                 $primary->$key = $secondary->$key;
@@ -470,11 +470,11 @@ class CampingZoneController extends Controller
 
         $validated = $request->validate([
             'zone_ids'   => 'required|array|min:1',
-            'zone_ids.*' => 'integer|exists:camping_zones,id',
+            'zone_ids.*' => 'integer|exists:CampingZone,id',
             'centre_id'  => 'required|exists:camping_centres,id',
         ]);
 
-        $count = Camping_Zones::whereIn('id', $validated['zone_ids'])
+        $count = CampingZone::whereIn('id', $validated['zone_ids'])
             ->update(['centre_id' => $validated['centre_id']]);
 
         return response()->json([
@@ -506,7 +506,7 @@ class CampingZoneController extends Controller
             return response()->json(['success' => false, 'message' => 'Accès refusé'], 403);
         }
 
-        $zone = Camping_Zones::find($id);
+        $zone = CampingZone::find($id);
         if (!$zone) {
             return response()->json(['success' => false, 'message' => 'Zone introuvable'], 404);
         }

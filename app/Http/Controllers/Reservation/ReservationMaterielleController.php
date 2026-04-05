@@ -56,9 +56,9 @@ class ReservationMaterielleController extends Controller
             ->where('fournisseur_id', Auth::id())
             ->get();
         if ($reservations->isEmpty()) {
-            return response()->json(['message' => 'No reservations found for this fournisseur.'], 404);
+            return response()->json(['message' => 'No reservations found for this provider.'], 404);
         }
-        return response()->json(['message' => 'Fournisseur reservations retrieved successfully.', 'reservations' => $reservations]);
+        return response()->json(['message' => 'Provider reservations retrieved successfully.', 'reservations' => $reservations]);
     }
 
     // -------------------------------------------------------------------------
@@ -95,9 +95,13 @@ class ReservationMaterielleController extends Controller
             }
         }
 
-        $fournisseur = User::where('id', $validated['fournisseur_id'])->where('role_id', 4)->first();
+        // FIX: Allow both suppliers (role_id: 4) AND campers (role_id: 1) to be equipment providers
+        $fournisseur = User::where('id', $validated['fournisseur_id'])
+            ->whereIn('role_id', [1, 4])  // 1 = camper, 4 = supplier
+            ->first();
+            
         if (!$fournisseur) {
-            return response()->json(['status' => 'error', 'message' => 'Invalid supplier.'], 422);
+            return response()->json(['status' => 'error', 'message' => 'Invalid provider. Equipment owner must be a registered user.'], 422);
         }
 
         $materielle = Materielles::find($validated['materielle_id']);
@@ -165,10 +169,10 @@ class ReservationMaterielleController extends Controller
                 'Your CIN has been recorded for this reservation.',
                 'The equipment must be returned before the end date of the rental.',
                 'Any equipment not returned may be subject to legal action.',
-                'Payment will only be released to the supplier after return confirmation.',
+                'Payment will only be released to the provider after return confirmation.',
             ] : [
                 'The sale is final. No returns are accepted.',
-                'Payment will be released to the supplier after delivery is confirmed via your PIN code.',
+                'Payment will be released to the provider after delivery is confirmed via your PIN code.',
             ];
 
             return response()->json([
@@ -182,7 +186,6 @@ class ReservationMaterielleController extends Controller
             return response()->json(['status' => 'error', 'message' => 'An error occurred: ' . $e->getMessage()], 500);
         }
     }
-
     // -------------------------------------------------------------------------
     // FOURNISSEUR ACTIONS
     // -------------------------------------------------------------------------

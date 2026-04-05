@@ -637,14 +637,8 @@ Route::middleware(['auth:sanctum', 'can.publish'])->prefix('annonces')->group(fu
 Route::patch('reservation/materiel/{id}/confirm', [ReservationMaterielleController::class, 'confirm']);
 
 // Fournisseur Routes
-Route::middleware(['auth:sanctum', 'fournisseur'])->group(function () {
-    Route::prefix('boutiques')->group(function () {
-        Route::get('/edit/{boutique_id}', [BoutiqueController::class, 'edit']);
-        Route::post('/', [BoutiqueController::class, 'add']);
-        Route::post('/update', [BoutiqueController::class, 'update']);
-        Route::delete('/', [BoutiqueController::class, 'destroy']);
-    });
-    
+// Equipment Management - Both Suppliers AND Campers
+Route::middleware(['auth:sanctum', 'supplier_or_camper'])->group(function () {
     Route::prefix('materielles')->group(function () {
         Route::get('/{materielle_id}/edit', [MaterielleController::class, 'edit']);
         Route::post('/', [MaterielleController::class, 'store']);
@@ -664,6 +658,16 @@ Route::middleware(['auth:sanctum', 'fournisseur'])->group(function () {
     Route::prefix('reservation/fournisseur')->group(function () {
         Route::get('/', [ReservationMaterielleController::class, 'show']);
         Route::patch('/cancel/{id}', [ReservationMaterielleController::class, 'cancelByFournisseur']);
+    });
+});
+
+// Shop Management - ONLY for Suppliers (role_id: 4)
+Route::middleware(['auth:sanctum', 'fournisseur'])->group(function () {
+    Route::prefix('boutiques')->group(function () {
+        Route::get('/edit/{boutique_id}', [BoutiqueController::class, 'edit']);
+        Route::post('/', [BoutiqueController::class, 'add']);
+        Route::post('/update', [BoutiqueController::class, 'update']);
+        Route::delete('/', [BoutiqueController::class, 'destroy']);
     });
 });
 
