@@ -4,6 +4,10 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use App\Models\Annonce;
+use App\Models\CampingZone;
+use App\Models\ProfileCentre;
+use App\Models\Materielles;
+use App\Models\User;
 
 class Favorite extends Model
 {
@@ -21,33 +25,35 @@ class Favorite extends Model
     {
         switch ($this->favoritable_type) {
             case 'centre':
-                $c = CampingCentre::find($this->favoritable_id);
+                $c = ProfileCentre::with('profile')->find($this->favoritable_id);
                 if (!$c) return null;
                 return [
                     'id'         => $c->id,
-                    'name'       => $c->nom,
-                    'address'    => $c->adresse ?? '',
-                    'profilePic' => $c->image ? asset('storage/' . $c->image) : null,
+                    'name'       => $c->name ?? '',
+                    'address'    => $c->profile?->city ?? $c->profile?->address ?? '',
+                    'profilePic' => $c->profile?->cover_image
+                        ? asset('storage/' . $c->profile->cover_image)
+                        : null,
                 ];
 
             case 'zone':
-                $z = Camping_Zones::find($this->favoritable_id);
+                $z = CampingZone::find($this->favoritable_id);
                 if (!$z) return null;
                 return [
                     'id'         => $z->id,
-                    'name'       => $z->nom ?? $z->name ?? '',
-                    'address'    => $z->location ?? $z->adresse ?? '',
-                    'profilePic' => $z->image ? asset('storage/' . $z->image) : null,
+                    'name'       => $z->nom ?? '',
+                    'address'    => $z->adresse ?? $z->city ?? '',
+                    'profilePic' => $z->cover_image,
                 ];
 
             case 'equipment':
-                $m = Materielles::with('photos')->find($this->favoritable_id);
+                $m = Materielles::with(['photos', 'category'])->find($this->favoritable_id);
                 if (!$m) return null;
                 $cover = $m->photos->firstWhere('is_cover', true) ?? $m->photos->first();
                 return [
                     'id'         => $m->id,
                     'name'       => $m->nom,
-                    'address'    => $m->category->nom ?? '',
+                    'address'    => $m->category?->nom ?? '',
                     'profilePic' => $cover ? asset('storage/' . $cover->path_to_img) : null,
                 ];
 

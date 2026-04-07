@@ -389,6 +389,41 @@ public function updateManualParticipant(Request $request, $reservationId)
      * Frontend sends name/email/phone explicitly — do NOT use $user->name
      * because the User model uses first_name + last_name (no `name` column).
      */
+    /**
+     * Check whether the authenticated camper already has an active reservation
+     * whose event overlaps with the given event's dates.
+     */
+    public function checkConflict($eventId)
+    {
+        $user  = auth()->user();
+        $event = Events::findOrFail($eventId);
+
+        $activeStatuses = ['en_attente_paiement', 'confirmée', 'en_attente_validation'];
+
+        $conflict = Reservations_events::where('user_id', $user->id)
+            ->whereIn('status', $activeStatuses)
+            ->whereHas('event', function ($q) use ($event) {
+                $q->where('start_date', '<=', $event->end_date)
+                  ->where('end_date',   '>=', $event->start_date);
+            })
+            ->with('event:id,title,start_date,end_date')
+            ->first();
+
+        if ($conflict) {
+            return response()->json([
+                'conflict' => true,
+                'conflict_event' => [
+                    'id'         => $conflict->event->id,
+                    'title'      => $conflict->event->title,
+                    'start_date' => $conflict->event->start_date,
+                    'end_date'   => $conflict->event->end_date,
+                ],
+            ]);
+        }
+
+        return response()->json(['conflict' => false]);
+    }
+
     public function createReservationWithPayment(Request $request)
     {
         $user = auth()->user();
@@ -402,6 +437,32 @@ public function updateManualParticipant(Request $request, $reservationId)
             'email'     => 'nullable|email|max:255',
             'phone'     => 'nullable|string|max:50',
         ]);
+
+        // ── Overlap guard ────────────────────────────────────────────────────────
+        $event         = Events::findOrFail($request->event_id);
+        $activeStatuses = ['en_attente_paiement', 'confirmée', 'en_attente_validation'];
+
+        $conflict = Reservations_events::where('user_id', $user->id)
+            ->whereIn('status', $activeStatuses)
+            ->whereHas('event', function ($q) use ($event) {
+                $q->where('start_date', '<=', $event->end_date)
+                  ->where('end_date',   '>=', $event->start_date);
+            })
+            ->with('event:id,title,start_date,end_date')
+            ->first();
+
+        if ($conflict) {
+            return response()->json([
+                'message'        => 'You already have a reservation for "' . $conflict->event->title . '" which overlaps with this event\'s dates.',
+                'conflict'       => true,
+                'conflict_event' => [
+                    'id'         => $conflict->event->id,
+                    'title'      => $conflict->event->title,
+                    'start_date' => $conflict->event->start_date,
+                    'end_date'   => $conflict->event->end_date,
+                ],
+            ], 422);
+        }
 
         // Build a name that is never null — backend column is NOT NULL
         $resolvedName = $request->name

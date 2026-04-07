@@ -171,9 +171,9 @@ Route::prefix('events')->group(function () {
     Route::get('/search', [EventController::class, 'search']);
     Route::get('/groups/{groupId}', [EventController::class, 'getGroupEvents']);
     Route::get('/my-events', [EventController::class, 'myEvents']);
-    Route::get('/{id}/share-links', [EventController::class, 'getEventShareLinks']);
-    Route::get('/{id}/copy-link', [EventController::class, 'getEventCopyLink']);
-    Route::get('/{id}', [EventController::class, 'getEventDetails']);
+    Route::get('/{id}/share-links', [EventController::class, 'getEventShareLinks'])->where('id', '[0-9]+');
+    Route::get('/{id}/copy-link', [EventController::class, 'getEventCopyLink'])->where('id', '[0-9]+');
+    Route::get('/{id}', [EventController::class, 'getEventDetails'])->where('id', '[0-9]+');
 });
 
 // -------------------- PUBLIC GROUPS --------------------
@@ -422,6 +422,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/{id}', [AnnonceController::class, 'destroy']);
         Route::patch('/{id}/archive', [AnnonceController::class, 'archive']);
         Route::patch('/{id}/unarchive', [AnnonceController::class, 'unarchive']);
+        Route::get('/my-liked', [AnnonceController::class, 'myLiked']);
         Route::post('/{id}/like', [AnnonceController::class, 'like']);
         Route::post('/{id}/unlike', [AnnonceController::class, 'unlike']);
         Route::get('/{id}/likes', [AnnonceController::class, 'getLikes']);
@@ -507,6 +508,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // Event Reservations (non-admin)
     Route::prefix('reservations')->group(function () {
         Route::get('/my-participations', [ReservationEventController::class, 'myParticipations']);
+        Route::get('/check-conflict/{eventId}', [ReservationEventController::class, 'checkConflict']);
         Route::get('/passees', [ReservationEventController::class, 'mesReservationsPassees']);
         Route::post('/event', [ReservationEventController::class, 'createReservationWithPayment']);
         Route::put('/event/{id}/simulate-payment', [ReservationEventController::class, 'simulatePayment']);
@@ -612,15 +614,15 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/',                           [FavoriteController::class, 'list']);
         Route::get('/ids',                        [FavoriteController::class, 'ids']);
         Route::get('/check/{type}/{id}',          [FavoriteController::class, 'check']);
-    // Favorites
+    });
+
     Route::prefix('favoris')->group(function () {
         Route::post('/zone/{id}', [FavorisController::class, 'toggleZone']);
         Route::get('/liste', [FavorisController::class, 'listFavoris']);
     });
-    
+
     Route::post('/zones/{zoneId}/signales', [SignalementZoneController::class, 'store']);
     Route::post('/events/{event}/send-reminders', [NotificationController::class, 'sendRemindersForEvent']);
-});
 });
 // ==================== ROLE-SPECIFIC ROUTES ====================
 

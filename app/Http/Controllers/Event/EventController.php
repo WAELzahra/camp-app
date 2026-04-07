@@ -122,60 +122,34 @@ class EventController extends Controller
         }
     }
     /**
-     * List all active events with filters (Public)
+     * List all events (Public) - returns ALL events for client-side filtering
      */
     public function index(Request $request)
     {
-        $query = Events::with(['group', 'photos'])  
-                      ->where('is_active', true)
-                      ->where('status', 'scheduled');
- 
-        // Search by title
-        if ($request->has('title')) {
-            $query->where('title', 'like', '%' . $request->title . '%');
+        $query = Events::with(['group', 'photos'])
+                    ->orderBy('start_date', 'asc'); // Order by start date
+
+        // Optional: Basic search - keep this as it's efficient
+        if ($request->has('q')) {
+            $search = $request->q;
+            $query->where(function($q) use ($search) {
+                $q->where('title', 'like', "%{$search}%")
+                ->orWhere('description', 'like', "%{$search}%")
+                ->orWhere('departure_city', 'like', "%{$search}%")
+                ->orWhere('arrival_city', 'like', "%{$search}%");
+            });
         }
- 
-        // Filter by event type
+
+        // Optional: Filter by event type (keep for basic filtering)
         if ($request->has('event_type')) {
             $query->where('event_type', $request->event_type);
         }
- 
-        // Filter by destination (departure or arrival city)
-        if ($request->has('destination')) {
-            $destination = $request->destination;
-            $query->where(function($q) use ($destination) {
-                $q->where('departure_city', 'like', '%' . $destination . '%')
-                  ->orWhere('arrival_city', 'like', '%' . $destination . '%')
-                  ->orWhere('address', 'like', '%' . $destination . '%');
-            });
-        }
- 
-        // Price range filters
-        if ($request->has('min_price')) {
-            $query->where('price', '>=', $request->min_price);
-        }
- 
-        if ($request->has('max_price')) {
-            $query->where('price', '<=', $request->max_price);
-        }
- 
-        // Date filters
-        if ($request->has('start_date')) {
-            $query->whereDate('start_date', '>=', $request->start_date);
-        }
- 
-        if ($request->has('end_date')) {
-            $query->whereDate('end_date', '<=', $request->end_date);
-        }
- 
-        // Sort options
-        $sortBy = $request->get('sort_by', 'start_date');
-        $sortOrder = $request->get('sort_order', 'asc');
-        $query->orderBy($sortBy, $sortOrder);
- 
-        $events = $query->paginate($request->get('per_page', 15));
- 
-        // Add cover_image to each event for convenience
+
+        // Return more events for client-side filtering
+        $perPage = $request->get('per_page', 500);
+        $events = $query->paginate($perPage);
+
+        // Add cover_image to each event
         $events->getCollection()->transform(function ($event) {
             if ($event->photos && $event->photos->isNotEmpty()) {
                 $cover = $event->photos->firstWhere('is_cover', true) ?? $event->photos->first();
@@ -187,7 +161,7 @@ class EventController extends Controller
             }
             return $event;
         });
- 
+
         return response()->json([
             'success' => true,
             'data' => $events

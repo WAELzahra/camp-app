@@ -578,6 +578,58 @@ class AnnonceController extends Controller
         ]);
     }
     /**
+     * GET /annonces/my-liked — full annonce objects the authenticated user has liked.
+     */
+    public function myLiked(Request $request)
+    {
+        $user = Auth::user();
+        if (!$user) {
+            return response()->json(['success' => false, 'data' => []], 401);
+        }
+
+        $likedIds = $user->likedAnnonces()->pluck('annonce_id')->toArray();
+
+        if (empty($likedIds)) {
+            return response()->json(['success' => true, 'data' => []]);
+        }
+
+        $annonces = Annonce::with(['photos', 'user'])
+            ->whereIn('id', $likedIds)
+            ->latest()
+            ->get()
+            ->map(function ($a) {
+                $cover = $a->photos->firstWhere('is_cover', true) ?? $a->photos->first();
+                return [
+                    'id'            => $a->id,
+                    'title'         => $a->title,
+                    'description'   => $a->description,
+                    'address'       => $a->address ?? '',
+                    'start_date'    => $a->start_date,
+                    'end_date'      => $a->end_date,
+                    'status'        => $a->status,
+                    'type'          => $a->type,
+                    'created_at'    => $a->created_at,
+                    'views_count'   => $a->views_count ?? 0,
+                    'likes_count'   => $a->likes_count ?? 0,
+                    'comments_count'=> $a->comments_count ?? 0,
+                    'photos'        => $a->photos->map(fn($p) => [
+                        'id'          => $p->id,
+                        'path_to_img' => $p->path_to_img,
+                        'is_cover'    => $p->is_cover,
+                    ])->values(),
+                    'user'          => $a->user ? [
+                        'id'         => $a->user->id,
+                        'first_name' => $a->user->first_name,
+                        'last_name'  => $a->user->last_name,
+                        'avatar'     => $a->user->avatar,
+                    ] : null,
+                ];
+            });
+
+        return response()->json(['success' => true, 'data' => $annonces]);
+    }
+
+    /**
      * Check if the authenticated user liked an annonce.
      */
     public function checkLike(int $id)
