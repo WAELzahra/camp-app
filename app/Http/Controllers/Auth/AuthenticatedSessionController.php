@@ -90,14 +90,17 @@ class AuthenticatedSessionController extends Controller
         return response()->json(['message' => 'Invalid credentials'], 401);
     }
 
+    // Regenerate session ID on every login — prevents session fixation attacks
+    // and guarantees a clean session even if the previous user's session
+    // was not fully invalidated before this login attempt.
+    $request->session()->regenerate();
+
     $user = Auth::user();
-    
-    // ✅ Sauvegarder last_login_at (manquait avant)
     $user->last_login_at = now();
     $user->save();
 
     return response()->json([
-        'user' => $user  // role_id sera inclus si pas dans $hidden
+        'user' => $user
     ]);
 }
 

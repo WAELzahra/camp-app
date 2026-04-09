@@ -24,10 +24,10 @@ class Kernel extends HttpKernel
     ];
 
     protected $routeMiddleware = [
-    // autres middlewares
-    'active' => \App\Http\Middleware\CheckIfUserIsActive::class,
-    'admin' => \App\Http\Middleware\AdminMiddleware::class,
-    'role' => \App\Http\Middleware\RoleMiddleware::class,
+    'active'          => \App\Http\Middleware\CheckIfUserIsActive::class,
+    'require.active'  => \App\Http\Middleware\RequireActiveAccount::class,
+    'admin'           => \App\Http\Middleware\AdminMiddleware::class,
+    'role'            => \App\Http\Middleware\RoleMiddleware::class,
 ];
 
 

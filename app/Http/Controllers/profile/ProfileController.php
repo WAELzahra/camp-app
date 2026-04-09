@@ -195,6 +195,59 @@ class ProfileController extends Controller
                 $data['details'] = null;
         }
 
+        // Cover image full URL
+        if ($profile->cover_image) {
+            $data['cover_image_url'] = asset('storage/' . ltrim($profile->cover_image, '/'));
+        }
+
+        // Profile gallery photos
+        $galleryAlbum = \App\Models\Album::with(['photos' => function ($q) {
+            $q->orderBy('order', 'asc')->orderBy('created_at', 'desc');
+        }])
+            ->where('user_id', $user->id)
+            ->where('titre', 'Profile Gallery')
+            ->first();
+
+        if ($galleryAlbum) {
+            $data['photos'] = $galleryAlbum->photos->map(fn($p) => [
+                'id'       => $p->id,
+                'url'      => asset('storage/' . $p->path_to_img),
+                'is_cover' => (bool) $p->is_cover,
+                'order'    => $p->order,
+            ])->values();
+        }
+
+        // Past events (confirmed/attended)
+        $data['past_events'] = \App\Models\Reservations_events::where('user_id', $user->id)
+            ->whereIn('status', ['confirmed', 'completed', 'attended'])
+            ->with('event')
+            ->get()
+            ->filter(fn($r) => $r->event && $r->event->start_date)
+            ->sortByDesc(fn($r) => $r->event->start_date)
+            ->take(8)
+            ->map(fn($r) => [
+                'id'       => $r->event->id,
+                'title'    => $r->event->title,
+                'date'     => $r->event->start_date,
+                'location' => $r->event->address ?? null,
+            ])->values();
+
+        // Visited camping centers (unique, most recent first)
+        $data['visited_centres'] = \App\Models\Reservations_centre::where('user_id', $user->id)
+            ->whereIn('status', ['confirmed', 'completed'])
+            ->with('centre')
+            ->get()
+            ->filter(fn($r) => $r->centre)
+            ->sortByDesc('date_debut')
+            ->unique('centre_id')
+            ->take(8)
+            ->map(fn($r) => [
+                'id'       => $r->centre->id,
+                'name'     => $r->centre->name,
+                'location' => $r->centre->ville ?? null,
+                'date'     => $r->date_debut,
+            ])->values();
+
         return response()->json($data);
     }
 
@@ -1138,6 +1191,37 @@ class ProfileController extends Controller
                 }
             }
 
+            // Past events (public, non-sensitive)
+            $data['past_events'] = \App\Models\Reservations_events::where('user_id', $user->id)
+                ->whereIn('status', ['confirmed', 'completed', 'attended'])
+                ->with('event')
+                ->get()
+                ->filter(fn($r) => $r->event && $r->event->start_date)
+                ->sortByDesc(fn($r) => $r->event->start_date)
+                ->take(8)
+                ->map(fn($r) => [
+                    'id'       => $r->event->id,
+                    'title'    => $r->event->title,
+                    'date'     => $r->event->start_date,
+                    'location' => $r->event->address ?? null,
+                ])->values();
+
+            // Visited camping centers (unique, most recent first)
+            $data['visited_centres'] = \App\Models\Reservations_centre::where('user_id', $user->id)
+                ->whereIn('status', ['confirmed', 'completed'])
+                ->with('centre')
+                ->get()
+                ->filter(fn($r) => $r->centre)
+                ->sortByDesc('date_debut')
+                ->unique('centre_id')
+                ->take(8)
+                ->map(fn($r) => [
+                    'id'       => $r->centre->id,
+                    'name'     => $r->centre->name,
+                    'location' => $r->centre->ville ?? null,
+                    'date'     => $r->date_debut,
+                ])->values();
+
             return response()->json($data);
         }
 
@@ -1570,5 +1654,81 @@ class ProfileController extends Controller
                 'error' => $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * GET /profile/completion
+     * Returns a role-specific profile completion score and checklist.
+     */
+    public function completion()
+    {
+        $user    = Auth::user();
+        $profile = $user->profile;
+        $type    = $profile?->type ?? 'campeur';
+
+        $steps  = [];
+        $earned = 0;
+        $total  = 0;
+
+        // ── Shared fields (all roles) ──────────────────────────────────────────
+        $sharedSteps = [
+            ['key' => 'avatar',        'label' => 'Profile photo',      'done' => (bool) $user->avatar,        'link' => '/settings/images',   'weight' => 15],
+            ['key' => 'phone',         'label' => 'Phone number',        'done' => (bool) $user->phone_number,  'link' => '/settings',          'weight' => 10],
+            ['key' => 'city',          'label' => 'City',                'done' => (bool) $user->ville,         'link' => '/settings',          'weight' => 10],
+            ['key' => 'bio',           'label' => 'Bio / description',   'done' => (bool) $profile?->bio,       'link' => '/settings',          'weight' => 10],
+            ['key' => 'email_verified','label' => 'Email verified',      'done' => (bool) $user->email_verified_at, 'link' => '/emailverification', 'weight' => 15],
+        ];
+
+        // ── Role-specific fields ───────────────────────────────────────────────
+        $roleSteps = match ($type) {
+            'centre' => [
+                ['key' => 'centre_name',    'label' => 'Center name',        'done' => (bool) $profile?->profileCentre?->name,          'link' => '/settings',          'weight' => 10],
+                ['key' => 'centre_cap',     'label' => 'Capacity',           'done' => (bool) $profile?->profileCentre?->capacite,       'link' => '/settings',          'weight' => 5],
+                ['key' => 'centre_price',   'label' => 'Price per night',     'done' => (bool) $profile?->profileCentre?->price_per_night,'link' => '/settings',          'weight' => 5],
+                ['key' => 'centre_contact', 'label' => 'Contact email',       'done' => (bool) $profile?->profileCentre?->contact_email,  'link' => '/settings',          'weight' => 5],
+                ['key' => 'centre_photos',  'label' => 'Center photos',       'done' => \App\Models\Photo::where('user_id', $user->id)->exists(), 'link' => '/settings/images', 'weight' => 10],
+                ['key' => 'centre_service', 'label' => 'At least 1 service',  'done' => \App\Models\ProfileCenterService::where('profile_center_id', $profile?->profileCentre?->id ?? 0)->exists(), 'link' => '/settings/services', 'weight' => 5],
+                ['key' => 'legal_doc',      'label' => 'Legal document',      'done' => (bool) $profile?->profileCentre?->legal_document, 'link' => '/settings',          'weight' => 15],
+            ],
+            'guide' => [
+                ['key' => 'guide_zone',    'label' => 'Working zone',         'done' => (bool) $profile?->profileGuide?->zone_travail,      'link' => '/settings',        'weight' => 10],
+                ['key' => 'guide_cert',    'label' => 'Certificate uploaded', 'done' => (bool) $profile?->profileGuide?->certificat_path,   'link' => '/settings',        'weight' => 20],
+                ['key' => 'guide_tarif',   'label' => 'Daily rate',           'done' => (bool) $profile?->profileGuide?->tarif,             'link' => '/settings',        'weight' => 10],
+                ['key' => 'guide_exp',     'label' => 'Experience level',     'done' => (bool) $profile?->profileGuide?->experience,        'link' => '/settings',        'weight' => 5],
+            ],
+            'fournisseur' => [
+                ['key' => 'sup_category', 'label' => 'Product category',      'done' => (bool) $profile?->profileFournisseur?->product_category, 'link' => '/settings', 'weight' => 15],
+                ['key' => 'sup_price',    'label' => 'Price range',           'done' => (bool) $profile?->profileFournisseur?->intervale_prix,    'link' => '/settings', 'weight' => 10],
+                ['key' => 'sup_item',     'label' => 'At least 1 product',    'done' => \App\Models\Materielle::where('user_id', $user->id)->exists(), 'link' => '/settings/add-material', 'weight' => 15],
+            ],
+            'groupe' => [
+                ['key' => 'group_name',  'label' => 'Group name',             'done' => (bool) $profile?->profileGroupe?->nom_groupe,      'link' => '/settings',          'weight' => 15],
+                ['key' => 'group_cover', 'label' => 'Cover photo',            'done' => (bool) $profile?->cover_image,                     'link' => '/settings/images',   'weight' => 10],
+                ['key' => 'group_event', 'label' => 'At least 1 event',       'done' => \App\Models\Event::where('user_id', $user->id)->exists(), 'link' => '/settings/events', 'weight' => 15],
+            ],
+            default => [ // campeur
+                ['key' => 'activities',  'label' => 'Favorite activities',    'done' => (bool) $profile?->activities,                     'link' => '/settings',          'weight' => 15],
+                ['key' => 'cover',       'label' => 'Cover image',            'done' => (bool) $profile?->cover_image,                    'link' => '/settings/images',   'weight' => 10],
+            ],
+        };
+
+        $steps = array_merge($sharedSteps, $roleSteps);
+
+        foreach ($steps as $step) {
+            $total  += $step['weight'];
+            if ($step['done']) $earned += $step['weight'];
+        }
+
+        $percentage = $total > 0 ? (int) round(($earned / $total) * 100) : 0;
+
+        return response()->json([
+            'success'    => true,
+            'percentage' => $percentage,
+            'earned'     => $earned,
+            'total'      => $total,
+            'steps'      => $steps,
+            'role'       => $type,
+            'is_active'  => $user->is_active,
+        ]);
     }
 }

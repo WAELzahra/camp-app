@@ -17,7 +17,6 @@ class TrackUserActivity
             // Update last activity timestamp
             // You can use a separate `last_activity` column or reuse `updated_at`
             $user->last_login_at = now();
-            $user->is_active = true;
             $user->save();
         }
 

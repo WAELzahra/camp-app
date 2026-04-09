@@ -82,6 +82,7 @@ use App\Http\Controllers\Contact\ContactController;
 
 // Centre Claim Controller
 use App\Http\Controllers\CentreClaimController;
+use App\Http\Controllers\Dashboard\DashboardController;
 
 // ==================== BROADCAST ROUTES ====================
 Broadcast::routes(['middleware' => ['auth:sanctum']]);
@@ -370,6 +371,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // Profile Management
     Route::prefix('profile')->group(function () {
         Route::get('/', [ProfileController::class, 'show']);
+        Route::get('/completion', [ProfileController::class, 'completion']);
         Route::put('/', [ProfileController::class, 'update']);
         Route::put('/change-password', [ProfileController::class, 'changePassword']);
         Route::post('/avatar', [ProfileController::class, 'updateAvatar']);
@@ -413,15 +415,9 @@ Route::middleware('auth:sanctum')->group(function () {
     
     // Announcements
     Route::prefix('annonces')->group(function () {
+        // Read-only — always allowed
         Route::get('/user/{userId}', [AnnonceController::class, 'index']);
         Route::get('/archived/{userId}', [AnnonceController::class, 'getArchived']);
-        
-        Route::post('/', [AnnonceController::class, 'store']);
-        
-        Route::post('/{id}', [AnnonceController::class, 'update']);
-        Route::delete('/{id}', [AnnonceController::class, 'destroy']);
-        Route::patch('/{id}/archive', [AnnonceController::class, 'archive']);
-        Route::patch('/{id}/unarchive', [AnnonceController::class, 'unarchive']);
         Route::get('/my-liked', [AnnonceController::class, 'myLiked']);
         Route::post('/{id}/like', [AnnonceController::class, 'like']);
         Route::post('/{id}/unlike', [AnnonceController::class, 'unlike']);
@@ -429,6 +425,14 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{id}/likes/check', [AnnonceController::class, 'checkLike']);
         Route::get('/{id}', [AnnonceController::class, 'show']);
 
+        // Write actions — require approved account
+        Route::middleware(['require.active'])->group(function () {
+            Route::post('/', [AnnonceController::class, 'store']);
+            Route::post('/{id}', [AnnonceController::class, 'update']);
+            Route::delete('/{id}', [AnnonceController::class, 'destroy']);
+            Route::patch('/{id}/archive', [AnnonceController::class, 'archive']);
+            Route::patch('/{id}/unarchive', [AnnonceController::class, 'unarchive']);
+        });
     });
     
     // Comments
@@ -496,7 +500,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/my-interest-ids',         [EventInterestController::class, 'myInterestIds']);
         Route::get('/{id}/interest/check',     [EventInterestController::class, 'check']);
         
-        Route::middleware(['group'])->group(function () {
+        Route::middleware(['group', 'require.active'])->group(function () {
             Route::post('/', [EventController::class, 'store']);
             Route::put('/{id}', [EventController::class, 'update']);
             Route::delete('/{id}', [EventController::class, 'destroy']);
@@ -554,8 +558,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/co-owners/{userId}',            [GroupeCoOwnerController::class, 'remove']);
     });
     
-    // Group Reservation Management
-    Route::prefix('group/reservations')->group(function () {
+    // Group Reservation Management — requires approved account
+    Route::prefix('group/reservations')->middleware(['require.active'])->group(function () {
         Route::get('/', [ReservationEventController::class, 'toutesMesReservations']);
         Route::get('/export', [ReservationEventController::class, 'exportReservations']);
         Route::get('/stats', [ReservationEventController::class, 'reservationStats']);
@@ -608,6 +612,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/zone/{zoneId}', [ZonePolygonController::class, 'listByZone']);
     });
     
+    // -------------------- DASHBOARD STATS --------------------
+    Route::get('/dashboard/stats', [DashboardController::class, 'stats']);
+
     // -------------------- FAVORITES (unified, polymorphic) --------------------
     Route::prefix('favorites')->group(function () {
         Route::post('/',                          [FavoriteController::class, 'toggle']);
@@ -626,15 +633,14 @@ Route::middleware('auth:sanctum')->group(function () {
 });
 // ==================== ROLE-SPECIFIC ROUTES ====================
 
-// Publisher Routes
-Route::middleware(['auth:sanctum', 'can.publish'])->prefix('annonces')->group(function () {
+// Publisher Routes — also require active (approved) account
+Route::middleware(['auth:sanctum', 'can.publish', 'require.active'])->prefix('annonces')->group(function () {
     Route::post('/', [AnnonceController::class, 'store']);
     Route::match(['put', 'post'], '/{id}', [AnnonceController::class, 'update']);
     Route::delete('/{id}', [AnnonceController::class, 'destroy']);
     Route::get('/archived/{userId}', [AnnonceController::class, 'getArchived']);
     Route::patch('/{id}/archive', [AnnonceController::class, 'archive']);
     Route::patch('/{id}/unarchive', [AnnonceController::class, 'unarchive']);
-
 });
 Route::patch('reservation/materiel/{id}/confirm', [ReservationMaterielleController::class, 'confirm']);
 
@@ -650,14 +656,15 @@ Route::middleware(['auth:sanctum', 'supplier_or_camper'])->group(function () {
         Route::patch('/{id}/deactivate', [MaterielleController::class, 'deactivate']);
     });
     
-    Route::prefix('reservation/materiel')->group(function () {
+    // Supplier material reservation management — requires approved account
+    Route::prefix('reservation/materiel')->middleware(['require.active'])->group(function () {
         Route::patch('/{id}/reject', [ReservationMaterielleController::class, 'reject']);
         Route::post('/{id}/verify-pin', [ReservationMaterielleController::class, 'verifyPin']);
         Route::patch('/{id}/returned', [ReservationMaterielleController::class, 'markReturned']);
         Route::patch('/{id}/cancel', [ReservationMaterielleController::class, 'cancelByFournisseur']);
     });
-    
-    Route::prefix('reservation/fournisseur')->group(function () {
+
+    Route::prefix('reservation/fournisseur')->middleware(['require.active'])->group(function () {
         Route::get('/', [ReservationMaterielleController::class, 'show']);
         Route::patch('/cancel/{id}', [ReservationMaterielleController::class, 'cancelByFournisseur']);
     });
@@ -692,8 +699,8 @@ Route::middleware(['auth:sanctum'])->prefix('reservation')->group(function () {
         Route::patch('/centre/{id}/reject-modification', [ReservationsCentreController::class, 'rejectModification']);
     });
 
-    // Center modifies a pending reservation
-    Route::middleware(['centre'])->group(function () {
+    // Center modifies a pending reservation — requires approved account
+    Route::middleware(['centre', 'require.active'])->group(function () {
         Route::put('/centre/{id}/center-modify', [ReservationsCentreController::class, 'centerModify']);
     });
 
@@ -710,7 +717,8 @@ Route::middleware(['auth:sanctum'])->prefix('reservation')->group(function () {
         Route::get('/centre/user/statistics', [ReservationsCentreController::class, 'user_statistics']);
     });
     
-    Route::middleware(['centre'])->group(function () {
+    // Centre management of bookings — requires approved account
+    Route::middleware(['centre', 'require.active'])->group(function () {
         Route::get('/centre/index', [ReservationsCentreController::class, 'index']);
         Route::patch('/centre/confirm/{id}', [ReservationsCentreController::class, 'confirm']);
         Route::patch('/centre/reject/{id}', [ReservationsCentreController::class, 'reject']);

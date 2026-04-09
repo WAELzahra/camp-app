@@ -1,4 +1,5 @@
-<?php   
+<?php
+
 // app/Http/Middleware/CheckIfUserIsActive.php
 
 namespace App\Http\Middleware;
@@ -9,20 +10,19 @@ use Illuminate\Support\Facades\Auth;
 
 class CheckIfUserIsActive
 {
+    /**
+     * Block inactive accounts from business-critical routes.
+     * Does NOT log the user out — pending users may still access
+     * dashboard, settings and profile-completion routes.
+     */
     public function handle(Request $request, Closure $next)
     {
         if (Auth::check() && Auth::user()->is_active == 0) {
-            Auth::logout();
-
-            if ($request->expectsJson()) {
-                return response()->json([
-                    'message' => 'Votre compte est désactivé. Veuillez attendre l’activation par l’administrateur.'
-                ], 403);
-            }
-
-            return redirect()->route('login')->withErrors([
-                'email' => 'Votre compte est désactivé. Veuillez attendre l’activation par l’administrateur.',
-            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Your account is pending admin approval. You cannot perform this action yet.',
+                'pending_approval' => true,
+            ], 403);
         }
 
         return $next($request);
