@@ -16,7 +16,7 @@ class PromoCodeController extends Controller
      * POST /promo-code/validate
      * Body: { code, reservation_type, price }
      */
-    public function validate(Request $request)
+    public function checkCode(Request $request)
     {
         $request->validate([
             'code'             => 'required|string|max:50',

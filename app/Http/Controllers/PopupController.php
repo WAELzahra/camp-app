@@ -16,7 +16,8 @@ class PopupController extends Controller
 
     /**
      * GET /admin-popups/active
-     * Returns active popups that the authenticated user has NOT dismissed.
+     * Returns active ENGAGEMENT popups the user has not dismissed,
+     * filtered by target_roles (null = all roles).
      */
     public function active(Request $request): JsonResponse
     {
@@ -27,11 +28,38 @@ class PopupController extends Controller
             ->pluck('popup_id');
 
         $popups = Popup::where('is_active', true)
+            ->where('popup_kind', 'engagement')
             ->whereNotIn('id', $dismissed)
             ->latest()
-            ->get(['id', 'title', 'content', 'type', 'is_active']);
+            ->get();
 
-        return response()->json(['data' => $popups]);
+        // Filter by target_roles client-side friendly (role_id match or null = everyone)
+        $filtered = $popups->filter(function (Popup $p) use ($user) {
+            if (empty($p->target_roles)) return true;          // null → all roles
+            return in_array($user->role_id, $p->target_roles);
+        })->values();
+
+        return response()->json(['data' => $filtered]);
+    }
+
+    /**
+     * GET /admin-popups/welcome
+     * Returns the active WELCOME popup configured for the user's role.
+     */
+    public function welcome(Request $request): JsonResponse
+    {
+        $user = Auth::user();
+
+        $popup = Popup::where('is_active', true)
+            ->where('popup_kind', 'welcome')
+            ->latest()
+            ->get()
+            ->first(function (Popup $p) use ($user) {
+                if (empty($p->target_roles)) return true;
+                return in_array($user->role_id, $p->target_roles);
+            });
+
+        return response()->json(['data' => $popup]);
     }
 
     /**
@@ -69,14 +97,19 @@ class PopupController extends Controller
     public function store(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'title'     => 'required|string|max:255',
-            'content'   => 'required|string',
-            'type'      => 'required|in:info,warning,promotion,update',
-            'is_active' => 'boolean',
+            'title'        => 'required|string|max:255',
+            'content'      => 'required|string',
+            'type'         => 'required|in:info,warning,promotion,update',
+            'is_active'    => 'boolean',
+            'popup_kind'   => 'in:engagement,welcome',
+            'target_roles' => 'nullable|array',
+            'target_roles.*' => 'integer|min:1|max:6',
+            'icon'         => 'nullable|string|max:100',
+            'cta_label'    => 'nullable|string|max:100',
+            'cta_url'      => 'nullable|string|max:500',
         ]);
 
         $popup = Popup::create($data);
-
         return response()->json(['data' => $popup, 'message' => 'Popup created.'], 201);
     }
 
@@ -86,14 +119,19 @@ class PopupController extends Controller
     public function update(Request $request, Popup $popup): JsonResponse
     {
         $data = $request->validate([
-            'title'     => 'sometimes|required|string|max:255',
-            'content'   => 'sometimes|required|string',
-            'type'      => 'sometimes|required|in:info,warning,promotion,update',
-            'is_active' => 'sometimes|boolean',
+            'title'        => 'sometimes|required|string|max:255',
+            'content'      => 'sometimes|required|string',
+            'type'         => 'sometimes|required|in:info,warning,promotion,update',
+            'is_active'    => 'sometimes|boolean',
+            'popup_kind'   => 'sometimes|in:engagement,welcome',
+            'target_roles' => 'nullable|array',
+            'target_roles.*' => 'integer|min:1|max:6',
+            'icon'         => 'nullable|string|max:100',
+            'cta_label'    => 'nullable|string|max:100',
+            'cta_url'      => 'nullable|string|max:500',
         ]);
 
         $popup->update($data);
-
         return response()->json(['data' => $popup, 'message' => 'Popup updated.']);
     }
 
@@ -108,7 +146,6 @@ class PopupController extends Controller
 
     /**
      * PATCH /admin/popups/{popup}/toggle
-     * Toggle is_active without a full update payload.
      */
     public function toggle(Popup $popup): JsonResponse
     {

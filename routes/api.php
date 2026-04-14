@@ -858,10 +858,11 @@ Route::prefix('annonces')->group(function () {
             Route::get('/{id}', [AdminReservationsController::class, 'show']);
             Route::put('/{id}', [AdminReservationsController::class, 'update']);
             Route::delete('/{id}', [AdminReservationsController::class, 'destroy']);
+            Route::post('/{id}/send-confirmation', [AdminReservationsController::class, 'sendConfirmationEmail']);
         });
     });
 
-    
+
     // -------------------- CENTER RESERVATIONS (Admin) --------------------
     Route::get('/reservation/centre/show/{id}', [ReservationsCentreController::class, 'show']);
     
@@ -1059,7 +1060,7 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('feedbacks')->group(functio
 
 // Public: validate a promo code (used by booking forms — requires auth so we know who's applying)
 Route::middleware(['auth:sanctum'])->group(function () {
-    Route::post('/promo-code/validate', [PromoCodeController::class, 'validate']);
+    Route::post('/promo-code/validate', [PromoCodeController::class, 'checkCode']);
 });
 
 // Admin: full CRUD for promo codes
@@ -1083,6 +1084,7 @@ Route::middleware(['auth', 'role:admin'])->prefix('admin')->name('admin.')->grou
 // Authenticated: fetch active (non-dismissed) popups & dismiss one
 Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/admin-popups/active',           [PopupController::class, 'active']);
+    Route::get('/admin-popups/welcome',          [PopupController::class, 'welcome']);
     Route::post('/admin-popups/{popup}/dismiss', [PopupController::class, 'dismiss']);
 });
 
