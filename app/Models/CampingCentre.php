@@ -41,7 +41,7 @@ class CampingCentre extends Model
 
     public function zones()
     {
-        return $this->hasMany(Camping_Zones::class, 'centre_id');
+        return $this->hasMany(CampingZone::class, 'centre_id');
     }
 
     public function user()

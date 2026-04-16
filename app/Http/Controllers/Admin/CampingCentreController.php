@@ -15,21 +15,50 @@ use Illuminate\Support\Facades\Storage;
 
 class CampingCentreController extends Controller
 {
-   /**
-     * Lister tous les centres
-     * Inclut les centres inscrits (user + profile + profile_centre)
+    /**
+     * List all centres with partner/non-partner classification.
+     *
+     * A centre is a PARTNER when it has an associated user (role=centre)
+     * or a linked profile_centre record.  All other centres are NON-PARTNER.
+     *
+     * On every call we auto-sync users with role_id=3 into camping_centres so
+     * that registered centre accounts always appear here without a schema change.
      */
     public function index()
     {
-        $centres = CampingCentre::with([
-            'zones',
-            'user.profile',         // pour centres inscrits
-            'profileCentre'         // pour infos supplémentaires
-        ])->get();
+        // ── Auto-sync registered centre users that have no camping_centre yet ──
+        $linkedUserIds = CampingCentre::whereNotNull('user_id')->pluck('user_id');
+
+        User::where('role_id', 3)
+            ->whereNotIn('id', $linkedUserIds)
+            ->with(['profile.profileCentre'])
+            ->get()
+            ->each(function (User $user) {
+                $pc = $user->profile?->profileCentre;
+                CampingCentre::create([
+                    'nom'               => $pc?->name ?? trim($user->first_name . ' ' . $user->last_name),
+                    'type'              => 'centre',
+                    'adresse'           => $user->adresse ?? $user->profile?->address,
+                    'lat'               => (float) ($pc?->latitude  ?? 0),
+                    'lng'               => (float) ($pc?->longitude ?? 0),
+                    'status'            => $pc ? (bool) $pc->disponibilite : true,
+                    'validation_status' => 'approved',
+                    'user_id'           => $user->id,
+                    'profile_centre_id' => $pc?->id,
+                ]);
+            });
+
+        // ── Return all centres with is_partner flag ──────────────────────────
+        $centres = CampingCentre::with(['zones', 'user', 'profileCentre'])
+            ->get()
+            ->map(function (CampingCentre $c) {
+                $c->is_partner = ! is_null($c->user_id) || ! is_null($c->profile_centre_id);
+                return $c;
+            });
 
         return response()->json([
-            'status' => 'success',
-            'centres' => $centres
+            'status'  => 'success',
+            'centres' => $centres,
         ]);
     }
 

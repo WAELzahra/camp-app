@@ -45,7 +45,7 @@ class ReportController extends Controller
             'target_id'        => $validated['target_id'] ?? null,
             'location_lat'     => $validated['location_lat'] ?? null,
             'location_lng'     => $validated['location_lng'] ?? null,
-            'report_type'      => $validated['target_type'], // keep in sync for legacy
+            'report_type'      => $validated['target_type'],
             'subject'          => $validated['subject'],
             'description'      => $validated['description'],
             'page_url'         => $validated['page_url'] ?? null,

@@ -216,6 +216,41 @@ class CentreClaimController extends Controller
         ]);
     }
 
+    /**
+     * POST /admin/claims/{id}/revoke
+     * Cancel an approved partnership — unlinks the centre from its owner.
+     */
+    public function adminRevoke(Request $request, int $id)
+    {
+        $request->validate([
+            'admin_note' => 'nullable|string|max:1000',
+        ]);
+
+        $claim = CentreClaim::with('centre')->findOrFail($id);
+
+        if ($claim->status !== 'approved') {
+            return response()->json(['message' => 'Only approved partnerships can be revoked.'], 422);
+        }
+
+        // Remove the user link from the camping centre
+        if ($claim->centre) {
+            $claim->centre->update(['user_id' => null]);
+        }
+
+        $claim->update([
+            'status'      => 'rejected',
+            'admin_note'  => $request->admin_note ?? 'Partnership cancelled by admin.',
+            'reviewer_id' => Auth::id(),
+            'reviewed_at' => now(),
+        ]);
+
+        return response()->json([
+            'status'  => 'success',
+            'message' => 'Partnership cancelled. The centre is now unlinked.',
+            'claim'   => $this->formatClaim($claim->fresh(['centre', 'user', 'reviewer'])),
+        ]);
+    }
+
     // ─── HELPER ──────────────────────────────────────────────────────────────
 
     private function formatClaim(CentreClaim $claim): array

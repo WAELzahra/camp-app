@@ -66,51 +66,64 @@ class CampingCentresController extends Controller
     }
 
     /**
-     * Voir les détails d'un centre et ses zones associées
+     * Public detail for a single CampingCentre (both partner and non-partner).
+     * Returns a frontend-compatible shape matching the detail-centre.tsx normalizer.
      */
     public function showCentre($id)
-{
-    // Charger le centre avec ses zones et les feedbacks de chaque zone
-    $centre = CampingCentre::with(['zones.feedbacks.user', 'profileCentre', 'user.profile'])->findOrFail($id);
+    {
+        $centre = CampingCentre::with(['zones', 'profileCentre', 'user.profile'])->findOrFail($id);
 
-    // Préparer les données pour le front-end
-    $centreData = [
-        'id' => $centre->id,
-        'nom' => $centre->nom ?? 'Centre non inscrit',
-        'description' => $centre->description,
-        'adresse' => $centre->adresse,
-        'lat' => $centre->lat,
-        'lng' => $centre->lng,
-        'capacite' => $centre->profileCentre->capacite ?? null,
-        'services_offerts' => $centre->profileCentre->services_offerts ?? null,
-        'disponibilite' => $centre->profileCentre->disponibilite ?? null,
-        'document_legal' => $centre->profileCentre->document_legal ?? null,
-        'is_registered' => $centre->user_id ? true : false,
-        'zones' => $centre->zones->map(function($zone){
-            return [
-                'id' => $zone->id,
-                'nom' => $zone->nom,
-                'lat' => $zone->lat,
-                'lng' => $zone->lng,
-                'description' => $zone->description,
-                'status' => $zone->status,
-                'feedbacks' => $zone->feedbacks->map(function($f){
-                    return [
-                        'id' => $f->id,
-                        'user_name' => $f->user->name ?? 'Anonyme',
-                        'comment' => $f->comment,
-                        'rating' => $f->rating,
-                        'created_at' => $f->created_at,
-                    ];
-                }),
-            ];
-        }),
-    ];
+        $pc      = $centre->profileCentre;
+        $isPartner = ! is_null($centre->user_id) || ! is_null($centre->profile_centre_id);
 
-    return response()->json([
-        'status' => 'success',
-        'data' => $centreData
-    ]);
+        $coverImage = null;
+        if ($centre->image) {
+            $coverImage = filter_var($centre->image, FILTER_VALIDATE_URL)
+                ? $centre->image
+                : url('storage/' . $centre->image);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'data'   => [
+                'id'               => $centre->id,
+                'name'             => $centre->nom,
+                'capacite'         => $pc?->capacite ?? 0,
+                'price_per_night'  => $pc ? (float) $pc->price_per_night : 0,
+                'category'         => $pc?->category ?? 'Camping',
+                'disponibilite'    => $pc ? (bool) $pc->disponibilite : true,
+                'latitude'         => $centre->lat  ? (string) $centre->lat  : null,
+                'longitude'        => $centre->lng  ? (string) $centre->lng  : null,
+                'contact_email'    => $pc?->contact_email,
+                'contact_phone'    => $pc?->contact_phone,
+                'manager_name'     => $pc?->manager_name,
+                'average_rating'   => null,
+                'review_count'     => 0,
+                'is_partner'       => $isPartner,
+                '_source'          => 'camping',
+                'profile' => [
+                    'bio'         => $centre->description,
+                    'city'        => $centre->user?->profile?->city ?? null,
+                    'address'     => $centre->adresse,
+                    'cover_image' => $coverImage,
+                    'user'        => $centre->user ? [
+                        'id'         => $centre->user->id,
+                        'first_name' => $centre->user->first_name,
+                        'last_name'  => $centre->user->last_name,
+                    ] : null,
+                ],
+                'available_services'  => [],
+                'available_equipment' => [],
+                'zones' => $centre->zones->map(fn($z) => [
+                    'id'          => $z->id,
+                    'nom'         => $z->nom,
+                    'lat'         => $z->lat,
+                    'lng'         => $z->lng,
+                    'description' => $z->description,
+                    'status'      => $z->status,
+                ])->values(),
+            ],
+        ]);
     }
 
 

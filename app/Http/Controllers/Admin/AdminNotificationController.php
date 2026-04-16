@@ -8,6 +8,8 @@ use App\Models\User;
 use App\Models\Notification;
 use App\Models\NotificationTemplate;
 use App\Models\NotificationLog;
+use App\Models\NotificationPreference;
+use App\Events\NewNotificationCreated;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -98,9 +100,26 @@ class AdminNotificationController extends Controller
 
                     // Send notification through each enabled channel
                     $notification = new CustomNotification($data, $enabledChannels);
-                    
+
                     if (in_array('in_app', $enabledChannels)) {
                         $user->notify($notification);
+
+                        // Broadcast real-time to the user's WebSocket channel
+                        $latest = $user->notifications()->latest()->first();
+                        if ($latest) {
+                            event(new NewNotificationCreated(
+                                userId:         $user->id,
+                                notificationId: $latest->id,
+                                title:          $data['title'],
+                                content:        $data['content'],
+                                type:           $data['type']        ?? 'system_alert',
+                                priority:       $data['priority']    ?? 'low',
+                                actionUrl:      $data['action_url']  ?? null,
+                                actionText:     $data['action_text'] ?? null,
+                                senderId:       $data['sender_id']   ?? null,
+                                createdAt:      $latest->created_at->toISOString(),
+                            ));
+                        }
                     }
 
                     if (in_array('email', $enabledChannels) && $user->email) {

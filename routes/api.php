@@ -971,6 +971,7 @@ Route::prefix('annonces')->group(function () {
         Route::get('/', [CentreClaimController::class, 'adminIndex']);
         Route::post('/{id}/approve', [CentreClaimController::class, 'adminApprove']);
         Route::post('/{id}/reject',  [CentreClaimController::class, 'adminReject']);
+        Route::post('/{id}/revoke',  [CentreClaimController::class, 'adminRevoke']);
     });
 
     // -------------------- CAMPING CENTERS MANAGEMENT --------------------

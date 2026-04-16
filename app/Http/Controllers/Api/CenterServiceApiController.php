@@ -160,14 +160,25 @@ class CenterServiceApiController extends Controller
 
     /* ──────────────────────────────────────────────────────────────────
      * GET /centers/services  — list all available centers
+     *
+     * Returns both partner centres (profile_centres) and non-partner
+     * centres (camping_centres with no user_id) that have admin status=true.
+     * Partner centres whose linked camping_centre has status=false are hidden.
      * ────────────────────────────────────────────────────────────────── */
     public function centersWithServices(Request $request)
     {
+        // Partner centres that admin has explicitly disabled (status=false)
+        $disabledProfileIds = \App\Models\CampingCentre::whereNotNull('profile_centre_id')
+            ->where('status', false)
+            ->pluck('profile_centre_id')
+            ->toArray();
+
         $query = ProfileCentre::with([
             'profile.user',
             'availableServices',
             'availableEquipment',
-        ])->available();
+        ])->available()
+          ->whereNotIn('id', $disabledProfileIds);
 
         if ($request->has('category')) {
             $query->where('category', $request->category);
@@ -216,11 +227,46 @@ class CenterServiceApiController extends Controller
                 });
         }
 
-        $result = $centers->map(
-            fn($c) => $this->formatCenter($c, $albumMap, $ratingMap, false)
-        )->values();
+        // Partner centres with is_partner flag
+        $partnerResult = $centers->map(function ($c) use ($albumMap, $ratingMap) {
+            return array_merge(
+                $this->formatCenter($c, $albumMap, $ratingMap, false),
+                ['is_partner' => true, '_source' => 'partner']
+            );
+        })->values();
 
-        return response()->json($result);
+        // Non-partner centres: camping_centres with no user, admin status=true
+        $nonPartnerResult = \App\Models\CampingCentre::whereNull('user_id')
+            ->where('status', true)
+            ->get()
+            ->map(fn($c) => [
+                'id'               => $c->id,
+                'name'             => $c->nom,
+                'capacite'         => 0,
+                'price_per_night'  => 0,
+                'category'         => 'Camping',
+                'disponibilite'    => true,
+                'latitude'         => $c->lat  ? (string) $c->lat  : null,
+                'longitude'        => $c->lng  ? (string) $c->lng  : null,
+                'contact_email'    => null,
+                'contact_phone'    => null,
+                'manager_name'     => null,
+                'average_rating'   => null,
+                'review_count'     => 0,
+                'profile' => [
+                    'bio'         => $c->description,
+                    'city'        => null,
+                    'address'     => $c->adresse,
+                    'cover_image' => $c->image ? url('storage/' . $c->image) : null,
+                    'user'        => null,
+                ],
+                'available_services'  => [],
+                'available_equipment' => [],
+                'is_partner'       => false,
+                '_source'          => 'camping',
+            ]);
+
+        return response()->json($partnerResult->concat($nonPartnerResult)->values());
     }
 
     /* ──────────────────────────────────────────────────────────────────
