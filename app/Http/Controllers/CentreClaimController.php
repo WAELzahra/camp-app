@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\CampingCentre;
 use App\Models\CentreClaim;
+use App\Models\Photo;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
@@ -27,8 +28,20 @@ class CentreClaimController extends Controller
                       ->orWhere('adresse', 'like', "%{$q}%")
             )
             ->select('id', 'nom', 'adresse', 'type', 'image', 'lat', 'lng')
+            ->with('coverPhoto')
             ->orderBy('nom')
             ->paginate($perPage);
+
+        // Ensure each centre has an image (fallback to cover photo path)
+        $centres->getCollection()->transform(function ($c) {
+            if (!$c->image && $c->coverPhoto) {
+                $c->image = asset('storage/' . $c->coverPhoto->path_to_img);
+            } elseif ($c->image && !str_starts_with($c->image, 'http')) {
+                $c->image = asset('storage/' . $c->image);
+            }
+            unset($c->coverPhoto);
+            return $c;
+        });
 
         return response()->json([
             'status' => 'success',
@@ -146,6 +159,13 @@ class CentreClaimController extends Controller
 
     /**
      * POST /admin/claims/{id}/approve
+     *
+     * On approval:
+     *  1. Activate the claimant account (is_active = 1)
+     *  2. Sync camping_centre data → profile + profile_centre (non-destructive)
+     *  3. Link camping_centre photos to the user so they appear on their profile
+     *  4. Link camping_centre to the user
+     *  5. Auto-reject other pending claims for the same centre
      */
     public function adminApprove(Request $request, int $id)
     {
@@ -159,8 +179,76 @@ class CentreClaimController extends Controller
             return response()->json(['message' => 'Cette demande a déjà été traitée.'], 422);
         }
 
-        // Lier le centre à l'utilisateur
-        $claim->centre->update(['user_id' => $claim->user_id]);
+        $campingCentre = $claim->centre;
+
+        // ── 1. Activate the claimant account ──────────────────────────────────
+        $claimUser = \App\Models\User::with('profile.profileCentre')->find($claim->user_id);
+        if ($claimUser) {
+            $claimUser->update(['is_active' => 1]);
+        }
+
+        $profile = $claimUser?->profile;
+        $pc      = $profile?->profileCentre;
+
+        // ── 2. Sync camping_centre data → profile + profile_centre ────────────
+        if ($campingCentre) {
+
+            // 2a. Sync the parent Profile (bio, address)
+            if ($profile) {
+                $profileUpdates = [];
+                if ($campingCentre->description && !$profile->bio) {
+                    $profileUpdates['bio'] = $campingCentre->description;
+                }
+                if ($campingCentre->adresse && !$profile->address) {
+                    $profileUpdates['address'] = $campingCentre->adresse;
+                }
+                if (!empty($profileUpdates)) {
+                    $profile->update($profileUpdates);
+                }
+            }
+
+            // 2b. Create or update the ProfileCentre record.
+            // If the user never filled in a ProfileCentre during registration,
+            // we create one now from the camping_centre data.
+            if ($profile && !$pc) {
+                $pc = \App\Models\ProfileCentre::create([
+                    'profile_id'    => $profile->id,
+                    'name'          => $campingCentre->nom        ?? null,
+                    'latitude'      => $campingCentre->lat        ?? null,
+                    'longitude'     => $campingCentre->lng        ?? null,
+                    'disponibilite' => true,
+                ]);
+            } elseif ($pc) {
+                // Record exists — only fill empty fields, never overwrite user data.
+                $pcUpdates = ['disponibilite' => true];
+                if ($campingCentre->nom && !$pc->name) {
+                    $pcUpdates['name'] = $campingCentre->nom;
+                }
+                if ($campingCentre->lat && !$pc->latitude) {
+                    $pcUpdates['latitude'] = $campingCentre->lat;
+                }
+                if ($campingCentre->lng && !$pc->longitude) {
+                    $pcUpdates['longitude'] = $campingCentre->lng;
+                }
+                $pc->update($pcUpdates);
+            }
+        }
+
+        // ── 3. Link camping_centre photos to the user ─────────────────────────
+        // Sets user_id on existing camping_centre photos so they are accessible
+        // through the user's profile gallery (partner-centre display).
+        if ($claimUser) {
+            Photo::where('camping_centre_id', $campingCentre->id)
+                ->whereNull('user_id')
+                ->update(['user_id' => $claimUser->id]);
+        }
+
+        // ── 4. Link camping_centre to the user ────────────────────────────────
+        $campingCentre->update([
+            'user_id'           => $claim->user_id,
+            'profile_centre_id' => $pc?->id,
+            'validation_status' => 'approved',
+        ]);
 
         $claim->update([
             'status'      => 'approved',
@@ -169,7 +257,7 @@ class CentreClaimController extends Controller
             'reviewed_at' => now(),
         ]);
 
-        // Rejeter automatiquement les autres demandes pour ce même centre
+        // ── 5. Auto-reject other pending claims for the same centre ───────────
         CentreClaim::where('centre_id', $claim->centre_id)
             ->where('id', '!=', $claim->id)
             ->where('status', 'pending')

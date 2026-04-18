@@ -178,7 +178,8 @@ class CenterServiceApiController extends Controller
             'availableServices',
             'availableEquipment',
         ])->available()
-          ->whereNotIn('id', $disabledProfileIds);
+          ->whereNotIn('id', $disabledProfileIds)
+          ->whereHas('profile.user', fn($q) => $q->where('is_active', 1));
 
         if ($request->has('category')) {
             $query->where('category', $request->category);
@@ -235,9 +236,11 @@ class CenterServiceApiController extends Controller
             );
         })->values();
 
-        // Non-partner centres: camping_centres with no user, admin status=true
+        // Non-partner centres: camping_centres with no user AND not linked to a profile_centre
         $nonPartnerResult = \App\Models\CampingCentre::whereNull('user_id')
+            ->whereNull('profile_centre_id')
             ->where('status', true)
+            ->with('coverPhoto')
             ->get()
             ->map(fn($c) => [
                 'id'               => $c->id,
@@ -257,7 +260,9 @@ class CenterServiceApiController extends Controller
                     'bio'         => $c->description,
                     'city'        => null,
                     'address'     => $c->adresse,
-                    'cover_image' => $c->image ? url('storage/' . $c->image) : null,
+                    'cover_image' => $c->image
+                        ? url('storage/' . $c->image)
+                        : ($c->coverPhoto ? url('storage/' . $c->coverPhoto->path_to_img) : null),
                     'user'        => null,
                 ],
                 'available_services'  => [],
@@ -280,7 +285,10 @@ class CenterServiceApiController extends Controller
             'availableEquipment',
         ])->findOrFail($centerId);
 
-        return response()->json($this->formatCenter($center, null, null, true));
+        return response()->json(array_merge(
+            $this->formatCenter($center, null, null, true),
+            ['is_partner' => true, '_source' => 'partner']
+        ));
     }
 
     /* ──────────────────────────────────────────────────────────────────

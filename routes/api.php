@@ -387,22 +387,24 @@ Route::middleware('auth:sanctum')->group(function () {
         
         Route::get('/service-categories', [ProfileController::class, 'getServiceCategories']);
         
-        Route::prefix('center/{centerId}')->where(['centerId' => '[0-9]+'])->group(function () {
-            Route::put('/', [ProfileController::class, 'updateCenter']);
-            
-            Route::prefix('services')->group(function () {
-                Route::get('/', [ProfileController::class, 'getCenterServices']);
-                Route::post('/', [ProfileController::class, 'updateCenterService']);
-                Route::put('/{serviceId}', [ProfileController::class, 'updateCenterService'])->where(['serviceId' => '[0-9]+']);
-                Route::delete('/{serviceId}', [ProfileController::class, 'deleteCenterService'])->where(['serviceId' => '[0-9]+']);
-                Route::post('/custom', [ProfileController::class, 'addCustomService']);
+        Route::prefix('center/{centerId}')->where(['centerId' => '[0-9]+'])
+            ->middleware('centre.not.pending')
+            ->group(function () {
+                Route::put('/', [ProfileController::class, 'updateCenter']);
+
+                Route::prefix('services')->group(function () {
+                    Route::get('/', [ProfileController::class, 'getCenterServices']);
+                    Route::post('/', [ProfileController::class, 'updateCenterService']);
+                    Route::put('/{serviceId}', [ProfileController::class, 'updateCenterService'])->where(['serviceId' => '[0-9]+']);
+                    Route::delete('/{serviceId}', [ProfileController::class, 'deleteCenterService'])->where(['serviceId' => '[0-9]+']);
+                    Route::post('/custom', [ProfileController::class, 'addCustomService']);
+                });
+
+                Route::prefix('equipment')->group(function () {
+                    Route::get('/', [ProfileController::class, 'getCenterEquipment']);
+                    Route::put('/', [ProfileController::class, 'updateCenterEquipment']);
+                });
             });
-            
-            Route::prefix('equipment')->group(function () {
-                Route::get('/', [ProfileController::class, 'getCenterEquipment']);
-                Route::put('/', [ProfileController::class, 'updateCenterEquipment']);
-            });
-        });
         
         Route::get('/{type}/{userId}', [ProfileController::class, 'getProfileDetails'])
             ->where('type', 'guide|centre|groupe|fournisseur')
@@ -1025,6 +1027,9 @@ Route::prefix('zones')->group(function () {
     Route::patch('/{id}/validate',      [CampingZoneController::class, 'validateZone']);           // PATCH  /admin/zones/{id}/validate
     Route::patch('/{id}/toggle-status', [CampingZoneController::class, 'toggleZoneStatus']);       // PATCH  /admin/zones/{id}/toggle-status
     Route::post('/{id}/adjust-polygon', [CampingZoneController::class, 'adjustPolygonWithRoutes']); // POST  /admin/zones/{id}/adjust-polygon
+    Route::post('/{id}/photos',                      [CampingZoneController::class, 'addPhotos']);     // POST   /admin/zones/{id}/photos
+    Route::delete('/{id}/photos/{photoId}',          [CampingZoneController::class, 'deletePhoto']);   // DELETE /admin/zones/{id}/photos/{photoId}
+    Route::patch('/{id}/photos/{photoId}/cover',     [CampingZoneController::class, 'setCoverPhoto']); // PATCH  /admin/zones/{id}/photos/{photoId}/cover
 
 });
     

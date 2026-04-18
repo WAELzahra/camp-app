@@ -26,10 +26,12 @@ class CampingCentreController extends Controller
      */
     public function index()
     {
-        // ── Auto-sync registered centre users that have no camping_centre yet ──
+        // ── Auto-sync ACTIVE registered centre users that have no camping_centre yet ──
+        // Only sync is_active=1 users — inactive accounts are not yet approved partners.
         $linkedUserIds = CampingCentre::whereNotNull('user_id')->pluck('user_id');
 
         User::where('role_id', 3)
+            ->where('is_active', 1)
             ->whereNotIn('id', $linkedUserIds)
             ->with(['profile.profileCentre'])
             ->get()
@@ -41,7 +43,7 @@ class CampingCentreController extends Controller
                     'adresse'           => $user->adresse ?? $user->profile?->address,
                     'lat'               => (float) ($pc?->latitude  ?? 0),
                     'lng'               => (float) ($pc?->longitude ?? 0),
-                    'status'            => $pc ? (bool) $pc->disponibilite : true,
+                    'status'            => $pc ? (bool) $pc->disponibilite : false,
                     'validation_status' => 'approved',
                     'user_id'           => $user->id,
                     'profile_centre_id' => $pc?->id,
@@ -49,10 +51,12 @@ class CampingCentreController extends Controller
             });
 
         // ── Return all centres with is_partner flag ──────────────────────────
+        // A centre is a partner ONLY when it has an associated user AND that user is active.
         $centres = CampingCentre::with(['zones', 'user', 'profileCentre'])
             ->get()
             ->map(function (CampingCentre $c) {
-                $c->is_partner = ! is_null($c->user_id) || ! is_null($c->profile_centre_id);
+                $c->is_partner = (! is_null($c->user_id) || ! is_null($c->profile_centre_id))
+                                 && ($c->user?->is_active == 1);
                 return $c;
             });
 
@@ -130,14 +134,15 @@ class CampingCentreController extends Controller
 
     // Validation des données reçues
     $data = $request->validate([
-        'nom' => 'sometimes|string|max:255',
-        'adresse' => 'sometimes|string|max:255',
-        'lat' => 'sometimes|numeric',
-        'lng' => 'sometimes|numeric',
-        'type' => 'sometimes|string',
-        'image' => 'nullable|image|max:2048',
-        'description' => 'nullable|string',
-        'status' => 'sometimes|boolean',
+        'nom'               => 'sometimes|string|max:255',
+        'adresse'           => 'sometimes|string|max:255',
+        'lat'               => 'sometimes|numeric',
+        'lng'               => 'sometimes|numeric',
+        'type'              => 'sometimes|string',
+        'image'             => 'nullable|image|max:2048',
+        'description'       => 'nullable|string',
+        'status'            => 'sometimes|boolean',
+        'validation_status' => 'nullable|in:pending,approved,rejected',
     ]);
 
     // Gestion de l'image si upload
@@ -212,9 +217,18 @@ class CampingCentreController extends Controller
             'photos',               // photos du centre
         ])->findOrFail($id);
 
+        $centreData = $centre->toArray();
+        $centreData['photos'] = $centre->photos->map(fn($p) => [
+            'id'       => $p->id,
+            'url'      => asset('storage/' . $p->path_to_img),
+            'path'     => $p->path_to_img,
+            'is_cover' => (bool) $p->is_cover,
+            'order'    => $p->order,
+        ])->values()->toArray();
+
         return response()->json([
             'status' => 'success',
-            'centre' => $centre
+            'centre' => $centreData,
         ]);
     }
 
@@ -384,6 +398,7 @@ class CampingCentreController extends Controller
         $centre     = CampingCentre::findOrFail($id);
         $coverIndex = (int) $request->input('cover_index', -1);
         $offset     = $centre->photos()->count();
+        $hasImage   = !is_null($centre->image);
 
         foreach ($request->file('photos') as $index => $file) {
             $path    = $file->store('centres/photos', 'public');
@@ -398,6 +413,16 @@ class CampingCentreController extends Controller
 
             if ($isCover) {
                 $centre->update(['image' => $path]);
+                $hasImage = true;
+            }
+        }
+
+        // Auto-promote first photo as cover if the centre still has no image
+        if (!$hasImage) {
+            $firstPhoto = $centre->photos()->orderBy('order')->first();
+            if ($firstPhoto) {
+                $firstPhoto->update(['is_cover' => true]);
+                $centre->update(['image' => $firstPhoto->path_to_img]);
             }
         }
 

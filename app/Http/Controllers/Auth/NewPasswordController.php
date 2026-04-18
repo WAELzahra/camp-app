@@ -23,21 +23,23 @@ class NewPasswordController extends Controller
     public function sendResetEmail(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'email' => 'required|email'
+            'email' => 'required|email|exists:users,email'
+        ], [
+            'email.exists' => 'No account found with this email address.'
         ]);
-        
+
         if ($validator->fails()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Please provide a valid email address',
+                'message' => $validator->errors()->first('email'),
                 'errors' => $validator->errors()
             ], 422);
         }
-        
+
         try {
             $result = $this->passwordResetService->createResetRequest($request->email);
-            return response()->json($result);
-            
+            return response()->json($result, $result['success'] ? 200 : 422);
+
         } catch (\Exception $e) {
             Log::error('Failed to send reset email: ' . $e->getMessage());
             return response()->json([

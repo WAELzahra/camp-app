@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\CampingZone;
 use App\Models\CampingCentre;
+use App\Models\Photo;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Schema;
 
@@ -19,6 +20,22 @@ class CampingZoneController extends Controller
         if (!$user) return false;
         if (!$user->relationLoaded('role')) $user->load('role');
         return strtolower($user->role->name ?? '') === 'admin';
+    }
+
+    // ─── zoneCoverUrl ─────────────────────────────────────────────────────────
+
+    private function zoneCoverUrl(CampingZone $zone): ?string
+    {
+        // Prefer the cover photo from the photos table
+        if ($zone->relationLoaded('photos')) {
+            $cover = collect($zone->photos)->firstWhere('is_cover', true)
+                  ?? collect($zone->photos)->first();
+            if ($cover && $cover->path_to_img) {
+                $p = $cover->path_to_img;
+                return filter_var($p, FILTER_VALIDATE_URL) ? $p : asset('storage/' . $p);
+            }
+        }
+        return null;
     }
 
     // ─── format ───────────────────────────────────────────────────────────────
@@ -87,7 +104,7 @@ class CampingZoneController extends Controller
             'centre_id'         => $zone->centre_id ? (int) $zone->centre_id : null,
             'added_by'          => $zone->added_by ? (int) $zone->added_by : null,
             'source'            => $zone->source ?? null,
-            'image'             => $zone->image ? asset('storage/' . $zone->image) : null,
+            'image'             => $this->zoneCoverUrl($zone),
             'created_at'        => $zone->created_at ? $zone->created_at->toISOString() : null,
             'updated_at'        => $zone->updated_at ? $zone->updated_at->toISOString() : null,
 
@@ -315,13 +332,22 @@ class CampingZoneController extends Controller
             'closure_reason'    => 'nullable|string',
             'closure_start'     => 'nullable|date',
             'closure_end'       => 'nullable|date|after_or_equal:closure_start',
-            'image'             => 'nullable|image|max:2048',
+            'image'             => 'nullable|image|max:4096',
         ]);
 
         if ($request->hasFile('image')) {
-            if ($zone->image) Storage::disk('public')->delete($zone->image);
-            $data['image'] = $request->file('image')->store('zones', 'public');
+            $path = $request->file('image')->store('zones/photos', 'public');
+            // Set all existing photos as non-cover
+            $zone->photos()->update(['is_cover' => false]);
+            // Create a new cover photo in the photos table
+            Photo::create([
+                'path_to_img'     => $path,
+                'camping_zone_id' => $zone->id,
+                'is_cover'        => true,
+                'order'           => $zone->photos()->count(),
+            ]);
         }
+        unset($data['image']);
 
         if (!$isAdmin) {
             $data['status']    = false;
@@ -329,7 +355,7 @@ class CampingZoneController extends Controller
         }
 
         $zone->update($data);
-        $zone->load('centre');
+        $zone->load($this->relations());
 
         return response()->json([
             'success' => true,
@@ -361,7 +387,10 @@ class CampingZoneController extends Controller
             return response()->json(['success' => true, 'message' => 'Zone désactivée']);
         }
 
-        if ($zone->image) Storage::disk('public')->delete($zone->image);
+        $zone->load('photos');
+        foreach ($zone->photos as $photo) {
+            Storage::disk('public')->delete($photo->path_to_img);
+        }
         $zone->delete();
 
         return response()->json(['success' => true, 'message' => 'Zone supprimée définitivement']);
@@ -516,5 +545,89 @@ class CampingZoneController extends Controller
             'message' => 'Non implémenté',
             'data'    => $this->format($zone),
         ], 501);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // POST /admin/zones/{id}/photos  — upload one or more photos for a zone
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    public function addPhotos(Request $request, $id)
+    {
+        $zone = CampingZone::findOrFail($id);
+
+        $request->validate([
+            'photos'      => 'required|array',
+            'photos.*'    => 'file|image|max:4096',
+            'cover_index' => 'nullable|integer',
+        ]);
+
+        $coverIndex = (int) $request->input('cover_index', -1);
+        $hasPhotos  = $zone->photos()->exists();
+        $offset     = $zone->photos()->count();
+
+        foreach ($request->file('photos') as $index => $file) {
+            $path    = $file->store('zones/photos', 'public');
+            $isCover = ($index === $coverIndex);
+
+            Photo::create([
+                'path_to_img'     => $path,
+                'camping_zone_id' => $zone->id,
+                'is_cover'        => $isCover,
+                'order'           => $offset + $index,
+            ]);
+        }
+
+        // Auto-promote first photo as cover if zone has no cover yet
+        if ($coverIndex < 0 && !$zone->photos()->where('is_cover', true)->exists()) {
+            $first = $zone->photos()->orderBy('order')->first();
+            if ($first) $first->update(['is_cover' => true]);
+        }
+
+        $photos = $zone->fresh('photos')->photos->map(fn($p) => [
+            'id'       => $p->id,
+            'url'      => asset('storage/' . $p->path_to_img),
+            'path'     => $p->path_to_img,
+            'is_cover' => (bool) $p->is_cover,
+            'order'    => $p->order,
+        ]);
+
+        return response()->json(['status' => 'success', 'photos' => $photos]);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // DELETE /admin/zones/{id}/photos/{photoId}
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    public function deletePhoto($id, $photoId)
+    {
+        $zone  = CampingZone::findOrFail($id);
+        $photo = Photo::where('camping_zone_id', $id)->findOrFail($photoId);
+
+        Storage::disk('public')->delete($photo->path_to_img);
+        $photo->delete();
+
+        // If we deleted the cover, promote the next photo
+        if ($photo->is_cover) {
+            $next = $zone->photos()->orderBy('order')->first();
+            if ($next) $next->update(['is_cover' => true]);
+        }
+
+        return response()->json(['status' => 'success', 'message' => 'Photo supprimée.']);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // PATCH /admin/zones/{id}/photos/{photoId}/cover
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    public function setCoverPhoto($id, $photoId)
+    {
+        $zone = CampingZone::findOrFail($id);
+
+        Photo::where('camping_zone_id', $id)->update(['is_cover' => false]);
+
+        $photo = Photo::where('camping_zone_id', $id)->findOrFail($photoId);
+        $photo->update(['is_cover' => true]);
+
+        return response()->json(['status' => 'success', 'message' => 'Photo de couverture mise à jour.']);
     }
 }

@@ -41,12 +41,16 @@ class CampingCentresController extends Controller
             $userId = $centre->profile?->user_id;
             $photos = [];
             if ($userId) {
-                $photos = Photo::where('user_id', $userId)
-                    ->limit(5)
-                    ->pluck('path_to_img')
-                    ->map(fn($p) => asset('storage/' . $p))
-                    ->values()
-                    ->toArray();
+                // Always fetch by camping_centre_id — user_id is only metadata (who uploaded).
+                $campingCentreId = \App\Models\CampingCentre::where('user_id', $userId)->value('id');
+                if ($campingCentreId) {
+                    $photos = Photo::where('camping_centre_id', $campingCentreId)
+                        ->limit(5)
+                        ->pluck('path_to_img')
+                        ->map(fn($p) => asset('storage/' . $p))
+                        ->values()
+                        ->toArray();
+                }
             }
 
             return [
@@ -71,17 +75,28 @@ class CampingCentresController extends Controller
      */
     public function showCentre($id)
     {
-        $centre = CampingCentre::with(['zones', 'profileCentre', 'user.profile'])->findOrFail($id);
+        $centre = CampingCentre::with(['zones', 'profileCentre', 'user.profile', 'photos'])->findOrFail($id);
 
-        $pc      = $centre->profileCentre;
-        $isPartner = ! is_null($centre->user_id) || ! is_null($centre->profile_centre_id);
+        $pc        = $centre->profileCentre;
+        $isPartner = (! is_null($centre->user_id) || ! is_null($centre->profile_centre_id))
+                     && ($centre->user?->is_active == 1);
 
-        $coverImage = null;
-        if ($centre->image) {
-            $coverImage = filter_var($centre->image, FILTER_VALIDATE_URL)
-                ? $centre->image
-                : url('storage/' . $centre->image);
+        $buildUrl = fn(?string $path): ?string =>
+            $path ? (filter_var($path, FILTER_VALIDATE_URL) ? $path : url('storage/' . $path)) : null;
+
+        $coverImage = $buildUrl($centre->image);
+
+        // Fallback: use cover photo from photos table if no image set
+        if (!$coverImage) {
+            $cover = $centre->photos->firstWhere('is_cover', true) ?? $centre->photos->first();
+            $coverImage = $buildUrl($cover?->path_to_img);
         }
+
+        $photos = $centre->photos->sortByDesc('is_cover')->values()->map(fn($p) => [
+            'id'       => $p->id,
+            'url'      => $buildUrl($p->path_to_img),
+            'is_cover' => (bool) $p->is_cover,
+        ])->filter(fn($p) => $p['url'])->values();
 
         return response()->json([
             'status' => 'success',
@@ -114,6 +129,7 @@ class CampingCentresController extends Controller
                 ],
                 'available_services'  => [],
                 'available_equipment' => [],
+                'photos' => $photos,
                 'zones' => $centre->zones->map(fn($z) => [
                     'id'          => $z->id,
                     'nom'         => $z->nom,

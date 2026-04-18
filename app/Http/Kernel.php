@@ -83,7 +83,8 @@ class Kernel extends HttpKernel
         'fournisseur' => \App\Http\Middleware\UserIsFournisseur::class,
         'campeur_or_centre' => \App\Http\Middleware\CheckCampeurOrCentreRole::class,
         'group' => \App\Http\Middleware\UserIsGroup::class,
-        'supplier_or_camper' => \App\Http\Middleware\SupplierOrCamper::class,
+        'supplier_or_camper'        => \App\Http\Middleware\SupplierOrCamper::class,
+        'centre.not.pending'        => \App\Http\Middleware\EnsureCentreNotPendingClaim::class,
 
     ];
 }

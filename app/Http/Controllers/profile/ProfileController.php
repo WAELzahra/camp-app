@@ -18,11 +18,60 @@ use Illuminate\Support\Facades\Validator;
 use App\Models\Photo;
 use App\Models\User;
 use App\Http\Controllers\Controller;
+use App\Models\CentreClaim;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 
 class ProfileController extends Controller
 {
+    /**
+     * Returns all camping_centre IDs linked to a user.
+     * A user may legitimately have more than one (auto-sync + approved claim).
+     * Always prefer the approved-claim centre first.
+     */
+    private function centreIdsForUser(\App\Models\User $user): \Illuminate\Support\Collection
+    {
+        return \App\Models\CampingCentre::where('user_id', $user->id)->pluck('id');
+    }
+
+    /**
+     * Returns the single "primary" camping_centre_id for new photo uploads.
+     * Priority: approved-claim centre → any linked centre → null.
+     */
+    private function primaryCentreIdForUser(\App\Models\User $user): ?int
+    {
+        // Prefer the centre linked via an approved claim
+        $claimCentreId = \App\Models\CentreClaim::where('user_id', $user->id)
+            ->where('status', 'approved')
+            ->value('centre_id');
+
+        if ($claimCentreId) {
+            return (int) $claimCentreId;
+        }
+
+        // Fallback: any centre linked to this user
+        return \App\Models\CampingCentre::where('user_id', $user->id)->value('id');
+    }
+
+    /**
+     * Returns a 403 response if the authenticated centre user has a pending claim.
+     * Call this at the top of any photo write method.
+     */
+    private function denyIfPendingClaim(): ?\Illuminate\Http\JsonResponse
+    {
+        $user = Auth::user();
+        if ($user && $user->role_id === 3) {
+            if (CentreClaim::where('user_id', $user->id)->where('status', 'pending')->exists()) {
+                return response()->json([
+                    'success'      => false,
+                    'claim_locked' => true,
+                    'message'      => 'Your claim is under review. Profile editing is locked until the admin approves or rejects your request.',
+                ], 403);
+            }
+        }
+        return null;
+    }
+
     /**
      * Update center general settings
      */
@@ -201,20 +250,37 @@ class ProfileController extends Controller
         }
 
         // Profile gallery photos
-        $galleryAlbum = \App\Models\Album::with(['photos' => function ($q) {
-            $q->orderBy('order', 'asc')->orderBy('created_at', 'desc');
-        }])
-            ->where('user_id', $user->id)
-            ->where('titre', 'Profile Gallery')
-            ->first();
+        if ($user->role_id === 3) {
+            // Centre users: return all photos from ALL linked centres
+            $centreIds = $this->centreIdsForUser($user);
+            if ($centreIds->isNotEmpty()) {
+                $data['photos'] = \App\Models\Photo::whereIn('camping_centre_id', $centreIds)
+                    ->orderBy('order', 'asc')
+                    ->orderBy('created_at', 'desc')
+                    ->get()
+                    ->map(fn($p) => [
+                        'id'       => $p->id,
+                        'url'      => asset('storage/' . $p->path_to_img),
+                        'is_cover' => (bool) $p->is_cover,
+                        'order'    => $p->order,
+                    ])->values();
+            }
+        } else {
+            $galleryAlbum = \App\Models\Album::with(['photos' => function ($q) {
+                $q->orderBy('order', 'asc')->orderBy('created_at', 'desc');
+            }])
+                ->where('user_id', $user->id)
+                ->where('titre', 'Profile Gallery')
+                ->first();
 
-        if ($galleryAlbum) {
-            $data['photos'] = $galleryAlbum->photos->map(fn($p) => [
-                'id'       => $p->id,
-                'url'      => asset('storage/' . $p->path_to_img),
-                'is_cover' => (bool) $p->is_cover,
-                'order'    => $p->order,
-            ])->values();
+            if ($galleryAlbum) {
+                $data['photos'] = $galleryAlbum->photos->map(fn($p) => [
+                    'id'       => $p->id,
+                    'url'      => asset('storage/' . $p->path_to_img),
+                    'is_cover' => (bool) $p->is_cover,
+                    'order'    => $p->order,
+                ])->values();
+            }
         }
 
         // Past events (confirmed/attended)
@@ -404,6 +470,19 @@ class ProfileController extends Controller
                     break;
 
                 case 'centre':
+                    // Block profile centre edits while a claim is pending approval
+                    $hasPendingClaim = \App\Models\CentreClaim::where('user_id', $user->id)
+                        ->where('status', 'pending')
+                        ->exists();
+
+                    if ($hasPendingClaim) {
+                        DB::rollBack();
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'Your centre profile is locked while your claim request is pending admin approval.',
+                        ], 403);
+                    }
+
                     $centreData = $request->only([
                         'name',
                         'contact_email',
@@ -710,8 +789,10 @@ class ProfileController extends Controller
 
     public function storeOrUpdateProfilePhotos(Request $request)
     {
+        if ($deny = $this->denyIfPendingClaim()) return $deny;
+
         $user = Auth::user();
-        
+
         $request->validate([
             'photos' => 'required|array|min:1',
             'photos.*' => 'required|image|mimes:jpeg,png,jpg,gif,webp|max:25600',
@@ -719,12 +800,18 @@ class ProfileController extends Controller
             'album_description' => 'nullable|string',
         ]);
 
+        // For centre users, stamp the primary (approved-claim) centre on every photo.
+        $campingCentreId = null;
+        if ($user->role_id === 3) {
+            $campingCentreId = $this->primaryCentreIdForUser($user);
+        }
+
         DB::beginTransaction();
-        
+
         try {
             $albumTitle = $request->input('album_title', 'Profile Gallery');
             $albumDescription = $request->input('album_description', null);
-            
+
             $album = Album::firstOrCreate(
                 [
                     'user_id' => $user->id,
@@ -740,11 +827,11 @@ class ProfileController extends Controller
                 'titre' => $albumTitle,
                 'updated_at' => now(),
             ];
-            
+
             if ($request->has('album_description')) {
                 $updateData['description'] = $albumDescription;
             }
-            
+
             $album->update($updateData);
 
             $uploadedPhotos = [];
@@ -754,17 +841,18 @@ class ProfileController extends Controller
                 $originalName = pathinfo($photo->getClientOriginalName(), PATHINFO_FILENAME);
                 $extension = $photo->getClientOriginalExtension();
                 $filename = $originalName . '_' . time() . '_' . uniqid() . '.' . $extension;
-                
+
                 $path = $photo->storeAs('profile_photos', $filename, 'public');
-                
+
                 $photoRecord = Photo::create([
-                    'path_to_img' => $path,
-                    'user_id' => $user->id,
-                    'album_id' => $album->id,
-                    'is_cover' => ($index === 0 && $album->photos()->where('is_cover', 1)->count() === 0) ? 1 : 0,
-                    'order' => ++$order,
-                    'created_at' => now(),
-                    'updated_at' => now(),
+                    'path_to_img'       => $path,
+                    'user_id'           => $user->id,
+                    'album_id'          => $album->id,
+                    'camping_centre_id' => $campingCentreId,
+                    'is_cover'          => ($index === 0 && $album->photos()->where('is_cover', 1)->count() === 0) ? 1 : 0,
+                    'order'             => ++$order,
+                    'created_at'        => now(),
+                    'updated_at'        => now(),
                 ]);
 
                 $uploadedPhotos[] = [
@@ -815,16 +903,53 @@ class ProfileController extends Controller
     {
         try {
             $user = Auth::user();
-            
+
+            // ── Centre users: fetch ALL photos linked to their camping centre ──────
+            // This includes admin-uploaded photos (user_id=NULL) and partner-uploaded
+            // photos (user_id=owner). The authoritative key is camping_centre_id.
+            if ($user->role_id === 3) {
+                $centreIds = $this->centreIdsForUser($user);
+
+                $photos = $centreIds->isNotEmpty()
+                    ? Photo::whereIn('camping_centre_id', $centreIds)
+                        ->orderBy('order', 'asc')
+                        ->orderBy('created_at', 'desc')
+                        ->get()
+                    : collect();
+
+                $formattedPhotos = $photos->map(fn($p) => [
+                    'id'          => $p->id,
+                    'url'         => asset('storage/' . $p->path_to_img),
+                    'path'        => $p->path_to_img,
+                    'is_cover'    => (bool) $p->is_cover,
+                    'order'       => $p->order,
+                    'created_at'  => $p->created_at?->format('Y-m-d H:i:s'),
+                    'uploaded_by' => $p->user_id ? 'partner' : 'admin',
+                ]);
+
+                // Load existing album for metadata (title/description) if present
+                $album = Album::where('user_id', $user->id)
+                    ->where('titre', 'Profile Gallery')
+                    ->first();
+
+                return response()->json([
+                    'success' => true,
+                    'album'   => $album ? [
+                        'id'          => $album->id,
+                        'title'       => $album->titre,
+                        'description' => $album->description,
+                        'cover_image' => $album->path_to_img ? asset('storage/' . $album->path_to_img) : null,
+                        'photo_count' => $photos->count(),
+                        'created_at'  => $album->created_at?->format('Y-m-d H:i:s'),
+                    ] : null,
+                    'photos' => $formattedPhotos->values()->all(),
+                ]);
+            }
+
+            // ── All other roles: original album-based logic ───────────────────────
             $album = Album::firstOrCreate(
-                [
-                    'user_id' => $user->id,
-                    'titre' => 'Profile Gallery',
-                ],
-                [
-                    'titre' => 'Profile Gallery',
-                    'description' => 'User profile gallery images',
-                ]
+                ['user_id' => $user->id, 'titre' => 'Profile Gallery'],
+                ['titre' => 'Profile Gallery', 'description' => 'User profile gallery images']
             );
 
             $photos = Photo::where('user_id', $user->id)
@@ -833,63 +958,113 @@ class ProfileController extends Controller
                 ->orderBy('created_at', 'desc')
                 ->get();
 
-            $formattedPhotos = $photos->map(function($photo) {
-                return [
-                    'id' => $photo->id,
-                    'url' => asset('storage/' . $photo->path_to_img),
-                    'path' => $photo->path_to_img,
-                    'is_cover' => (bool)$photo->is_cover,
-                    'order' => $photo->order,
-                    'created_at' => $photo->created_at ? $photo->created_at->format('Y-m-d H:i:s') : null,
-                ];
-            });
+            $formattedPhotos = $photos->map(fn($p) => [
+                'id'         => $p->id,
+                'url'        => asset('storage/' . $p->path_to_img),
+                'path'       => $p->path_to_img,
+                'is_cover'   => (bool) $p->is_cover,
+                'order'      => $p->order,
+                'created_at' => $p->created_at?->format('Y-m-d H:i:s'),
+            ]);
 
             return response()->json([
                 'success' => true,
-                'album' => [
-                    'id' => $album->id,
-                    'title' => $album->titre,
+                'album'   => [
+                    'id'          => $album->id,
+                    'title'       => $album->titre,
                     'description' => $album->description,
                     'cover_image' => $album->path_to_img ? asset('storage/' . $album->path_to_img) : null,
                     'photo_count' => $photos->count(),
-                    'created_at' => $album->created_at ? $album->created_at->format('Y-m-d H:i:s') : null,
+                    'created_at'  => $album->created_at?->format('Y-m-d H:i:s'),
                 ],
                 'photos' => $formattedPhotos->values()->all(),
             ]);
-            
+
         } catch (\Exception $e) {
             \Log::error('Error in getProfilePhotos: ' . $e->getMessage());
-            
+
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch profile photos',
-                'error' => config('app.debug') ? $e->getMessage() : null,
+                'error'   => config('app.debug') ? $e->getMessage() : null,
             ], 500);
         }
     }
 
     public function deletePhoto($photoId)
     {
+        if ($deny = $this->denyIfPendingClaim()) return $deny;
+
         $user = Auth::user();
-        
+
+        // ── Centre users: scope deletion by camping_centre_id ─────────────────
+        if ($user->role_id === 3) {
+            $centreIds = $this->centreIdsForUser($user);
+
+            if ($centreIds->isEmpty()) {
+                return response()->json(['success' => false, 'message' => 'No linked centre found'], 404);
+            }
+
+            $photo = Photo::where('id', $photoId)
+                ->whereIn('camping_centre_id', $centreIds)
+                ->firstOrFail();
+
+            // Use the photo's own centre for any cascading updates
+            $campingCentreId = $photo->camping_centre_id;
+
+            DB::beginTransaction();
+            try {
+                if (Storage::disk('public')->exists($photo->path_to_img)) {
+                    Storage::disk('public')->delete($photo->path_to_img);
+                }
+
+                if ($photo->is_cover) {
+                    $nextCover = Photo::where('camping_centre_id', $campingCentreId)
+                        ->where('id', '!=', $photo->id)
+                        ->orderBy('order', 'asc')
+                        ->first();
+
+                    \App\Models\CampingCentre::where('id', $campingCentreId)
+                        ->update(['image' => $nextCover?->path_to_img]);
+
+                    if ($nextCover) {
+                        $nextCover->update(['is_cover' => 1]);
+                    }
+
+                    // Sync the album cover thumbnail if the user has a profile album
+                    $album = Album::where('user_id', $user->id)->where('titre', 'Profile Gallery')->first();
+                    if ($album && $album->path_to_img === $photo->path_to_img) {
+                        $album->update(['path_to_img' => $nextCover?->path_to_img]);
+                    }
+                }
+
+                $photo->delete();
+                DB::commit();
+
+                return response()->json(['success' => true, 'message' => 'Photo deleted successfully']);
+
+            } catch (\Exception $e) {
+                DB::rollBack();
+                \Log::error('Photo deletion error (centre): ' . $e->getMessage());
+                return response()->json(['success' => false, 'message' => 'Failed to delete photo', 'error' => $e->getMessage()], 500);
+            }
+        }
+
+        // ── All other roles: original album-based logic ───────────────────────
         $album = Album::where('user_id', $user->id)
             ->where('titre', 'Profile Gallery')
             ->first();
-        
+
         if (!$album) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Profile album not found',
-            ], 404);
+            return response()->json(['success' => false, 'message' => 'Profile album not found'], 404);
         }
-        
+
         $photo = Photo::where('id', $photoId)
             ->where('user_id', $user->id)
             ->where('album_id', $album->id)
             ->firstOrFail();
 
         DB::beginTransaction();
-        
         try {
             if (Storage::disk('public')->exists($photo->path_to_img)) {
                 Storage::disk('public')->delete($photo->path_to_img);
@@ -901,7 +1076,7 @@ class ProfileController extends Controller
                     ->where('id', '!=', $photo->id)
                     ->orderBy('order', 'asc')
                     ->first();
-                
+
                 if ($nextCover) {
                     $nextCover->update(['is_cover' => 1]);
                     $album->update(['path_to_img' => $nextCover->path_to_img]);
@@ -911,49 +1086,80 @@ class ProfileController extends Controller
             }
 
             $photo->delete();
-
             DB::commit();
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Photo deleted successfully',
-            ]);
+            return response()->json(['success' => true, 'message' => 'Photo deleted successfully']);
 
         } catch (\Exception $e) {
             DB::rollBack();
-            
             \Log::error('Photo deletion error: ' . $e->getMessage());
-
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to delete photo',
-                'error' => $e->getMessage(),
-            ], 500);
+            return response()->json(['success' => false, 'message' => 'Failed to delete photo', 'error' => $e->getMessage()], 500);
         }
     }
 
     public function setCoverPhoto($photoId)
     {
+        if ($deny = $this->denyIfPendingClaim()) return $deny;
+
         $user = Auth::user();
-        
+
+        // ── Centre users: scope cover change by camping_centre_id ─────────────
+        if ($user->role_id === 3) {
+            $centreIds = $this->centreIdsForUser($user);
+
+            if ($centreIds->isEmpty()) {
+                return response()->json(['success' => false, 'message' => 'No linked centre found'], 404);
+            }
+
+            $photo = Photo::where('id', $photoId)
+                ->whereIn('camping_centre_id', $centreIds)
+                ->firstOrFail();
+
+            // Operate on the specific centre that owns this photo
+            $campingCentreId = $photo->camping_centre_id;
+
+            DB::beginTransaction();
+            try {
+                // Unset all covers for this centre
+                Photo::where('camping_centre_id', $campingCentreId)->update(['is_cover' => 0]);
+
+                $photo->update(['is_cover' => 1]);
+
+                // Keep camping_centre.image in sync
+                \App\Models\CampingCentre::where('id', $campingCentreId)
+                    ->update(['image' => $photo->path_to_img]);
+
+                // Sync profile album thumbnail if present
+                $album = Album::where('user_id', $user->id)->where('titre', 'Profile Gallery')->first();
+                if ($album) {
+                    $album->update(['path_to_img' => $photo->path_to_img]);
+                }
+
+                DB::commit();
+                return response()->json(['success' => true, 'message' => 'Cover photo updated successfully']);
+
+            } catch (\Exception $e) {
+                DB::rollBack();
+                \Log::error('Cover photo update error (centre): ' . $e->getMessage());
+                return response()->json(['success' => false, 'message' => 'Failed to update cover photo', 'error' => $e->getMessage()], 500);
+            }
+        }
+
+        // ── All other roles: original album-based logic ───────────────────────
         $album = Album::where('user_id', $user->id)
             ->where('titre', 'Profile Gallery')
             ->first();
-        
+
         if (!$album) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Profile album not found',
-            ], 404);
+            return response()->json(['success' => false, 'message' => 'Profile album not found'], 404);
         }
-        
+
         $photo = Photo::where('id', $photoId)
             ->where('user_id', $user->id)
             ->where('album_id', $album->id)
             ->firstOrFail();
 
         DB::beginTransaction();
-        
         try {
             Photo::where('album_id', $album->id)
                 ->where('user_id', $user->id)
@@ -961,28 +1167,15 @@ class ProfileController extends Controller
 
             $photo->update(['is_cover' => 1]);
 
-            $album->update([
-                'path_to_img' => $photo->path_to_img,
-                'updated_at' => now(),
-            ]);
+            $album->update(['path_to_img' => $photo->path_to_img, 'updated_at' => now()]);
 
             DB::commit();
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Cover photo updated successfully',
-            ]);
+            return response()->json(['success' => true, 'message' => 'Cover photo updated successfully']);
 
         } catch (\Exception $e) {
             DB::rollBack();
-            
             \Log::error('Cover photo update error: ' . $e->getMessage());
-
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to update cover photo',
-                'error' => $e->getMessage(),
-            ], 500);
+            return response()->json(['success' => false, 'message' => 'Failed to update cover photo', 'error' => $e->getMessage()], 500);
         }
     }
 
@@ -1154,20 +1347,37 @@ class ProfileController extends Controller
             }
 
             // Profile gallery photos (visible to everyone when profile is public)
-            $album = \App\Models\Album::with(['photos' => function ($q) {
-                    $q->orderBy('order', 'asc')->orderBy('created_at', 'desc');
-                }])
-                ->where('user_id', $user->id)
-                ->where('titre', 'Profile Gallery')
-                ->first();
+            if ($user->role_id === 3) {
+                // Centre users: serve all photos from all linked centres
+                $centreIds = $this->centreIdsForUser($user);
+                if ($centreIds->isNotEmpty()) {
+                    $data['photos'] = \App\Models\Photo::whereIn('camping_centre_id', $centreIds)
+                        ->orderBy('order', 'asc')
+                        ->orderBy('created_at', 'desc')
+                        ->get()
+                        ->map(fn($p) => [
+                            'id'       => $p->id,
+                            'url'      => asset('storage/' . $p->path_to_img),
+                            'is_cover' => (bool) $p->is_cover,
+                            'order'    => $p->order,
+                        ])->values();
+                }
+            } else {
+                $album = \App\Models\Album::with(['photos' => function ($q) {
+                        $q->orderBy('order', 'asc')->orderBy('created_at', 'desc');
+                    }])
+                    ->where('user_id', $user->id)
+                    ->where('titre', 'Profile Gallery')
+                    ->first();
 
-            if ($album) {
-                $data['photos'] = $album->photos->map(fn($p) => [
-                    'id'       => $p->id,
-                    'url'      => asset('storage/' . $p->path_to_img),
-                    'is_cover' => (bool) $p->is_cover,
-                    'order'    => $p->order,
-                ])->values();
+                if ($album) {
+                    $data['photos'] = $album->photos->map(fn($p) => [
+                        'id'       => $p->id,
+                        'url'      => asset('storage/' . $p->path_to_img),
+                        'is_cover' => (bool) $p->is_cover,
+                        'order'    => $p->order,
+                    ])->values();
+                }
             }
 
             // Feedback summary for all types (if not already set for groupe)
@@ -1686,7 +1896,12 @@ class ProfileController extends Controller
                 ['key' => 'centre_cap',     'label' => 'Capacity',           'done' => (bool) $profile?->profileCentre?->capacite,       'link' => '/settings',          'weight' => 5],
                 ['key' => 'centre_price',   'label' => 'Price per night',     'done' => (bool) $profile?->profileCentre?->price_per_night,'link' => '/settings',          'weight' => 5],
                 ['key' => 'centre_contact', 'label' => 'Contact email',       'done' => (bool) $profile?->profileCentre?->contact_email,  'link' => '/settings',          'weight' => 5],
-                ['key' => 'centre_photos',  'label' => 'Center photos',       'done' => \App\Models\Photo::where('user_id', $user->id)->exists(), 'link' => '/settings/images', 'weight' => 10],
+                ['key' => 'centre_photos',  'label' => 'Center photos',       'done' => (function() use ($user) {
+                    $cids = \App\Models\CampingCentre::where('user_id', $user->id)->pluck('id');
+                    return $cids->isNotEmpty()
+                        ? \App\Models\Photo::whereIn('camping_centre_id', $cids)->exists()
+                        : \App\Models\Photo::where('user_id', $user->id)->exists();
+                })(), 'link' => '/settings/images', 'weight' => 10],
                 ['key' => 'centre_service', 'label' => 'At least 1 service',  'done' => \App\Models\ProfileCenterService::where('profile_center_id', $profile?->profileCentre?->id ?? 0)->exists(), 'link' => '/settings/services', 'weight' => 5],
                 ['key' => 'legal_doc',      'label' => 'Legal document',      'done' => (bool) $profile?->profileCentre?->legal_document, 'link' => '/settings',          'weight' => 15],
             ],
