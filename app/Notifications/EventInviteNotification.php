@@ -37,7 +37,7 @@ class EventInviteNotification extends Notification
             'content'     => $this->message ?: "You have been invited to join \"{$this->event['title']}\".",
             'type'        => 'event_invitation',
             'priority'    => 'medium',
-            'action_url'  => "/events/{$this->event['id']}",
+            'action_url'  => "/event/{$this->event['id']}/details",
             'action_text' => 'View Event',
             'event_id'    => $this->event['id'],
             'event_title' => $this->event['title'],

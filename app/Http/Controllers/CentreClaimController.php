@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Album;
 use App\Models\CampingCentre;
 use App\Models\CentreClaim;
 use App\Models\Photo;
@@ -30,10 +31,9 @@ class CentreClaimController extends Controller
             ->select('id', 'nom', 'adresse', 'type', 'image', 'lat', 'lng')
             ->with('coverPhoto')
             ->orderBy('nom')
-            ->paginate($perPage);
+            ->get();
 
-        // Ensure each centre has an image (fallback to cover photo path)
-        $centres->getCollection()->transform(function ($c) {
+        $centres->transform(function ($c) {
             if (!$c->image && $c->coverPhoto) {
                 $c->image = asset('storage/' . $c->coverPhoto->path_to_img);
             } elseif ($c->image && !str_starts_with($c->image, 'http')) {
@@ -208,19 +208,19 @@ class CentreClaimController extends Controller
             }
 
             // 2b. Create or update the ProfileCentre record.
-            // If the user never filled in a ProfileCentre during registration,
-            // we create one now from the camping_centre data.
+            // Centre stays private (disponibilite = false) until the owner
+            // completes their profile and manually publishes it.
             if ($profile && !$pc) {
                 $pc = \App\Models\ProfileCentre::create([
                     'profile_id'    => $profile->id,
-                    'name'          => $campingCentre->nom        ?? null,
-                    'latitude'      => $campingCentre->lat        ?? null,
-                    'longitude'     => $campingCentre->lng        ?? null,
-                    'disponibilite' => true,
+                    'name'          => $campingCentre->nom ?? null,
+                    'latitude'      => $campingCentre->lat ?? null,
+                    'longitude'     => $campingCentre->lng ?? null,
+                    'disponibilite' => false,
                 ]);
             } elseif ($pc) {
-                // Record exists — only fill empty fields, never overwrite user data.
-                $pcUpdates = ['disponibilite' => true];
+                // Only fill empty fields — never overwrite user data, never force-publish.
+                $pcUpdates = [];
                 if ($campingCentre->nom && !$pc->name) {
                     $pcUpdates['name'] = $campingCentre->nom;
                 }
@@ -230,17 +230,58 @@ class CentreClaimController extends Controller
                 if ($campingCentre->lng && !$pc->longitude) {
                     $pcUpdates['longitude'] = $campingCentre->lng;
                 }
-                $pc->update($pcUpdates);
+                if (!empty($pcUpdates)) {
+                    $pc->update($pcUpdates);
+                }
+            }
+
+            // 2c. Sync cover_image on profile from camping_centre image (if not set)
+            if ($profile && !$profile->cover_image && $campingCentre->image) {
+                $profile->update(['cover_image' => $campingCentre->image]);
             }
         }
 
-        // ── 3. Link camping_centre photos to the user ─────────────────────────
-        // Sets user_id on existing camping_centre photos so they are accessible
-        // through the user's profile gallery (partner-centre display).
-        if ($claimUser) {
+        // ── 3. Link camping_centre photos to the user and into their gallery album ──
+        if ($claimUser && $campingCentre) {
+            // 3a. Assign user_id to all unowned photos of this camping_centre
             Photo::where('camping_centre_id', $campingCentre->id)
                 ->whereNull('user_id')
                 ->update(['user_id' => $claimUser->id]);
+
+            // 3b. Move those photos into the 'Profile Gallery' album so they
+            //     appear in the public center list and detail page (formatCenter
+            //     only reads photos through this album).
+            $centrePhotos = Photo::where('camping_centre_id', $campingCentre->id)
+                ->where('user_id', $claimUser->id)
+                ->whereNull('album_id')
+                ->get();
+
+            if ($centrePhotos->isNotEmpty()) {
+                $album = Album::firstOrCreate(
+                    ['user_id' => $claimUser->id, 'titre' => 'Profile Gallery'],
+                    ['path_to_img' => null]
+                );
+
+                $albumHasCover = $album->photos()->where('is_cover', true)->exists();
+
+                foreach ($centrePhotos as $i => $photo) {
+                    $photo->album_id = $album->id;
+                    // Mark first photo as cover if album has none yet
+                    if (!$albumHasCover && $i === 0) {
+                        $photo->is_cover   = true;
+                        $albumHasCover     = true;
+                    }
+                    $photo->save();
+                }
+
+                // Sync profile cover_image from first photo if still empty
+                if ($profile && !$profile->cover_image) {
+                    $first = $centrePhotos->first();
+                    if ($first) {
+                        $profile->update(['cover_image' => $first->path_to_img]);
+                    }
+                }
+            }
         }
 
         // ── 4. Link camping_centre to the user ────────────────────────────────

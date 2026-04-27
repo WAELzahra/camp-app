@@ -19,6 +19,7 @@ use App\Models\Profile;
 use App\Models\Circuit;
 use Illuminate\Validation\Rule;
 use App\Notifications\EventInviteNotification;
+use App\Events\NewNotificationCreated;
 
 class EventController extends Controller
 {
@@ -514,6 +515,23 @@ class EventController extends Controller
                     new EventInviteNotification($eventPayload, $senderPayload, $customMessage)
                 );
                 $notified++;
+
+                // Broadcast via WebSocket so the notification appears in real time
+                $dbNotification = $recipient->notifications()->latest()->first();
+                if ($dbNotification) {
+                    broadcast(new NewNotificationCreated(
+                        userId:         $recipient->id,
+                        notificationId: $dbNotification->id,
+                        title:          "You're invited to {$event->title}",
+                        content:        $customMessage ?: "You have been invited to join \"{$event->title}\".",
+                        type:           'event_invitation',
+                        priority:       'medium',
+                        actionUrl:      "/event/{$event->id}/details",
+                        actionText:     'View Event',
+                        senderId:       $sender->id,
+                        createdAt:      $dbNotification->created_at->toISOString(),
+                    ));
+                }
             } catch (\Exception $e) {
                 \Log::error("Failed to notify user {$userId}: " . $e->getMessage());
                 $skipped++;

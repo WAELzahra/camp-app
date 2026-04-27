@@ -169,7 +169,7 @@ class AnnonceController extends Controller
      */
     public function show(string $annonce_id)
     {
-        $annonce = Annonce::with(['photos', 'user'])->find($annonce_id);
+        $annonce = Annonce::with(['photos', 'user.profile.profileCentre'])->find($annonce_id);  // ✅ Load profile.profileCentre
 
         if (!$annonce) {
             return response()->json([
@@ -181,11 +181,10 @@ class AnnonceController extends Controller
         $annonce->incrementViews();
 
         return response()->json([
-            'status'  => 'success',
+            'status'  => 'annonce',
             'annonce' => $annonce,
         ]);
     }
-
     /**
      * Update an existing annonce with images.
      */

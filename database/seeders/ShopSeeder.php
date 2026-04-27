@@ -466,9 +466,9 @@ class ShopSeeder extends Seeder
     {
         $this->call([
             MateriellesCategoriesSeeder::class,
-            BoutiqueSeeder::class,
-            MateriellesSeeder::class,
-            ReservationsMateriellesSeeder::class,
+            // BoutiqueSeeder::class,
+            // MateriellesSeeder::class,
+            // ReservationsMateriellesSeeder::class,
         ]);
     }
 }

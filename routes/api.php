@@ -17,6 +17,7 @@ use App\Http\Controllers\Auth\VerifyEmailController;
 // Public Controllers
 use App\Http\Controllers\Annonce\AnnonceController;
 use App\Http\Controllers\Boutique\BoutiqueController;
+use App\Http\Controllers\Boutique\AdminBoutiqueController;
 use App\Http\Controllers\Materielle\MaterielleController;
 use App\Http\Controllers\Feedback\FeedbackController;
 use App\Http\Controllers\Event\EventController;
@@ -1036,6 +1037,14 @@ Route::prefix('zones')->group(function () {
     // -------------------- SERVICE CATEGORIES MANAGEMENT --------------------
     Route::resource('service-categories', ServiceCategoryController::class);
     
+    // -------------------- SHOP (BOUTIQUE) MANAGEMENT --------------------
+    Route::prefix('boutiques')->group(function () {
+        Route::get('/',                    [AdminBoutiqueController::class, 'index']);
+        Route::patch('/{id}/activate',     [AdminBoutiqueController::class, 'activate']);
+        Route::patch('/{id}/deactivate',   [AdminBoutiqueController::class, 'deactivate']);
+        Route::delete('/{id}',             [AdminBoutiqueController::class, 'destroy']);
+    });
+
     // -------------------- NOTIFICATIONS MANAGEMENT --------------------
     Route::prefix('notifications')->group(function () {
         Route::post('/send', [AdminNotificationController::class, 'send']);

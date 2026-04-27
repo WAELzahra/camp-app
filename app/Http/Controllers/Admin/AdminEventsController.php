@@ -251,8 +251,12 @@ class AdminEventsController extends Controller
 
         $event->status = $request->status;
 
+        // Auto-sync is_active with status so the public detail endpoint can find the event.
+        // An explicit is_active value in the request takes precedence.
         if ($request->has('is_active')) {
             $event->is_active = $request->is_active;
+        } else {
+            $event->is_active = in_array($request->status, ['scheduled', 'ongoing', 'full']);
         }
 
         $event->save();

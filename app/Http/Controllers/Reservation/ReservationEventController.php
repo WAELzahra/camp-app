@@ -235,35 +235,43 @@ class ReservationEventController extends Controller
     public function addManualParticipant(Request $request, $eventId)
     {
         $request->validate([
-            'name' => 'required|string',
-            'email' => 'nullable|email',
-            'phone' => 'nullable|string',
+            'name'      => 'required|string|max:255',
+            'email'     => 'nullable|email|max:255',
+            'phone'     => 'nullable|string|max:50',
             'nbr_place' => 'required|integer|min:1',
+            'status'    => 'nullable|in:confirmée,en_attente_paiement,en_attente_validation',
         ]);
 
         $event = Events::findOrFail($eventId);
 
-        if ($event->nbr_place_restante < $request->nbr_place) {
-            return response()->json(['message' => 'Nombre de places insuffisant pour cet événement.'], 400);
+        $remaining = $event->remaining_spots ?? $event->nbr_place_restante ?? 0;
+        if ($remaining < $request->nbr_place) {
+            return response()->json(['message' => 'Not enough spots available for this event.'], 400);
         }
 
         $reservation = Reservations_events::create([
-            'event_id' => $eventId,
-            'group_id' => auth()->id(),
-            'name' => $request->name,
-            'email' => $request->email,
-            'phone' => $request->phone,
-            'nbr_place' => $request->nbr_place,
-            'status' => 'confirmé',
+            'event_id'   => $eventId,
+            'group_id'   => auth()->id(),
+            'name'       => $request->name,
+            'email'      => $request->email,
+            'phone'      => $request->phone,
+            'nbr_place'  => $request->nbr_place,
+            'status'     => $request->status ?? 'confirmée',
             'created_by' => auth()->id(),
         ]);
 
-        $event->nbr_place_restante -= $request->nbr_place;
-        $event->save();
+        // Decrement whichever field the Events model exposes
+        if (isset($event->remaining_spots)) {
+            $event->decrement('remaining_spots', $request->nbr_place);
+        } else {
+            $event->nbr_place_restante -= $request->nbr_place;
+            $event->save();
+        }
 
         return response()->json([
-            'message' => 'Participant ajouté avec succès.',
-            'data' => $reservation,
+            'success' => true,
+            'message' => 'Participant added successfully.',
+            'data'    => $reservation,
         ]);
     }
 

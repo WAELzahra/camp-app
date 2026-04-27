@@ -118,22 +118,76 @@ class AdminUserController extends Controller
                 'profile' => function($q) {
                     $q->with([
                         'profileGuide',
-                        'profileCentre.equipment',
-                        'profileCentre.services',
+                        'profileCentre',
                         'profileGroupe',
-                        'profileFournisseur'
+                        'profileFournisseur',
                     ]);
                 },
-                'albums.photos'
             ])->findOrFail($id);
 
-            // Ajouter les documents formatés
-            $userData = $user->toArray();
-            $userData['documents'] = $this->getUserDocuments($user);
+            $userData = $this->formatUserForFrontend($user);
+
+            // Inject role-specific nested profile data so the modal can populate its fields
+            if ($user->profile) {
+                $profileExtra = [];
+
+                if ($user->profile->profileCentre) {
+                    $pc = $user->profile->profileCentre;
+                    $profileExtra['profile_centre'] = [
+                        'name'                      => $pc->name,
+                        'capacite'                  => $pc->capacite,
+                        'price_per_night'           => $pc->price_per_night,
+                        'category'                  => $pc->category,
+                        'disponibilite'             => (bool) $pc->disponibilite,
+                        'legal_document'            => $pc->legal_document,
+                        'document_legal_type'       => $pc->document_legal_type,
+                        'document_legal_expiration' => $pc->document_legal_expiration
+                            ? $pc->document_legal_expiration->format('Y-m-d') : null,
+                        'contact_email'             => $pc->contact_email,
+                        'contact_phone'             => $pc->contact_phone,
+                        'manager_name'              => $pc->manager_name,
+                        'established_date'          => $pc->established_date
+                            ? $pc->established_date->format('Y-m-d') : null,
+                        'latitude'                  => $pc->latitude,
+                        'longitude'                 => $pc->longitude,
+                    ];
+                }
+
+                if ($user->profile->profileGuide) {
+                    $pg = $user->profile->profileGuide;
+                    $profileExtra['profile_guide'] = [
+                        'experience'            => $pg->experience,
+                        'tarif'                 => $pg->tarif,
+                        'zone_travail'          => $pg->zone_travail,
+                        'certificat_path'       => $pg->certificat_path,
+                        'certificat_type'       => $pg->certificat_type,
+                        'certificat_expiration' => $pg->certificat_expiration
+                            ? $pg->certificat_expiration->format('Y-m-d') : null,
+                    ];
+                }
+
+                if ($user->profile->profileGroupe) {
+                    $pg = $user->profile->profileGroupe;
+                    $profileExtra['profile_groupe'] = [
+                        'nom_groupe'   => $pg->nom_groupe,
+                        'patente_path' => $pg->patente_path,
+                    ];
+                }
+
+                if ($user->profile->profileFournisseur) {
+                    $pf = $user->profile->profileFournisseur;
+                    $profileExtra['profile_fournisseur'] = [
+                        'intervale_prix'   => $pf->intervale_prix,
+                        'product_category' => $pf->product_category,
+                    ];
+                }
+
+                $userData['profile'] = array_merge($userData['profile'] ?? [], $profileExtra);
+            }
 
             return response()->json([
                 'success' => true,
-                'data' => $userData
+                'data'    => $userData,
             ]);
 
         } catch (\Exception $e) {
@@ -152,59 +206,61 @@ class AdminUserController extends Controller
 
         // Validation
         $validated = $request->validate([
-            // Champs de base User
-            'first_name' => 'sometimes|string|max:255',
-            'last_name' => 'sometimes|string|max:255',
-            'email' => ['sometimes', 'email', Rule::unique('users')->ignore($user->id)],
-            'phone_number' => 'sometimes|string|max:20',
-            'ville' => 'sometimes|string|nullable',
-            'birthdate' => 'sometimes|date|nullable',
-            'gender' => 'sometimes|string|in:male,female,other|nullable',
-            'languages' => 'sometimes|string|nullable',
-            'bio' => 'sometimes|string|nullable',
-            'avatar' => 'sometimes|string|nullable',
-            'cover_image' => 'sometimes|string|nullable',
-            'role_id' => 'sometimes|exists:roles,id',
-            'is_active' => 'sometimes|boolean',
-            'first_login' => 'sometimes|boolean',
+            // users table
+            'first_name'         => 'sometimes|string|max:255',
+            'last_name'          => 'sometimes|string|max:255',
+            'email'              => ['sometimes', 'email', Rule::unique('users')->ignore($user->id)],
+            'phone_number'       => 'sometimes|string|max:20|nullable',
+            'ville'              => 'sometimes|string|nullable',
+            'birthdate'          => 'sometimes|date|nullable',
+            'gender'             => 'sometimes|string|in:male,female,other|nullable',
+            'languages'          => 'sometimes|string|nullable',
+            'avatar'             => 'sometimes|string|nullable',
+            'cover_image'        => 'sometimes|string|nullable',
+            'role_id'            => 'sometimes|exists:roles,id',
+            'is_active'          => 'sometimes|boolean',
+            'first_login'        => 'sometimes|boolean',
             'nombre_signalement' => 'sometimes|integer',
-            
-            // Adresse (sera dirigée vers le bon profil)
-            'adresse' => 'sometimes|string|nullable',
-            
-            // Champs spécifiques aux guides
-            'experience' => 'sometimes|string|nullable',
-            'tarif' => 'sometimes|numeric|nullable',
-            'zone_travail' => 'sometimes|string|nullable',
-            'certificat_path' => 'sometimes|string|nullable',
-            'certificat_filename' => 'sometimes|string|nullable',
-            
-            // Champs spécifiques aux centres
-            'capacity' => 'sometimes|integer|nullable',
-            'availability' => 'sometimes|string|nullable',
-            'services_offerts' => 'sometimes|string|nullable',
-            'price_per_night' => 'sometimes|numeric|nullable',
-            'category' => 'sometimes|string|nullable',
-            'document_legal' => 'sometimes|string|nullable',
-            'document_legal_type' => 'sometimes|string|nullable',
-            'document_legal_filename' => 'sometimes|string|nullable',
-            'document_legal_expiration' => 'sometimes|date|nullable',
-            
-            // Champs spécifiques aux groupes
-            'nom_groupe' => 'sometimes|string|nullable',
-            'cin_responsable' => 'sometimes|string|nullable',
-            'patente_path' => 'sometimes|string|nullable',
-            'patente_filename' => 'sometimes|string|nullable',
-            'cin_responsable_path' => 'sometimes|string|nullable',
-            'cin_responsable_filename' => 'sometimes|string|nullable',
-            
-            // Champs spécifiques aux fournisseurs
-            'intervale_prix' => 'sometimes|string|nullable',
+
+            // profiles table
+            'bio'        => 'sometimes|string|nullable',
+            'city'       => 'sometimes|string|nullable',
+            'address'    => 'sometimes|string|nullable',
+            'cin_path'   => 'sometimes|string|nullable',
+            'activities' => 'sometimes|string|nullable',
+            'is_public'  => 'sometimes|boolean',
+
+            // profile_guides
+            'experience'            => 'sometimes|integer|nullable',
+            'tarif'                 => 'sometimes|numeric|nullable',
+            'zone_travail'          => 'sometimes|string|nullable',
+            'certificat_path'       => 'sometimes|string|nullable',
+            'certificat_type'       => 'sometimes|string|nullable',
+            'certificat_expiration' => 'sometimes|date|nullable',
+
+            // profile_centres
+            'centre_name'              => 'sometimes|string|nullable',
+            'capacity'                 => 'sometimes|integer|nullable',
+            'price_per_night'          => 'sometimes|numeric|nullable',
+            'category'                 => 'sometimes|string|nullable',
+            'disponibilite'            => 'sometimes|boolean',
+            'legal_document'           => 'sometimes|string|nullable',
+            'document_legal_type'      => 'sometimes|string|nullable',
+            'document_legal_expiration'=> 'sometimes|date|nullable',
+            'contact_email'            => 'sometimes|email|nullable',
+            'contact_phone'            => 'sometimes|string|nullable',
+            'manager_name'             => 'sometimes|string|nullable',
+            'established_date'         => 'sometimes|date|nullable',
+            'latitude'                 => 'sometimes|numeric|nullable',
+            'longitude'                => 'sometimes|numeric|nullable',
+
+            // profile_groupes
+            'nom_groupe'  => 'sometimes|string|nullable',
+            'patente_path'=> 'sometimes|string|nullable',
+
+            // profile_fournisseurs
+            'intervale_prix'   => 'sometimes|string|nullable',
             'product_category' => 'sometimes|string|nullable',
-            'cin_commercant_path' => 'sometimes|string|nullable',
-            'cin_commercant_filename' => 'sometimes|string|nullable',
-            'registre_commerce_path' => 'sometimes|string|nullable',
-            'registre_commerce_filename' => 'sometimes|string|nullable',
         ]);
 
         // Mise à jour de l'utilisateur
@@ -266,29 +322,30 @@ class AdminUserController extends Controller
 }
 
     /**
-     * Mettre à jour les données du profil
+     * Mettre à jour les données du profil (table profiles)
      */
     private function updateProfileData($profile, $data)
 {
+    $map = [
+        'bio'        => 'bio',
+        'cover_image'=> 'cover_image',
+        'city'       => 'city',
+        'address'    => 'address',
+        'cin_path'   => 'cin_path',
+        'activities' => 'activities',
+        'is_public'  => 'is_public',
+    ];
+
     $profileData = [];
-    if (isset($data['bio'])) $profileData['bio'] = $data['bio'];
-    if (isset($data['cover_image'])) $profileData['cover_image'] = $data['cover_image'];
-    if (isset($data['adresse']) && !$this->hasSpecificProfile($data)) {
-        // Si l'utilisateur n'a pas de profil spécifique (campeur)
-        $profileData['adresse'] = $data['adresse'];
+    foreach ($map as $input => $column) {
+        if (array_key_exists($input, $data)) {
+            $profileData[$column] = $data[$input];
+        }
     }
-    
+
     if (!empty($profileData)) {
         $profile->update($profileData);
     }
-}
-
-private function hasSpecificProfile($data)
-{
-    return isset($data['capacity']) || 
-           isset($data['experience']) || 
-           isset($data['nom_groupe']) || 
-           isset($data['intervale_prix']);
 }
 
     /**
@@ -299,73 +356,86 @@ private function hasSpecificProfile($data)
     $roleName = $user->role ? strtolower($user->role->name) : null;
 
     switch ($roleName) {
+        // ── profile_guides ────────────────────────────────────────────────────
         case 'guide':
             if ($user->profile && $user->profile->profileGuide) {
+                $guideMap = [
+                    'experience'            => 'experience',
+                    'tarif'                 => 'tarif',
+                    'zone_travail'          => 'zone_travail',
+                    'certificat_path'       => 'certificat_path',
+                    'certificat_type'       => 'certificat_type',
+                    'certificat_expiration' => 'certificat_expiration',
+                ];
                 $guideData = [];
-                if (isset($data['adresse'])) $guideData['adresse'] = $data['adresse'];
-                if (isset($data['experience'])) $guideData['experience'] = $data['experience'];
-                if (isset($data['tarif'])) $guideData['tarif'] = $data['tarif'];
-                if (isset($data['zone_travail'])) $guideData['zone_travail'] = $data['zone_travail'];
-                if (isset($data['certificat_path'])) $guideData['certificat_path'] = $data['certificat_path'];
-                if (isset($data['certificat_filename'])) $guideData['certificat_filename'] = $data['certificat_filename'];
-                
+                foreach ($guideMap as $input => $col) {
+                    if (array_key_exists($input, $data)) $guideData[$col] = $data[$input];
+                }
                 if (!empty($guideData)) {
                     $user->profile->profileGuide->update($guideData);
                 }
             }
             break;
 
+        // ── profile_centres ───────────────────────────────────────────────────
         case 'centre':
         case 'center':
-            if ($user->profile && $user->profile->profileCentre) {
+            if ($user->profile) {
+                // Create the profile_centre row if it doesn't exist yet
+                if (!$user->profile->profileCentre) {
+                    $user->profile->profileCentre()->create([]);
+                    $user->profile->load('profileCentre');
+                }
                 $centreData = [];
-                if (isset($data['adresse'])) $centreData['adresse'] = $data['adresse'];
-                if (isset($data['capacity'])) $centreData['capacite'] = $data['capacity'];
-                if (isset($data['availability'])) $centreData['disponibilite'] = $data['availability'] === '24/7';
-                if (isset($data['services_offerts'])) $centreData['services_offerts'] = $data['services_offerts'];
-                if (isset($data['price_per_night'])) $centreData['price_per_night'] = $data['price_per_night'];
-                if (isset($data['category'])) $centreData['category'] = $data['category'];
-                if (isset($data['document_legal'])) $centreData['document_legal'] = $data['document_legal'];
-                if (isset($data['document_legal_type'])) $centreData['document_legal_type'] = $data['document_legal_type'];
-                if (isset($data['document_legal_filename'])) $centreData['document_legal_filename'] = $data['document_legal_filename'];
-                if (isset($data['document_legal_expiration'])) $centreData['document_legal_expiration'] = $data['document_legal_expiration'];
-                
+                // name arrives as 'centre_name' to avoid collision with user first_name
+                if (array_key_exists('centre_name', $data))               $centreData['name']                     = $data['centre_name'];
+                if (array_key_exists('capacity', $data))                  $centreData['capacite']                 = $data['capacity'];
+                if (array_key_exists('price_per_night', $data))           $centreData['price_per_night']          = $data['price_per_night'];
+                if (array_key_exists('category', $data))                  $centreData['category']                 = $data['category'];
+                if (array_key_exists('disponibilite', $data))             $centreData['disponibilite']            = (bool) $data['disponibilite'];
+                if (array_key_exists('legal_document', $data))            $centreData['legal_document']           = $data['legal_document'];
+                if (array_key_exists('document_legal_type', $data))       $centreData['document_legal_type']      = $data['document_legal_type'];
+                if (array_key_exists('document_legal_expiration', $data)) $centreData['document_legal_expiration']= $data['document_legal_expiration'];
+                if (array_key_exists('contact_email', $data))             $centreData['contact_email']            = $data['contact_email'];
+                if (array_key_exists('contact_phone', $data))             $centreData['contact_phone']            = $data['contact_phone'];
+                if (array_key_exists('manager_name', $data))              $centreData['manager_name']             = $data['manager_name'];
+                if (array_key_exists('established_date', $data))          $centreData['established_date']         = $data['established_date'];
+                if (array_key_exists('latitude', $data))                  $centreData['latitude']                 = $data['latitude'];
+                if (array_key_exists('longitude', $data))                 $centreData['longitude']                = $data['longitude'];
                 if (!empty($centreData)) {
                     $user->profile->profileCentre->update($centreData);
                 }
             }
             break;
 
+        // ── profile_groupes ───────────────────────────────────────────────────
         case 'groupe':
         case 'group':
-            if ($user->profile && $user->profile->profileGroupe) {
+            if ($user->profile) {
+                if (!$user->profile->profileGroupe) {
+                    $user->profile->profileGroupe()->create([]);
+                    $user->profile->load('profileGroupe');
+                }
                 $groupeData = [];
-                if (isset($data['adresse'])) $groupeData['adresse'] = $data['adresse'];
-                if (isset($data['nom_groupe'])) $groupeData['nom_groupe'] = $data['nom_groupe'];
-                if (isset($data['cin_responsable'])) $groupeData['cin_responsable'] = $data['cin_responsable'];
-                if (isset($data['patente_path'])) $groupeData['patente_path'] = $data['patente_path'];
-                if (isset($data['patente_filename'])) $groupeData['patente_filename'] = $data['patente_filename'];
-                if (isset($data['cin_responsable_path'])) $groupeData['cin_responsable_path'] = $data['cin_responsable_path'];
-                if (isset($data['cin_responsable_filename'])) $groupeData['cin_responsable_filename'] = $data['cin_responsable_filename'];
-                
+                if (array_key_exists('nom_groupe',   $data)) $groupeData['nom_groupe']   = $data['nom_groupe'];
+                if (array_key_exists('patente_path', $data)) $groupeData['patente_path'] = $data['patente_path'];
                 if (!empty($groupeData)) {
                     $user->profile->profileGroupe->update($groupeData);
                 }
             }
             break;
 
+        // ── profile_fournisseurs ──────────────────────────────────────────────
         case 'fournisseur':
         case 'supplier':
-            if ($user->profile && $user->profile->profileFournisseur) {
+            if ($user->profile) {
+                if (!$user->profile->profileFournisseur) {
+                    $user->profile->profileFournisseur()->create([]);
+                    $user->profile->load('profileFournisseur');
+                }
                 $fournisseurData = [];
-                if (isset($data['adresse'])) $fournisseurData['adresse'] = $data['adresse'];
-                if (isset($data['intervale_prix'])) $fournisseurData['intervale_prix'] = $data['intervale_prix'];
-                if (isset($data['product_category'])) $fournisseurData['product_category'] = $data['product_category'];
-                if (isset($data['cin_commercant_path'])) $fournisseurData['cin_commercant_path'] = $data['cin_commercant_path'];
-                if (isset($data['cin_commercant_filename'])) $fournisseurData['cin_commercant_filename'] = $data['cin_commercant_filename'];
-                if (isset($data['registre_commerce_path'])) $fournisseurData['registre_commerce_path'] = $data['registre_commerce_path'];
-                if (isset($data['registre_commerce_filename'])) $fournisseurData['registre_commerce_filename'] = $data['registre_commerce_filename'];
-                
+                if (array_key_exists('intervale_prix',   $data)) $fournisseurData['intervale_prix']   = $data['intervale_prix'];
+                if (array_key_exists('product_category', $data)) $fournisseurData['product_category'] = $data['product_category'];
                 if (!empty($fournisseurData)) {
                     $user->profile->profileFournisseur->update($fournisseurData);
                 }
@@ -774,29 +844,27 @@ private function hasSpecificProfile($data)
                 ];
             }
 
-            // Documents centre
+            // Documents centre — column on profile_centres is `legal_document`
             if ($user->profile->profileCentre) {
                 $centre = $user->profile->profileCentre;
                 $documents['centre'] = [
-                    'document_legal' => $centre->document_legal,
-                    'document_legal_type' => $centre->document_legal_type,
-                    'document_legal_filename' => $centre->document_legal_filename,
+                    'document_legal'            => $centre->legal_document,
+                    'document_legal_type'       => $centre->document_legal_type,
                     'document_legal_expiration' => $centre->document_legal_expiration,
-                    'document_legal_url' => $centre->document_legal ? asset('storage/' . $centre->document_legal) : null,
+                    'document_legal_url'        => $centre->legal_document
+                                                    ? asset('storage/' . $centre->legal_document)
+                                                    : null,
                 ];
             }
 
-            // Documents groupe
+            // Documents groupe — only patente_path exists in profile_groupes table
             if ($user->profile->profileGroupe) {
                 $groupe = $user->profile->profileGroupe;
                 $documents['groupe'] = [
-                    'cin_responsable' => $groupe->cin_responsable,
                     'patente_path' => $groupe->patente_path,
-                    'patente_filename' => $groupe->patente_filename,
-                    'patente_url' => $groupe->patente_path ? asset('storage/' . $groupe->patente_path) : null,
-                    'cin_responsable_path' => $groupe->cin_responsable_path,
-                    'cin_responsable_filename' => $groupe->cin_responsable_filename,
-                    'cin_responsable_url' => $groupe->cin_responsable_path ? asset('storage/' . $groupe->cin_responsable_path) : null,
+                    'patente_url'  => $groupe->patente_path
+                                        ? asset('storage/' . $groupe->patente_path)
+                                        : null,
                 ];
             }
 

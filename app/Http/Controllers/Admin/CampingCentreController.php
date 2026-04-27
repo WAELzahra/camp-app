@@ -27,36 +27,58 @@ class CampingCentreController extends Controller
     public function index()
     {
         // ── Auto-sync ACTIVE registered centre users that have no camping_centre yet ──
-        // Only sync is_active=1 users — inactive accounts are not yet approved partners.
         $linkedUserIds = CampingCentre::whereNotNull('user_id')->pluck('user_id');
 
         User::where('role_id', 3)
             ->where('is_active', 1)
             ->whereNotIn('id', $linkedUserIds)
-            ->with(['profile.profileCentre'])
+            ->with(['profile'])
             ->get()
             ->each(function (User $user) {
-                $pc = $user->profile?->profileCentre;
+                // ✅ Get or create profile for this user
+                $profile = $user->profile;
+                if (!$profile) {
+                    $profile = \App\Models\Profile::create([
+                        'user_id' => $user->id,
+                        'type' => 'centre',
+                        'address' => $user->adresse,
+                    ]);
+                }
+
+                // ✅ Get the profile_centre that ACTUALLY belongs to THIS profile
+                $pc = \App\Models\ProfileCentre::where('profile_id', $profile->id)->first();
+                
+                // If no profile_centre exists for this profile, create one
+                if (!$pc) {
+                    $pc = \App\Models\ProfileCentre::create([
+                        'profile_id' => $profile->id,
+                        'name' => trim($user->first_name . ' ' . $user->last_name) . ' Center',
+                        'latitude' => 0,
+                        'longitude' => 0,
+                        'disponibilite' => false,
+                    ]);
+                }
+
+                // ✅ Now create the camping_centre with the CORRECT profile_centre_id
                 CampingCentre::create([
-                    'nom'               => $pc?->name ?? trim($user->first_name . ' ' . $user->last_name),
+                    'nom'               => $pc->name ?? trim($user->first_name . ' ' . $user->last_name),
                     'type'              => 'centre',
-                    'adresse'           => $user->adresse ?? $user->profile?->address,
-                    'lat'               => (float) ($pc?->latitude  ?? 0),
-                    'lng'               => (float) ($pc?->longitude ?? 0),
-                    'status'            => $pc ? (bool) $pc->disponibilite : false,
+                    'adresse'           => $profile->address ?? $user->adresse,
+                    'lat'               => (float) ($pc->latitude ?? 0),
+                    'lng'               => (float) ($pc->longitude ?? 0),
+                    'status'            => (bool) ($pc->disponibilite ?? false),
                     'validation_status' => 'approved',
                     'user_id'           => $user->id,
-                    'profile_centre_id' => $pc?->id,
+                    'profile_centre_id' => $pc->id,  // ✅ This is now guaranteed to belong to the user
                 ]);
             });
 
         // ── Return all centres with is_partner flag ──────────────────────────
-        // A centre is a partner ONLY when it has an associated user AND that user is active.
         $centres = CampingCentre::with(['zones', 'user', 'profileCentre'])
             ->get()
             ->map(function (CampingCentre $c) {
                 $c->is_partner = (! is_null($c->user_id) || ! is_null($c->profile_centre_id))
-                                 && ($c->user?->is_active == 1);
+                                && ($c->user?->is_active == 1);
                 return $c;
             });
 

@@ -4,7 +4,9 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Album;
+use App\Models\CampingCentre;
 use App\Models\Feedbacks;
+use App\Models\Photo;
 use App\Models\ProfileCentre;
 use App\Models\ServiceCategory;
 use Illuminate\Http\Request;
@@ -40,15 +42,19 @@ class CenterServiceApiController extends Controller
         $user    = $profile?->user;
         $userId  = $user?->id;
 
+        /* ── Resolve user's linked CampingCentre (for photo fallbacks) ─── */
+        $campingCentreId = null;
+        if ($userId) {
+            $campingCentreId = CampingCentre::where('user_id', $userId)->value('id');
+        }
+
         /* ── Cover image ─────────────────────────────────────────────── */
         $coverImage = null;
 
-        // 1. profile.cover_image (set by the manager in settings)
         if ($profile?->cover_image) {
             $coverImage = $this->photoUrl($profile->cover_image);
         }
 
-        // 2. Fallback: Profile Gallery album cover photo
         if (!$coverImage && $userId) {
             $album = $albumMap[$userId] ?? Album::where('user_id', $userId)
                 ->where('titre', 'Profile Gallery')
@@ -61,7 +67,20 @@ class CenterServiceApiController extends Controller
             }
         }
 
-        /* ── All gallery photos (detail only) ───────────────────────── */
+        // Fallback: cover photo from the camping_centre photos (handles centers
+        // approved before the album-migration fix, or where profile.cover_image
+        // is still empty).
+        if (!$coverImage && $campingCentreId) {
+            $ccCover = Photo::where('camping_centre_id', $campingCentreId)
+                ->where('is_cover', true)
+                ->first()
+                ?? Photo::where('camping_centre_id', $campingCentreId)->first();
+            if ($ccCover) {
+                $coverImage = $this->photoUrl($ccCover->path_to_img);
+            }
+        }
+
+        /* ── All gallery photos ───────────────────────────────────────── */
         $photos = [];
         if ($withPhotos && $userId) {
             $album = $albumMap[$userId] ?? Album::where('user_id', $userId)
@@ -69,17 +88,30 @@ class CenterServiceApiController extends Controller
                 ->with(['photos'])
                 ->first();
 
-            if ($album) {
-                $photos = $album->photos
-                    ->sortByDesc('is_cover')
-                    ->values()
-                    ->map(fn($p) => [
-                        'id'       => $p->id,
-                        'url'      => $this->photoUrl($p->path_to_img),
-                        'is_cover' => (bool) $p->is_cover,
-                        'order'    => $p->order,
-                    ])->toArray();
-            }
+            $albumId = $album?->id;
+
+            // Load photos from the Profile Gallery album AND any camping_centre
+            // photos not yet migrated into the album (union via OR condition).
+            $photoQuery = Photo::where('user_id', $userId)
+                ->where(function ($q) use ($albumId, $campingCentreId) {
+                    if ($albumId) {
+                        $q->where('album_id', $albumId);
+                    }
+                    if ($campingCentreId) {
+                        $q->orWhere('camping_centre_id', $campingCentreId);
+                    }
+                });
+
+            $photos = $photoQuery->get()
+                ->unique('id')
+                ->sortByDesc('is_cover')
+                ->values()
+                ->map(fn($p) => [
+                    'id'       => $p->id,
+                    'url'      => $this->photoUrl($p->path_to_img),
+                    'is_cover' => (bool) $p->is_cover,
+                    'order'    => $p->order ?? 0,
+                ])->toArray();
         }
 
         /* ── Ratings ─────────────────────────────────────────────────── */
@@ -99,16 +131,40 @@ class CenterServiceApiController extends Controller
             }
         }
 
-        /* ── Services (flattened pivot → no nested "pivot" key) ─────── */
-        $services = $center->availableServices->map(fn($svc) => [
-            'id'           => $svc->pivot->id   ?? $svc->id,
-            'name'         => $svc->name,
-            'description'  => $svc->pivot->description ?? $svc->description ?? '',
-            'price'        => (float) ($svc->pivot->price ?? 0),
-            'unit'         => $svc->pivot->unit  ?? $svc->unit  ?? '',
-            'is_standard'  => (bool) ($svc->pivot->is_standard  ?? false),
-            'is_available' => (bool) ($svc->pivot->is_available ?? true),
-        ])->values()->toArray();
+        /* ── Services ─────────────────────────────────────────────────── */
+        $allServices = $center->centerServices()
+            ->where('is_available', true)
+            ->orderBy('is_standard', 'desc')
+            ->orderBy('created_at', 'asc')
+            ->get();
+
+        $services = $allServices->map(function($service) {
+            // Custom service (no category)
+            if (is_null($service->service_category_id)) {
+                return [
+                    'id'           => $service->id,
+                    'name'         => $service->name,
+                    'description'  => $service->description ?? '',
+                    'price'        => (float) $service->price,
+                    'unit'         => $service->unit ?? '',
+                    'is_standard'  => (bool) $service->is_standard,
+                    'is_available' => (bool) $service->is_available,
+                    'nbr_place'    => $service->nbr_place, // ✅ Add this
+                ];
+            }
+            
+            // Category-based service
+            return [
+                'id'           => $service->id,
+                'name'         => $service->name,
+                'description'  => $service->description ?? '',
+                'price'        => (float) $service->price,
+                'unit'         => $service->unit ?? '',
+                'is_standard'  => (bool) $service->is_standard,
+                'is_available' => (bool) $service->is_available,
+                'nbr_place'    => $service->nbr_place, // ✅ Add this
+            ];
+        })->values()->toArray();
 
         /* ── Equipment ───────────────────────────────────────────────── */
         $equipment = $center->availableEquipment->map(fn($eq) => [
@@ -175,11 +231,10 @@ class CenterServiceApiController extends Controller
 
         $query = ProfileCentre::with([
             'profile.user',
-            'availableServices',
-            'availableEquipment',
+            'availableEquipment',  
         ])->available()
-          ->whereNotIn('id', $disabledProfileIds)
-          ->whereHas('profile.user', fn($q) => $q->where('is_active', 1));
+        ->whereNotIn('id', $disabledProfileIds)
+        ->whereHas('profile.user', fn($q) => $q->where('is_active', 1));
 
         if ($request->has('category')) {
             $query->where('category', $request->category);

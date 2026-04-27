@@ -6,6 +6,8 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOneThrough;
+use Illuminate\Support\Collection;
 
 class ProfileCentre extends Model
 {
@@ -48,29 +50,88 @@ class ProfileCentre extends Model
     }
 
     /**
-     * Get the user through profile
+     * Get the user through profile (proper Eloquent relationship)
      */
-    public function user()
+    public function user(): HasOneThrough
     {
-        return $this->profile->user();
+        return $this->hasOneThrough(
+            User::class,
+            Profile::class,
+            'id',
+            'id',
+            'profile_id',
+            'user_id'
+        );
     }
 
     /**
-     * Get services offered by this center
+     * Get services offered by this center (category-based only)
      */
     public function services(): BelongsToMany
     {
         return $this->belongsToMany(ServiceCategory::class, 'profile_center_services', 'profile_center_id', 'service_category_id')
                     ->using(ProfileCenterService::class)
-                    ->withPivot('price', 'unit', 'description', 'is_available', 'min_quantity', 'max_quantity', 'is_standard')
+                    ->withPivot('price', 'unit', 'description', 'is_available', 'nbr_place', 'is_standard')
                     ->withTimestamps();
     }
+
     /**
-     * Get center services pivot records
+     * Get center services pivot records (ALL services including custom)
      */
     public function centerServices(): HasMany
     {
         return $this->hasMany(ProfileCenterService::class, 'profile_center_id');
+    }
+
+    /**
+     * Get ALL available services (category-based + custom)
+     * Returns a collection with both types merged
+     */
+    public function availableServices(): BelongsToMany
+    {
+        return $this->belongsToMany(ServiceCategory::class, 'profile_center_services', 'profile_center_id', 'service_category_id')
+                    ->using(ProfileCenterService::class)
+                    ->withPivot('price', 'unit', 'description', 'is_available','nbr_place', 'is_standard')
+                    ->withTimestamps()
+                    ->wherePivot('is_available', true);
+    }
+
+    /**
+     * Get ALL available services including custom services (COLLECTION)
+     */
+    public function getAllAvailableServices(): Collection
+    {
+        // Get category-based available services
+        $categoryServices = $this->availableServices()
+            ->get()
+            ->map(function($service) {
+                $service->is_custom = false;
+                return $service;
+            });
+
+        // Get custom services (service_category_id = null)
+        $customServices = $this->centerServices()
+            ->whereNull('service_category_id')
+            ->where('is_available', true)
+            ->get()
+            ->map(function($service) {
+                $service->is_custom = true;
+                return $service;
+            });
+
+        // Merge both collections
+        return $categoryServices->concat($customServices);
+    }
+    /**
+     * Get category-based available services (original relationship - kept for compatibility)
+     */
+    public function availableCategoryServices(): BelongsToMany
+    {
+        return $this->belongsToMany(ServiceCategory::class, 'profile_center_services', 'profile_center_id', 'service_category_id')
+                    ->using(ProfileCenterService::class)
+                    ->withPivot('price', 'unit', 'description', 'is_available', 'nbr_place', 'is_standard')
+                    ->withTimestamps()
+                    ->wherePivot('is_available', true);
     }
 
     /**
@@ -86,35 +147,19 @@ class ProfileCentre extends Model
      */
     public function standardService()
     {
-        return $this->services()
-                    ->wherePivot('is_standard', true)
-                    ->wherePivot('is_available', true)
+        return $this->centerServices()
+                    ->where('is_standard', true)
+                    ->where('is_available', true)
                     ->first();
-    }
-
-    /**
-     * Get available services (excluding unavailable ones)
-     */
-    public function availableServices(): BelongsToMany
-    {
-        return $this->belongsToMany(ServiceCategory::class, 'profile_center_services', 'profile_center_id', 'service_category_id')
-                    ->using(ProfileCenterService::class)
-                    ->withPivot('price', 'unit', 'description', 'is_available', 'min_quantity', 'max_quantity', 'is_standard')
-                    ->withTimestamps()
-                    ->wherePivot('is_available', true);
     }
 
     /**
      * Get additional (paid) services
      */
-    public function additionalServices(): BelongsToMany
+    public function additionalServices(): Collection
     {
-        return $this->belongsToMany(ServiceCategory::class, 'profile_center_services', 'profile_center_id', 'service_category_id')
-                    ->using(ProfileCenterService::class)
-                    ->withPivot('price', 'unit', 'description', 'is_available', 'min_quantity', 'max_quantity', 'is_standard')
-                    ->withTimestamps()
-                    ->wherePivot('is_available', true)
-                    ->wherePivot('is_standard', false);
+        return $this->availableServices()
+                    ->filter(fn($service) => !($service->is_standard ?? false));
     }
 
     /**
@@ -133,7 +178,7 @@ class ProfileCentre extends Model
      */
     public function availableEquipment()
     {
-        return $this->equipment()->available();
+        return $this->equipment()->where('is_available', true);
     }
 
     /**

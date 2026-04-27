@@ -72,9 +72,6 @@ class ProfileController extends Controller
         return null;
     }
 
-    /**
-     * Update center general settings
-     */
     public function updateCenter(Request $request, $centerId)
     {
         try {
@@ -89,12 +86,16 @@ class ProfileController extends Controller
                 ], 403);
             }
 
-            // Remove 'show_standard_service' as it's not in schema
-            // Only update fields that exist in schema
+            \Log::info('updateCenter request', [
+                'centerId' => $centerId,
+                'all' => $request->all(),
+            ]);
+
+            // Only update fields that are present in the request
             $data = $request->only([
                 'name',
                 'capacite',
-                'price_per_night',
+                'price_per_night',  // ✅ This is the key field!
                 'category',
                 'disponibilite',
                 'latitude',
@@ -105,18 +106,28 @@ class ProfileController extends Controller
                 'established_date',
             ]);
 
-            // Convert boolean for disponibilite
-            if (isset($data['disponibilite'])) {
-                $data['disponibilite'] = (bool) $data['disponibilite'] ? 1 : 0;
+            // Convert disponibilite if present
+            if ($request->has('disponibilite')) {
+                $data['disponibilite'] = $request->boolean('disponibilite');
             }
+
+            \Log::info('Updating center with data', ['data' => $data]);
 
             $center->update($data);
 
+            \Log::info('Center updated successfully', [
+                'centerId' => $centerId,
+                'new_price_per_night' => $center->fresh()->price_per_night
+            ]);
+
             return response()->json([
                 'success' => true,
-                'message' => 'Center updated successfully'
+                'message' => 'Center updated successfully',
+                'data' => $center->fresh()
             ]);
         } catch (\Exception $e) {
+            \Log::error('updateCenter error: ' . $e->getMessage());
+            
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to update center',
@@ -834,6 +845,17 @@ class ProfileController extends Controller
 
             $album->update($updateData);
 
+            // For centre users: migrate any camping_centre photos that are not yet
+            // in this album into it now, preserving their existing is_cover flags.
+            // This must happen BEFORE the new-upload cover check so we don't
+            // accidentally make a fresh upload the cover when one already exists.
+            if ($campingCentreId) {
+                Photo::where('camping_centre_id', $campingCentreId)
+                    ->where('user_id', $user->id)
+                    ->whereNull('album_id')
+                    ->update(['album_id' => $album->id]);
+            }
+
             $uploadedPhotos = [];
             $order = $album->photos()->max('order') ?? 0;
 
@@ -1457,8 +1479,8 @@ class ProfileController extends Controller
                 'price' => 'required|numeric|min:0',
                 'unit' => 'required|string|max:50',
                 'is_available' => 'boolean',
-                'min_quantity' => 'integer|min:1',
-                'max_quantity' => 'nullable|integer|min:1',
+                'nbr_place' => 'nullable|integer|min:1'
+                
             ]);
 
             if ($validator->fails()) {
@@ -1490,8 +1512,7 @@ class ProfileController extends Controller
                 'is_available' => $request->is_available ?? true,
                 'is_standard' => false,
                 'unit' => $request->unit,
-                'min_quantity' => $request->min_quantity ?? 1,
-                'max_quantity' => $request->max_quantity,
+                'nbr_place' => $request->nbr_place,
             ];
 
             $service = ProfileCenterService::create($serviceData);
@@ -1574,7 +1595,6 @@ class ProfileController extends Controller
             ], 500);
         }
     }
-
     public function getCenterServices($centerId)
     {
         try {
@@ -1587,47 +1607,70 @@ class ProfileController extends Controller
                 ], 404);
             }
 
-            $services = ProfileCenterService::with('serviceCategory')
-                ->where('profile_center_id', $centerId)
+            $services = ProfileCenterService::where('profile_center_id', $centerId)
                 ->where('is_available', true)
                 ->orderBy('is_standard', 'desc')
                 ->orderBy('created_at', 'asc')
                 ->get();
 
             $formattedServices = $services->map(function($service) {
+                // Custom service (no category)
                 if (is_null($service->service_category_id)) {
                     return [
                         'id' => $service->id,
                         'service_category_id' => null,
-                        'name' => $service->name,
+                        'name' => $service->name, // ✅ Use the stored name
                         'description' => $service->description,
                         'price' => (float) $service->price,
                         'unit' => $service->unit,
                         'is_standard' => (bool) $service->is_standard,
                         'is_available' => (bool) $service->is_available,
-                        'min_quantity' => $service->min_quantity,
-                        'max_quantity' => $service->max_quantity,
+                        'nbr_place' => $service->nbr_place,
                         'is_custom' => true,
                     ];
                 }
                 
+                // Category-based service
+                $category = ServiceCategory::find($service->service_category_id);
+                
                 return [
                     'id' => $service->id,
                     'service_category_id' => $service->service_category_id,
-                    'name' => $service->serviceCategory ? $service->serviceCategory->name : 'Service',
-                    'description' => $service->description ?? ($service->serviceCategory ? $service->serviceCategory->description : ''),
+                    'name' => $service->name, // ✅ Use the stored name (which may be customized)
+                    'description' => $service->description ?? ($category ? $category->description : ''),
                     'price' => (float) $service->price,
                     'unit' => $service->unit,
                     'is_standard' => (bool) $service->is_standard,
                     'is_available' => (bool) $service->is_available,
-                    'min_quantity' => $service->min_quantity,
-                    'max_quantity' => $service->max_quantity,
+                    'nbr_place' => $service->nbr_place,
                     'is_custom' => false,
                 ];
             });
 
-            return response()->json($formattedServices);
+            // ✅ Ensure standard service exists
+            $hasStandardService = $formattedServices->contains('is_standard', true);
+            
+            if (!$hasStandardService) {
+                $defaultStandard = [
+                    'id' => null,
+                    'service_category_id' => 1,
+                    'name' => 'Basic Camping',
+                    'description' => 'Sleep with your own tent - access to basic facilities',
+                    'price' => (float) ($center->price_per_night ?? 15),
+                    'unit' => 'person/night',
+                    'is_standard' => true,
+                    'is_available' => true,
+                    'nbr_place' => null,
+                    'is_custom' => false,
+                ];
+                
+                $formattedServices->prepend($defaultStandard);
+            }
+
+            return response()->json($formattedServices->values());
         } catch (\Exception $e) {
+            \Log::error('getCenterServices error: ' . $e->getMessage());
+            
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch center services',
@@ -1635,7 +1678,6 @@ class ProfileController extends Controller
             ], 500);
         }
     }
-
     public function updateCenterService(Request $request, $centerId, $serviceId = null)
     {
         try {
@@ -1656,8 +1698,7 @@ class ProfileController extends Controller
                 'price' => 'required|numeric|min:0',
                 'is_available' => 'boolean',
                 'unit' => 'required|string|max:50',
-                'min_quantity' => 'integer|min:1',
-                'max_quantity' => 'nullable|integer|min:1',
+                'nbr_place' => 'nullable|integer|min:1',
             ]);
 
             if ($validator->fails()) {
@@ -1674,27 +1715,22 @@ class ProfileController extends Controller
                 return $this->addCustomService($request, $centerId);
             }
 
+            // ✅ Always use the name from the request (user can customize it)
             $serviceData = [
                 'profile_center_id' => $centerId,
+                'name' => $request->name, // ✅ Always use requested name
                 'price' => $request->price,
                 'description' => $request->description,
                 'is_available' => $request->is_available ?? true,
                 'unit' => $request->unit,
-                'min_quantity' => $request->min_quantity ?? 1,
-                'max_quantity' => $request->max_quantity,
+                'nbr_place' => $request->nbr_place,                
             ];
 
-            if ($isCustomService) {
-                $serviceData['service_category_id'] = null;
-                $serviceData['name'] = $request->name;
-                $serviceData['is_standard'] = false;
-            } else {
-                $serviceData['service_category_id'] = $request->service_category_id;
-                $serviceData['is_standard'] = false;
-                
+            $isStandardCategory = false;
+            if (!$isCustomService) {
                 $serviceCategory = ServiceCategory::find($request->service_category_id);
                 if ($serviceCategory) {
-                    $serviceData['name'] = $serviceCategory->name;
+                    $isStandardCategory = $serviceCategory->is_standard;
                     
                     if ($serviceCategory->is_standard && $request->price < $serviceCategory->min_price) {
                         return response()->json([
@@ -1703,34 +1739,29 @@ class ProfileController extends Controller
                         ], 422);
                     }
                 }
+                $serviceData['service_category_id'] = $request->service_category_id;
+                $serviceData['is_standard'] = $isStandardCategory;
+            } else {
+                $serviceData['service_category_id'] = null;
+                $serviceData['is_standard'] = false;
             }
 
             if ($serviceId) {
+                // Update existing service
                 $service = ProfileCenterService::where('id', $serviceId)
                     ->where('profile_center_id', $centerId)
                     ->firstOrFail();
                     
                 $service->update($serviceData);
             } else {
-                $existingService = ProfileCenterService::where('profile_center_id', $centerId);
-                
-                if ($isCustomService) {
-                    $existingService = $existingService->where('name', $request->name)
-                        ->whereNull('service_category_id');
-                } else {
-                    $existingService = $existingService->where('service_category_id', $request->service_category_id);
-                }
-                
-                $existingService = $existingService->first();
-
-                if ($existingService) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Service already exists for this center'
-                    ], 409);
-                }
-
+                // Create new service
                 $service = ProfileCenterService::create($serviceData);
+            }
+
+            // Update price_per_night if this is the standard service
+            if ($isStandardCategory) {                
+                $center->price_per_night = $request->price;
+                $center->save();
             }
 
             return response()->json([
@@ -1749,7 +1780,6 @@ class ProfileController extends Controller
             ], 500);
         }
     }
-
     public function deleteCenterService($centerId, $serviceId)
     {
         try {
