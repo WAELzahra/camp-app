@@ -742,9 +742,22 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
         Route::patch('/{id}/deactivate', [AnnonceController::class, 'deactivate']);
     });
     // Dashboard/Utility
-    
+    Route::get('/activity/counts', [\App\Http\Controllers\Admin\AdminActivityController::class, 'counts']);
+
     // Dashboard
     Route::post('/restock-expired', [ReservationMaterielleController::class, 'restockExpiredReservations']);
+
+    // -------------------- MATERIELLES MANAGEMENT --------------------
+    Route::prefix('equipment')->group(function () {
+        Route::get('/',                  [\App\Http\Controllers\Admin\AdminMaterielleController::class, 'index']);
+        Route::get('/stats',             [\App\Http\Controllers\Admin\AdminMaterielleController::class, 'stats']);
+        Route::patch('/{id}/toggle',     [\App\Http\Controllers\Admin\AdminMaterielleController::class, 'toggleStatus']);
+        Route::put('/{id}',              [\App\Http\Controllers\Admin\AdminMaterielleController::class, 'update']);
+        Route::delete('/{id}',           [\App\Http\Controllers\Admin\AdminMaterielleController::class, 'destroy']);
+        Route::post('/bulk-toggle',      [\App\Http\Controllers\Admin\AdminMaterielleController::class, 'bulkStatus']);
+        Route::post('/{id}/photos',      [\App\Http\Controllers\Admin\AdminMaterielleController::class, 'addPhoto']);
+        Route::delete('/{id}/photos/{photoId}', [\App\Http\Controllers\Admin\AdminMaterielleController::class, 'deletePhoto']);
+    });
     
     // -------------------- USER MANAGEMENT --------------------
     Route::prefix('users')->group(function () {
