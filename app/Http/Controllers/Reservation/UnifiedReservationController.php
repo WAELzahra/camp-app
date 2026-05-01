@@ -378,6 +378,11 @@ class UnifiedReservationController extends Controller
             'status' => $reservation->status,
             'status_label' => $this->mapCentreStatus($reservation->status),
             'total_price' => $reservation->total_price,
+            'platform_fee_amount' => $reservation->platform_fee_amount ?? 0,
+            'platform_fee_rate' => $reservation->platform_fee_rate ?? 0,
+            'payment_method' => $reservation->payment_method ?? 'wallet',
+            'discount_amount' => $reservation->discount_amount ?? 0,
+            'nights' => $reservation->nights ?? 1,
             'user' => $reservation->user ? [
                 'id' => $reservation->user->id,
                 'first_name' => $reservation->user->first_name,

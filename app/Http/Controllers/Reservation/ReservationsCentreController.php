@@ -22,6 +22,11 @@ use App\Mail\NewReservationNotification;
 use App\Mail\ReservationModifiedByCenter;
 use App\Mail\ReservationCreatedToCamper;
 use App\Mail\ReservationUpdatedToCentre;
+use App\Models\Balance;
+use App\Models\RefundRequest;
+use App\Models\WalletTransaction;
+use App\Services\CommissionService;
+use Carbon\Carbon;
 class ReservationsCentreController extends Controller
 {
     /**
@@ -114,6 +119,7 @@ class ReservationsCentreController extends Controller
             'date_fin' => 'required|date|after_or_equal:date_debut',
             'nbr_place' => 'required|integer|min:1',
             'note' => 'nullable|string',
+            'payment_method' => 'nullable|in:card,wallet',
             'promo_code' => 'nullable|string|max:50',
             'service_items' => 'required|array|min:1',
             'service_items.*.profile_center_service_id' => 'required|exists:profile_center_services,id',
@@ -149,10 +155,14 @@ class ReservationsCentreController extends Controller
         DB::beginTransaction();
 
         try {
-            // Calculate base total price
+            // Compute number of nights from dates
+            $nights = max(1, Carbon::parse($request->date_debut)->diffInDays(Carbon::parse($request->date_fin)));
+
+            // Calculate base total price (multiply per-night services by nights)
             $totalPrice = 0;
             foreach ($request->service_items as $item) {
-                $subtotal = $item['unit_price'] * $item['quantity'];
+                $isPerNight = preg_match('/night|nuit/i', $item['unit'] ?? '');
+                $subtotal   = $item['unit_price'] * $item['quantity'] * ($isPerNight ? $nights : 1);
                 $totalPrice += $subtotal;
             }
 
@@ -175,10 +185,15 @@ class ReservationsCentreController extends Controller
                 $promoCodeId    = $promo->id;
             }
 
+            // Apply platform service fee (charged to camper on top of base price)
+            $feeData         = CommissionService::addServiceFee($totalPrice);
+            $totalWithFee    = $feeData['total'];
+            $platformFeeAmt  = $feeData['fee_amount'];
+            $platformFeeRate = round($feeData['fee_rate'] * 100, 2);
+
             // Get service types for the reservation type field
             $serviceTypes = [];
             foreach ($request->service_items as $item) {
-                // You might want to fetch the service to get its category
                 $service = \App\Models\ProfileCenterService::find($item['profile_center_service_id']);
                 if ($service && $service->category) {
                     $serviceTypes[] = $service->category->name;
@@ -186,26 +201,31 @@ class ReservationsCentreController extends Controller
             }
             $type = !empty($serviceTypes) ? implode(', ', array_unique($serviceTypes)) : 'Multiple Services';
 
-            // Create the main reservation
+            // Create the main reservation (total_price includes camper platform fee)
             $reservationCentre = Reservations_centre::create([
-                'user_id'         => $userId,
-                'centre_id'       => $request->centre_id,
-                'date_debut'      => $request->date_debut,
-                'date_fin'        => $request->date_fin,
-                'note'            => $request->note,
-                'type'            => $type,
-                'nbr_place'       => $request->nbr_place,
-                'status'          => 'pending',
-                'total_price'     => $totalPrice,
-                'service_count'   => count($request->service_items),
-                'promo_code_id'   => $promoCodeId,
-                'discount_amount' => $discountAmount,
+                'user_id'              => $userId,
+                'centre_id'            => $request->centre_id,
+                'date_debut'           => $request->date_debut,
+                'date_fin'             => $request->date_fin,
+                'note'                 => $request->note,
+                'type'                 => $type,
+                'nbr_place'            => $request->nbr_place,
+                'nights'               => $nights,
+                'status'               => 'pending',
+                'total_price'          => $totalWithFee,
+                'payment_method'       => $request->input('payment_method', 'wallet'),
+                'service_count'        => count($request->service_items),
+                'promo_code_id'        => $promoCodeId,
+                'discount_amount'      => $discountAmount,
+                'platform_fee_rate'    => $platformFeeRate,
+                'platform_fee_amount'  => $platformFeeAmt,
             ]);
 
-            // Create service items
+            // Create service items (subtotal reflects nights multiplier)
             foreach ($request->service_items as $item) {
-                $subtotal = $item['unit_price'] * $item['quantity'];
-                
+                $isPerNight = preg_match('/night|nuit/i', $item['unit'] ?? '');
+                $subtotal   = $item['unit_price'] * $item['quantity'] * ($isPerNight ? $nights : 1);
+
                 ReservationServiceItem::create([
                     'reservation_id' => $reservationCentre->id,
                     'profile_center_service_id' => $item['profile_center_service_id'],
@@ -455,11 +475,12 @@ class ReservationsCentreController extends Controller
         }
 
         // Determine who is canceling
-        $canceledBy = ($userId == $reservation->user_id) ? 'user' : 'center';
+        $canceledBy     = ($userId == $reservation->user_id) ? 'user' : 'center';
         $cancellationDate = now();
+        $originalStatus = $reservation->status; // capture before overwrite
 
         // Update reservation with cancellation details
-        $reservation->status = 'canceled';
+        $reservation->status     = 'canceled';
         $reservation->canceled_by = $canceledBy;
         $reservation->canceled_at = $cancellationDate;
         $updated = $reservation->save();
@@ -471,10 +492,31 @@ class ReservationsCentreController extends Controller
         // Also cancel all service items
         ReservationServiceItem::where('reservation_id', $reservation->id)
             ->update([
-                'status' => 'canceled',
+                'status'      => 'canceled',
                 'rejected_by' => $canceledBy,
-                'rejected_at' => $cancellationDate
+                'rejected_at' => $cancellationDate,
             ]);
+
+        // Only create a refund request if money was actually transferred (reservation was approved)
+        $refundCreated = false;
+        if (
+            $reservation->payment_method === 'wallet' &&
+            $reservation->total_price > 0 &&
+            $originalStatus === 'approved'
+        ) {
+            $calc = CommissionService::calculate('center', (float) $reservation->total_price);
+            RefundRequest::create([
+                'reservation_centre_id' => $reservation->id,
+                'montant_rembourse'     => $reservation->total_price,
+                'net_amount'            => $calc['net_revenue'],
+                'commission_amount'     => $calc['commission'],
+                'commission_rate'       => round($calc['rate'] * 100, 2),
+                'payment_channel'       => 'wallet',
+                'reason'                => 'Annulation par ' . $canceledBy,
+                'status'                => 'en_attente',
+            ]);
+            $refundCreated = true;
+        }
 
         // Load relationships for email content
         $reservation->load(['user', 'centre', 'serviceItems']);
@@ -511,10 +553,13 @@ class ReservationsCentreController extends Controller
         }
 
         return response()->json([
-            'message' => 'Reservation cancelled successfully.',
-            'canceled_by' => $canceledBy,
-            'canceled_at' => $cancellationDate->format('Y-m-d H:i:s'),
-            'reservation' => $reservation
+            'message' => $refundCreated
+                ? 'Reservation cancelled. A refund request has been submitted for admin review.'
+                : 'Reservation cancelled successfully.',
+            'canceled_by'    => $canceledBy,
+            'canceled_at'    => $cancellationDate->format('Y-m-d H:i:s'),
+            'refund_pending' => $refundCreated,
+            'reservation'    => $reservation,
         ], 200);
     }
     /**
@@ -573,17 +618,55 @@ class ReservationsCentreController extends Controller
                 return response()->json(['message' => 'Unauthorized'], 403);
             }
 
+            // Check wallet balance before approving if payment is via wallet
+            if ($reservation->payment_method === 'wallet' && $reservation->total_price > 0) {
+                $camperBalance = Balance::forUser($reservation->user_id);
+                if ($camperBalance->solde_disponible < $reservation->total_price) {
+                    return response()->json([
+                        'message' => 'Insufficient wallet balance. The camper does not have enough funds.',
+                    ], 422);
+                }
+            }
+
             // Update status
             $reservation->status = 'approved';
             $reservation->save();
-            
+
             // Also approve all service items
             ReservationServiceItem::where('reservation_id', $reservation->id)
                 ->update(['status' => 'approved']);
 
-            // Send email - SIMPLE like verification
+            // Wallet payment: debit camper and credit centre (minus commission)
+            if ($reservation->payment_method === 'wallet' && $reservation->total_price > 0) {
+                $gross       = (float) $reservation->total_price;
+                $platformFee = (float) ($reservation->platform_fee_amount ?? 0);
+                // Centre commission is calculated only on the base amount (gross minus camper platform fee)
+                $base        = max(0, round($gross - $platformFee, 2));
+                $calc        = CommissionService::calculate('center', $base);
+                $commAmt     = $calc['commission'];
+                $net         = $calc['net_revenue'];
+                $commPct     = round($calc['rate'] * 100, 2);
+
+                $camperBalance = Balance::forUser($reservation->user_id);
+                $camperBalance->debiter($gross);
+                WalletTransaction::logDebit(
+                    $reservation->user_id, 'reservation_payment', $gross,
+                    'centre_reservation', $reservation->id,
+                    "Paiement réservation centre #{$reservation->id}"
+                );
+
+                $centreBalance = Balance::forUser($reservation->centre_id);
+                $centreBalance->crediter($net);
+                WalletTransaction::logCredit(
+                    $reservation->centre_id, 'reservation_income',
+                    $gross, $commPct, $commAmt, $net,
+                    'centre_reservation', $reservation->id,
+                    "Revenu réservation #{$reservation->id} — commission {$commPct}% ({$commAmt} TND déduits)"
+                );
+            }
+
+            // Send email
             if ($reservation->user && $reservation->user->email) {
-                // Use the SAME pattern as verification service
                 \Mail::to($reservation->user->email)->send(new \App\Mail\CentreReservationConfirmed($reservation));
             }
 

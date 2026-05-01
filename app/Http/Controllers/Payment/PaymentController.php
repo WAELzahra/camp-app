@@ -10,8 +10,8 @@ use Illuminate\Support\Facades\Http;
 use App\Models\Reservations_events;
 use PDF;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Str;
+use App\Services\CommissionService;
 
 class PaymentController extends Controller
 {
@@ -28,9 +28,9 @@ class PaymentController extends Controller
             return response()->json(['error' => 'Le montant doit être au moins 50% du total.'], 422);
         }
 
-        $commissionRate = Config::get('commission.default', 0.10);
-        $commission = $montant * $commissionRate;
-        $net_revenue = $montant - $commission;
+        $calc        = CommissionService::calculate('group', $montant);
+        $commission  = $calc['commission'];
+        $net_revenue = $calc['net_revenue'];
 
         $reference = Str::uuid();
 

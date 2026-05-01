@@ -24,6 +24,14 @@ protected $table = 'reservations_events';
         'created_by',
         'promo_code_id',
         'discount_amount',
+        'payment_method',
+        'platform_fee_amount',
+        'platform_fee_rate',
+    ];
+
+    protected $casts = [
+        'platform_fee_amount' => 'float',
+        'platform_fee_rate'   => 'float',
     ];
 
     // 🔁 Relation : le groupe organisateur

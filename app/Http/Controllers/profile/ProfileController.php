@@ -1608,7 +1608,6 @@ class ProfileController extends Controller
             }
 
             $services = ProfileCenterService::where('profile_center_id', $centerId)
-                ->where('is_available', true)
                 ->orderBy('is_standard', 'desc')
                 ->orderBy('created_at', 'asc')
                 ->get();
@@ -1619,27 +1618,27 @@ class ProfileController extends Controller
                     return [
                         'id' => $service->id,
                         'service_category_id' => null,
-                        'name' => $service->name, // ✅ Use the stored name
-                        'description' => $service->description,
+                        'name' => $service->name ?? 'Custom Service',
+                        'description' => $service->description ?? '',
                         'price' => (float) $service->price,
-                        'unit' => $service->unit,
+                        'unit' => $service->unit ?? 'unit',
                         'is_standard' => (bool) $service->is_standard,
                         'is_available' => (bool) $service->is_available,
                         'nbr_place' => $service->nbr_place,
                         'is_custom' => true,
                     ];
                 }
-                
+
                 // Category-based service
                 $category = ServiceCategory::find($service->service_category_id);
-                
+
                 return [
                     'id' => $service->id,
                     'service_category_id' => $service->service_category_id,
-                    'name' => $service->name, // ✅ Use the stored name (which may be customized)
+                    'name' => $service->name ?? ($category ? $category->name : 'Service'),
                     'description' => $service->description ?? ($category ? $category->description : ''),
                     'price' => (float) $service->price,
-                    'unit' => $service->unit,
+                    'unit' => $service->unit ?? ($category ? $category->unit : 'unit'),
                     'is_standard' => (bool) $service->is_standard,
                     'is_available' => (bool) $service->is_available,
                     'nbr_place' => $service->nbr_place,
@@ -1715,15 +1714,21 @@ class ProfileController extends Controller
                 return $this->addCustomService($request, $centerId);
             }
 
-            // ✅ Always use the name from the request (user can customize it)
+            $resolvedName = $request->name;
+            if (!$resolvedName && !$isCustomService) {
+                $cat = ServiceCategory::find($request->service_category_id);
+                $resolvedName = $cat?->name ?? 'Service';
+            }
+
             $serviceData = [
                 'profile_center_id' => $centerId,
-                'name' => $request->name, // ✅ Always use requested name
-                'price' => $request->price,
-                'description' => $request->description,
-                'is_available' => $request->is_available ?? true,
-                'unit' => $request->unit,
-                'nbr_place' => $request->nbr_place,                
+                'name'              => $resolvedName,
+                'price'             => $request->price,
+                'description'       => $request->description,
+                'is_available'      => $request->is_available ?? true,
+                'unit'              => $request->unit,
+                'nbr_place'         => $request->nbr_place,
+                'is_refundable'     => $request->has('is_refundable') ? (bool) $request->is_refundable : true,
             ];
 
             $isStandardCategory = false;
@@ -1751,10 +1756,15 @@ class ProfileController extends Controller
                 $service = ProfileCenterService::where('id', $serviceId)
                     ->where('profile_center_id', $centerId)
                     ->firstOrFail();
-                    
                 $service->update($serviceData);
+            } elseif ($isStandardCategory) {
+                // Upsert standard service to prevent duplicates
+                $service = ProfileCenterService::updateOrCreate(
+                    ['profile_center_id' => $centerId, 'is_standard' => true],
+                    $serviceData
+                );
             } else {
-                // Create new service
+                // Create new non-standard service
                 $service = ProfileCenterService::create($serviceData);
             }
 

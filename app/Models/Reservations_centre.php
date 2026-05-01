@@ -17,22 +17,28 @@ class Reservations_centre extends Model
         'date_debut',
         'date_fin',
         'nbr_place',
+        'nights',
         'note',
         'type',
         'status',
         'payments_id',
         'total_price',
+        'payment_method',
         'service_count',
         'promo_code_id',
         'discount_amount',
+        'platform_fee_rate',
+        'platform_fee_amount',
         'last_modified_by',
         'last_modified_at'
     ];
-    
+
     protected $casts = [
         'date_debut' => 'date',
         'date_fin' => 'date',
         'total_price' => 'decimal:2',
+        'platform_fee_amount' => 'float',
+        'platform_fee_rate' => 'float',
         'last_modified_at' => 'datetime'
     ];
     

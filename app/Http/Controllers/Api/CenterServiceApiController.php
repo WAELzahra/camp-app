@@ -133,36 +133,24 @@ class CenterServiceApiController extends Controller
 
         /* ── Services ─────────────────────────────────────────────────── */
         $allServices = $center->centerServices()
+            ->with('serviceCategory')
             ->where('is_available', true)
             ->orderBy('is_standard', 'desc')
             ->orderBy('created_at', 'asc')
             ->get();
 
         $services = $allServices->map(function($service) {
-            // Custom service (no category)
-            if (is_null($service->service_category_id)) {
-                return [
-                    'id'           => $service->id,
-                    'name'         => $service->name,
-                    'description'  => $service->description ?? '',
-                    'price'        => (float) $service->price,
-                    'unit'         => $service->unit ?? '',
-                    'is_standard'  => (bool) $service->is_standard,
-                    'is_available' => (bool) $service->is_available,
-                    'nbr_place'    => $service->nbr_place, // ✅ Add this
-                ];
-            }
-            
-            // Category-based service
+            $name = $service->name ?? $service->serviceCategory?->name ?? 'Service';
+
             return [
                 'id'           => $service->id,
-                'name'         => $service->name,
-                'description'  => $service->description ?? '',
+                'name'         => $name,
+                'description'  => $service->description ?? $service->serviceCategory?->description ?? '',
                 'price'        => (float) $service->price,
-                'unit'         => $service->unit ?? '',
+                'unit'         => $service->unit ?? $service->serviceCategory?->unit ?? '',
                 'is_standard'  => (bool) $service->is_standard,
                 'is_available' => (bool) $service->is_available,
-                'nbr_place'    => $service->nbr_place, // ✅ Add this
+                'nbr_place'    => $service->nbr_place,
             ];
         })->values()->toArray();
 

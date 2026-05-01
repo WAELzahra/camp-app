@@ -19,6 +19,9 @@ use App\Mail\ReservationCanceledByFournisseurToCamper;
 use App\Mail\RentalReturnConfirmed;
 use App\Mail\ReservationDisputedToCamper;
 use App\Mail\ReservationDisputedToFournisseur;
+use App\Models\Balance;
+use App\Models\WalletTransaction;
+use App\Services\CommissionService;
 
 class ReservationMaterielleController extends Controller
 {
@@ -79,7 +82,17 @@ class ReservationMaterielleController extends Controller
             'adresse_livraison' => 'required_if:mode_livraison,delivery|nullable|string|max:500',
             'frais_livraison'   => 'nullable|numeric|min:0',
             'promo_code'        => 'nullable|string|max:50',
+            'payment_method'    => 'nullable|in:wallet,card',
         ]);
+
+        // Card payment not available in v1
+        if (($validated['payment_method'] ?? 'wallet') === 'card') {
+            return response()->json([
+                'status'      => 'error',
+                'message'     => 'Le paiement en ligne par carte sera bientôt disponible. Veuillez utiliser votre wallet.',
+                'coming_soon' => true,
+            ], 422);
+        }
 
         $user     = Auth::user();
         $isRental = $validated['type_reservation'] === 'location';
@@ -136,25 +149,65 @@ class ReservationMaterielleController extends Controller
             $promoCodeId    = $promo->id;
         }
 
+        // ── Wallet balance check (escrow deduction) ──────────────────────────────
+        $serviceFeeRate = CommissionService::serviceFeeRate();
+        // Reverse-calculate base from totalWithFee: base = total / (1 + feeRate)
+        $platformFeeAmt  = round($montantTotal * $serviceFeeRate / (1 + $serviceFeeRate), 2);
+        $platformFeeRate = round($serviceFeeRate * 100, 2);
+
+        if ($montantTotal > 0) {
+            $camperBalance = Balance::forUser($user->id);
+            if ($camperBalance->solde_disponible < $montantTotal) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => "Solde wallet insuffisant. Disponible : {$camperBalance->solde_disponible} TND, requis : {$montantTotal} TND.",
+                ], 422);
+            }
+        }
+
         DB::beginTransaction();
         try {
+            // Deduct from camper wallet (escrow — supplier paid after confirmation)
+            if ($montantTotal > 0) {
+                Balance::forUser($user->id)->debiter($montantTotal);
+                WalletTransaction::logDebit(
+                    $user->id, 'reservation_payment', $montantTotal,
+                    'materiel_reservation', null,
+                    "Paiement réservation matériel — {$materielle->name}"
+                );
+            }
+
             $reservation = Reservations_materielles::create([
-                'materielle_id'     => $validated['materielle_id'],
-                'user_id'           => $user->id,
-                'fournisseur_id'    => $validated['fournisseur_id'],
-                'type_reservation'  => $validated['type_reservation'],
-                'date_debut'        => $validated['date_debut'] ?? null,
-                'date_fin'          => $validated['date_fin'] ?? null,
-                'quantite'          => $validated['quantite'],
-                'montant_total'     => $montantTotal,
-                'mode_livraison'    => $validated['mode_livraison'],
-                'adresse_livraison' => $validated['adresse_livraison'] ?? null,
-                'frais_livraison'   => $validated['frais_livraison'] ?? 0,
-                'cin_camper'        => $isRental ? $user->profile->cin_path : null,
-                'status'            => 'pending',
-                'promo_code_id'     => $promoCodeId,
-                'discount_amount'   => $discountAmount,
+                'materielle_id'      => $validated['materielle_id'],
+                'user_id'            => $user->id,
+                'fournisseur_id'     => $validated['fournisseur_id'],
+                'type_reservation'   => $validated['type_reservation'],
+                'date_debut'         => $validated['date_debut'] ?? null,
+                'date_fin'           => $validated['date_fin'] ?? null,
+                'quantite'           => $validated['quantite'],
+                'montant_total'      => $montantTotal,
+                'mode_livraison'     => $validated['mode_livraison'],
+                'adresse_livraison'  => $validated['adresse_livraison'] ?? null,
+                'frais_livraison'    => $validated['frais_livraison'] ?? 0,
+                'cin_camper'         => $isRental ? $user->profile->cin_path : null,
+                'status'             => 'pending',
+                'promo_code_id'      => $promoCodeId,
+                'discount_amount'    => $discountAmount,
+                'payment_method'     => 'wallet',
+                'platform_fee_amount'=> $montantTotal > 0 ? $platformFeeAmt  : null,
+                'platform_fee_rate'  => $montantTotal > 0 ? $platformFeeRate : null,
             ]);
+
+            // Update wallet transaction reference with real reservation ID
+            if ($montantTotal > 0) {
+                WalletTransaction::where('user_id', $user->id)
+                    ->where('type', 'debit')
+                    ->where('category', 'reservation_payment')
+                    ->where('reference_type', 'materiel_reservation')
+                    ->whereNull('reference_id')
+                    ->latest()->limit(1)
+                    ->update(['reference_id' => $reservation->id]);
+            }
 
             // Increment promo usage
             if ($promoCodeId) {
@@ -257,6 +310,21 @@ class ReservationMaterielleController extends Controller
 
         $reservation->update(['status' => 'rejected']);
 
+        // Wallet refund to camper
+        if ($reservation->payment_method === 'wallet' && $reservation->montant_total > 0) {
+            try {
+                Balance::forUser($reservation->user_id)->crediter($reservation->montant_total);
+                WalletTransaction::logCredit(
+                    $reservation->user_id, 'refund_in',
+                    $reservation->montant_total, 0, 0, $reservation->montant_total,
+                    'materiel_reservation', $reservation->id,
+                    "Remboursement — réservation refusée #{$reservation->id}"
+                );
+            } catch (\Throwable $e) {
+                \Log::error('Materiel reject wallet refund failed: ' . $e->getMessage());
+            }
+        }
+
         $camper = User::find($reservation->user_id);
         if ($camper) {
             Mail::to($camper->email)->send(new ReservationRejectedToUser($camper, 'The supplier has rejected your reservation.'));
@@ -281,6 +349,29 @@ class ReservationMaterielleController extends Controller
             return response()->json(['message' => 'Incorrect or already used PIN.'], 422);
         }
 
+        // For purchases: payout is immediate after PIN verification (wallet only)
+        if ($reservation->type_reservation === 'achat'
+            && $reservation->montant_total > 0
+            && $reservation->payment_method === 'wallet') {
+            $reservation->load('fournisseur');
+            $receiverType = ($reservation->fournisseur && $reservation->fournisseur->role_id === 4)
+                ? 'supplier'
+                : 'camper';
+            // Commission on base amount (total minus platform service fee)
+            $base = max(0, round((float) $reservation->montant_total - (float) ($reservation->platform_fee_amount ?? 0), 2));
+            $calc = CommissionService::calculate($receiverType, $base);
+            Balance::forUser($reservation->fournisseur_id)->crediter($calc['net_revenue']);
+            WalletTransaction::logCredit(
+                $reservation->fournisseur_id, 'reservation_income',
+                $base,
+                round($calc['rate'] * 100, 2),
+                $calc['commission'],
+                $calc['net_revenue'],
+                'materiel_reservation', $reservation->id,
+                "Revenu vente matériel — réservation #{$reservation->id}"
+            );
+        }
+
         return response()->json([
             'message'          => 'PIN verified. Equipment handoff confirmed.',
             'reservation'      => $reservation->fresh(),
@@ -302,6 +393,27 @@ class ReservationMaterielleController extends Controller
             $reservation->returned_at = now();
             $reservation->save();
             $reservation->materielle->increment('quantite_dispo', $reservation->quantite);
+
+            // Payout supplier after commission deduction (rental completes at return, wallet only)
+            if ($reservation->montant_total > 0 && $reservation->payment_method === 'wallet') {
+                $reservation->load('fournisseur');
+                $receiverType = ($reservation->fournisseur && $reservation->fournisseur->role_id === 4)
+                    ? 'supplier'
+                    : 'camper';
+                $base = max(0, round((float) $reservation->montant_total - (float) ($reservation->platform_fee_amount ?? 0), 2));
+                $calc = CommissionService::calculate($receiverType, $base);
+                Balance::forUser($reservation->fournisseur_id)->crediter($calc['net_revenue']);
+                WalletTransaction::logCredit(
+                    $reservation->fournisseur_id, 'reservation_income',
+                    $base,
+                    round($calc['rate'] * 100, 2),
+                    $calc['commission'],
+                    $calc['net_revenue'],
+                    'materiel_reservation', $reservation->id,
+                    "Revenu location matériel — réservation #{$reservation->id}"
+                );
+            }
+
             DB::commit();
 
             // Notify camper that their equipment return has been confirmed
@@ -340,6 +452,18 @@ class ReservationMaterielleController extends Controller
                 $reservation->materielle->increment('quantite_dispo', $reservation->quantite);
             }
             $reservation->update(['status' => 'cancelled_by_fournisseur']);
+
+            // Wallet refund to camper
+            if ($reservation->payment_method === 'wallet' && $reservation->montant_total > 0) {
+                Balance::forUser($reservation->user_id)->crediter($reservation->montant_total);
+                WalletTransaction::logCredit(
+                    $reservation->user_id, 'refund_in',
+                    $reservation->montant_total, 0, 0, $reservation->montant_total,
+                    'materiel_reservation', $reservation->id,
+                    "Remboursement — annulé par fournisseur #{$reservation->id}"
+                );
+            }
+
             DB::commit();
             if ($reservation->user) {
                 Mail::to($reservation->user->email)
@@ -361,16 +485,25 @@ class ReservationMaterielleController extends Controller
         $reservation = Reservations_materielles::with('materielle')->find($id);
         if (!$reservation) return response()->json(['message' => 'Reservation not found.'], 404);
         if ($reservation->user_id !== Auth::id()) return response()->json(['message' => 'Unauthorized.'], 403);
-        if (!in_array($reservation->status, ['pending', 'confirmed'])) {
-            return response()->json(['message' => 'This reservation can no longer be canceled.'], 400);
+        // Only allow camper to cancel if still pending (confirmed = supplier already committed)
+        if ($reservation->status !== 'pending') {
+            return response()->json(['message' => 'You can only cancel a reservation that is still pending supplier confirmation.'], 400);
         }
 
         DB::beginTransaction();
         try {
-            if ($reservation->status === 'confirmed') {
-                $reservation->materielle->increment('quantite_dispo', $reservation->quantite);
-            }
             $reservation->update(['status' => 'cancelled_by_camper']);
+
+            // Wallet refund (pending = not yet confirmed, full refund)
+            if ($reservation->payment_method === 'wallet' && $reservation->montant_total > 0) {
+                Balance::forUser($reservation->user_id)->crediter($reservation->montant_total);
+                WalletTransaction::logCredit(
+                    $reservation->user_id, 'refund_in',
+                    $reservation->montant_total, 0, 0, $reservation->montant_total,
+                    'materiel_reservation', $reservation->id,
+                    "Remboursement — annulation camper #{$reservation->id}"
+                );
+            }
 
             DB::commit();
 

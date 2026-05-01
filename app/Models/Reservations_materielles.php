@@ -35,6 +35,9 @@ class Reservations_materielles extends Model
         'pin_used_at',
         // Payment
         'payment_id',
+        'payment_method',
+        'platform_fee_amount',
+        'platform_fee_rate',
         // Audit timestamps
         'confirmed_at',
         'retrieved_at',
@@ -44,14 +47,16 @@ class Reservations_materielles extends Model
     ];
 
     protected $casts = [
-        'date_debut'    => 'date',
-        'date_fin'      => 'date',
-        'confirmed_at'  => 'datetime',
-        'retrieved_at'  => 'datetime',
-        'returned_at'   => 'datetime',
-        'pin_used_at'   => 'datetime',
-        'montant_total' => 'float',
-        'frais_livraison' => 'float',
+        'date_debut'          => 'date',
+        'date_fin'            => 'date',
+        'confirmed_at'        => 'datetime',
+        'retrieved_at'        => 'datetime',
+        'returned_at'         => 'datetime',
+        'pin_used_at'         => 'datetime',
+        'montant_total'       => 'float',
+        'frais_livraison'     => 'float',
+        'platform_fee_amount' => 'float',
+        'platform_fee_rate'   => 'float',
     ];
 
     /**

@@ -346,6 +346,22 @@ Route::middleware('auth:sanctum')->group(function () {
             ->paginate($request->get('per_page', 10));
         return response()->json(['success' => true, 'data' => $wds]);
     });
+
+    // ---- My wallet transactions (all debit + credit for this user) ----
+    Route::get('/my/wallet-transactions', function (\Illuminate\Http\Request $request) {
+        $userId = auth()->id();
+        $query  = \App\Models\WalletTransaction::where('user_id', $userId)->latest();
+
+        if ($request->filled('type') && in_array($request->type, ['credit', 'debit'])) {
+            $query->where('type', $request->type);
+        }
+        if ($request->filled('category')) {
+            $query->where('category', $request->category);
+        }
+
+        $txns = $query->paginate($request->get('per_page', 15));
+        return response()->json(['success' => true, 'data' => $txns]);
+    });
     Route::get('/user/{userId}/status', function ($userId) {
         $user = \App\Models\User::find($userId);
         if (!$user) {
@@ -945,6 +961,9 @@ Route::prefix('annonces')->group(function () {
         Route::post('/{id}/reject',  [AdminPaymentController::class, 'rejectRefund']);
     });
 
+    // -------------------- WALLET PAYMENTS --------------------
+    Route::get('wallet-payments', [AdminPaymentController::class, 'walletPayments']);
+
     // -------------------- BALANCES --------------------
     Route::prefix('balances')->group(function () {
         Route::get('/',                      [AdminPaymentController::class, 'balances']);
@@ -969,8 +988,10 @@ Route::prefix('annonces')->group(function () {
 
     // -------------------- PLATFORM SETTINGS --------------------
     Route::prefix('settings')->group(function () {
-        Route::get('/',    [\App\Http\Controllers\Admin\AdminSettingsController::class, 'index']);
-        Route::put('/',    [\App\Http\Controllers\Admin\AdminSettingsController::class, 'update']);
+        Route::get('/',              [\App\Http\Controllers\Admin\AdminSettingsController::class, 'index']);
+        Route::put('/',              [\App\Http\Controllers\Admin\AdminSettingsController::class, 'update']);
+        Route::get('/commissions',   [\App\Http\Controllers\Admin\AdminSettingsController::class, 'getCommissions']);
+        Route::put('/commissions',   [\App\Http\Controllers\Admin\AdminSettingsController::class, 'updateCommissions']);
     });
 
     // -------------------- ZONE REPORTS --------------------

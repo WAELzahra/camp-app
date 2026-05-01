@@ -6,7 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\Balance;
 use App\Models\Payments;
 use App\Models\RefundRequest;
+use App\Models\Reservations_centre;
 use App\Models\Reservations_events;
+use App\Models\WalletTransaction;
 use App\Models\WithdrawalRequest;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -94,13 +96,58 @@ class AdminPaymentController extends Controller
         $totalBalances  = Balance::sum('solde_disponible');
         $totalWithdrawn = Balance::sum('total_retire');
 
+        // ── Wallet commission stats (real revenue) ─────────────────────────
+        $walletCredits = WalletTransaction::where('type', 'credit')
+            ->selectRaw('
+                SUM(amount_gross)      as total_volume,
+                SUM(commission_amount) as total_commission,
+                SUM(net_amount)        as total_net_paid,
+                COUNT(*)               as total_transactions
+            ')
+            ->first();
+
+        $walletBySource = WalletTransaction::where('type', 'credit')
+            ->selectRaw('reference_type, SUM(commission_amount) as commission, SUM(amount_gross) as volume, COUNT(*) as count')
+            ->groupBy('reference_type')
+            ->get()
+            ->keyBy('reference_type');
+
+        $walletStats = [
+            'total_volume'        => round((float) ($walletCredits->total_volume      ?? 0), 2),
+            'total_commission'    => round((float) ($walletCredits->total_commission  ?? 0), 2),
+            'total_net_paid'      => round((float) ($walletCredits->total_net_paid    ?? 0), 2),
+            'total_transactions'  => (int) ($walletCredits->total_transactions         ?? 0),
+            'by_source'           => [
+                'centre_reservation'   => [
+                    'commission' => round((float) ($walletBySource['centre_reservation']?->commission   ?? 0), 2),
+                    'volume'     => round((float) ($walletBySource['centre_reservation']?->volume       ?? 0), 2),
+                    'count'      => (int) ($walletBySource['centre_reservation']?->count                ?? 0),
+                ],
+                'event_reservation'    => [
+                    'commission' => round((float) ($walletBySource['event_reservation']?->commission    ?? 0), 2),
+                    'volume'     => round((float) ($walletBySource['event_reservation']?->volume        ?? 0), 2),
+                    'count'      => (int) ($walletBySource['event_reservation']?->count                 ?? 0),
+                ],
+                'materiel_reservation' => [
+                    'commission' => round((float) ($walletBySource['materiel_reservation']?->commission ?? 0), 2),
+                    'volume'     => round((float) ($walletBySource['materiel_reservation']?->volume     ?? 0), 2),
+                    'count'      => (int) ($walletBySource['materiel_reservation']?->count              ?? 0),
+                ],
+            ],
+            'pending_withdrawals' => $pendingWithdrawals,
+            'pending_refunds'     => $pendingRefunds,
+            'total_balances'      => round((float) $totalBalances,  2),
+            'total_withdrawn'     => round((float) $totalWithdrawn, 2),
+        ];
+
         return response()->json([
             'success' => true,
-            'data'    => compact(
-                'totalRevenue', 'totalNet', 'totalCommission',
-                'pending', 'paid', 'failed', 'refunded', 'total',
-                'pendingRefunds', 'pendingWithdrawals',
-                'totalBalances', 'totalWithdrawn'
+            'data'    => array_merge(
+                compact('totalRevenue', 'totalNet', 'totalCommission',
+                        'pending', 'paid', 'failed', 'refunded', 'total',
+                        'pendingRefunds', 'pendingWithdrawals',
+                        'totalBalances', 'totalWithdrawn'),
+                ['wallet' => $walletStats]
             ),
         ]);
     }
@@ -146,6 +193,8 @@ class AdminPaymentController extends Controller
             'payment.user:id,first_name,last_name,email',
             'payment.event:id,title,price',
             'reservationEvent:id,status,nbr_place',
+            'reservationCentre.user:id,first_name,last_name,email',
+            'reservationCentre.centre:id,first_name,last_name,email',
         ])->latest();
 
         if ($request->filled('status') && $request->status !== 'all') {
@@ -174,6 +223,38 @@ class AdminPaymentController extends Controller
         DB::transaction(function () use ($refund) {
             $refund->update(['status' => 'accepté']);
 
+            // ── Wallet refund for centre reservation ──────────────────────────
+            if ($refund->payment_channel === 'wallet' && $refund->reservation_centre_id) {
+                $reservation = Reservations_centre::find($refund->reservation_centre_id);
+                if ($reservation) {
+                    // Debit only what the centre actually received (net after commission)
+                    $netToDebit = $refund->net_amount ?? $refund->montant_rembourse;
+                    $centreBalance = Balance::forUser($reservation->centre_id);
+                    if ($centreBalance->solde_disponible >= $netToDebit) {
+                        $centreBalance->debiter($netToDebit);
+                    }
+                    WalletTransaction::logDebit(
+                        $reservation->centre_id, 'refund_out', $netToDebit,
+                        'centre_reservation', $reservation->id,
+                        "Remboursement déduit — réservation #{$reservation->id}"
+                    );
+
+                    // Credit the camper the full gross amount they originally paid
+                    $gross = (float) $refund->montant_rembourse;
+                    $camperBalance = Balance::forUser($reservation->user_id);
+                    $camperBalance->crediter($gross);
+                    $camperBalance->increment('total_rembourse', $gross);
+                    WalletTransaction::logCredit(
+                        $reservation->user_id, 'refund_in',
+                        $gross, 0, 0, $gross,
+                        'centre_reservation', $reservation->id,
+                        "Remboursement reçu — réservation #{$reservation->id}"
+                    );
+                }
+                return; // nothing more to do for wallet-centre refunds
+            }
+
+            // ── Standard Konnect payment refund ───────────────────────────────
             if ($refund->payment_id) {
                 $payment = Payments::find($refund->payment_id);
                 if ($payment) {
@@ -438,6 +519,63 @@ class AdminPaymentController extends Controller
             'message' => 'Demande de retrait refusée.',
             'data'    => $withdrawal->fresh('user:id,first_name,last_name,email'),
         ]);
+    }
+
+    /* ══════════════════════════════════════════════════════════════
+     *  WALLET PAYMENTS
+     * ══════════════════════════════════════════════════════════════ */
+
+    public function walletPayments(Request $request)
+    {
+        $query = WalletTransaction::with('user:id,first_name,last_name,email,avatar')
+            ->where('type', 'credit')
+            ->latest();
+
+        if ($request->filled('category') && $request->category !== 'all') {
+            $query->where('category', $request->category);
+        }
+
+        if ($request->filled('search')) {
+            $s = $request->search;
+            $query->whereHas('user', fn($u) => $u
+                ->where('first_name', 'like', "%{$s}%")
+                ->orWhere('last_name',  'like', "%{$s}%")
+                ->orWhere('email',       'like', "%{$s}%"));
+        }
+
+        $txns = $query->paginate($request->get('per_page', 15));
+
+        // Batch-load reservation counterparties to avoid N+1
+        $centreResIds = $txns->getCollection()
+            ->where('reference_type', 'centre_reservation')
+            ->pluck('reference_id')
+            ->unique()
+            ->values();
+
+        $reservations = Reservations_centre::with('user:id,first_name,last_name,email')
+            ->whereIn('id', $centreResIds)
+            ->get()
+            ->keyBy('id');
+
+        $txns->getCollection()->transform(function ($txn) use ($reservations) {
+            $txn->beneficiary = $txn->user;
+            if ($txn->reference_type === 'centre_reservation') {
+                $res = $reservations[$txn->reference_id] ?? null;
+                if ($res) {
+                    $txn->payer = $res->user;
+                    $txn->reservation_info = [
+                        'id'          => $res->id,
+                        'total_price' => $res->total_price,
+                        'status'      => $res->status,
+                        'date_debut'  => $res->date_debut,
+                        'date_fin'    => $res->date_fin,
+                    ];
+                }
+            }
+            return $txn;
+        });
+
+        return response()->json(['success' => true, 'data' => $txns]);
     }
 
     /* ══════════════════════════════════════════════════════════════
