@@ -8,6 +8,7 @@ class WalletTransaction extends Model
 {
     protected $fillable = [
         'user_id',
+        'related_user_id',
         'type',
         'category',
         'amount_gross',
@@ -31,6 +32,11 @@ class WalletTransaction extends Model
         return $this->belongsTo(User::class);
     }
 
+    public function relatedUser()
+    {
+        return $this->belongsTo(User::class, 'related_user_id');
+    }
+
     public static function logCredit(
         int $userId,
         string $category,
@@ -40,10 +46,12 @@ class WalletTransaction extends Model
         float $netAmount,
         string $referenceType,
         ?int $referenceId = null,
-        string $description = ''
+        string $description = '',
+        ?int $relatedUserId = null
     ): self {
         return self::create([
             'user_id'           => $userId,
+            'related_user_id'   => $relatedUserId,
             'type'              => 'credit',
             'category'          => $category,
             'amount_gross'      => $amountGross,
@@ -62,10 +70,12 @@ class WalletTransaction extends Model
         float $amount,
         string $referenceType,
         ?int $referenceId = null,
-        string $description = ''
+        string $description = '',
+        ?int $relatedUserId = null
     ): self {
         return self::create([
             'user_id'           => $userId,
+            'related_user_id'   => $relatedUserId,
             'type'              => 'debit',
             'category'          => $category,
             'amount_gross'      => $amount,

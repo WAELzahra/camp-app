@@ -55,13 +55,26 @@ class ReservationMaterielleController extends Controller
 
     public function show()
     {
+        $user         = Auth::user();
         $reservations = Reservations_materielles::with(['user', 'materielle'])
-            ->where('fournisseur_id', Auth::id())
+            ->where('fournisseur_id', $user->id)
             ->get();
+
         if ($reservations->isEmpty()) {
             return response()->json(['message' => 'No reservations found for this provider.'], 404);
         }
-        return response()->json(['message' => 'Provider reservations retrieved successfully.', 'reservations' => $reservations]);
+
+        $receiverType = $user->role_id === 4 ? 'supplier' : 'camper';
+        $mapped = $reservations->map(function ($r) use ($receiverType) {
+            $base = max(0, round((float) $r->montant_total - (float) ($r->platform_fee_amount ?? 0), 2));
+            $calc = CommissionService::calculate($receiverType, $base);
+            $r->commission_rate   = round($calc['rate'] * 100, 2);
+            $r->commission_amount = $calc['commission'];
+            $r->net_revenue       = $calc['net_revenue'];
+            return $r;
+        });
+
+        return response()->json(['message' => 'Provider reservations retrieved successfully.', 'reservations' => $mapped]);
     }
 
     // -------------------------------------------------------------------------
@@ -84,6 +97,22 @@ class ReservationMaterielleController extends Controller
             'promo_code'        => 'nullable|string|max:50',
             'payment_method'    => 'nullable|in:wallet,card',
         ]);
+
+        // Prevent duplicate active reservations (rejected/cancelled ones are allowed to re-book)
+        $activeStatuses = ['pending', 'confirmed', 'paid', 'retrieved'];
+        $duplicateQuery = Reservations_materielles::where('materielle_id', $validated['materielle_id'])
+            ->where('user_id', Auth::id())
+            ->where('fournisseur_id', $validated['fournisseur_id'])
+            ->whereIn('status', $activeStatuses);
+        if ($validated['type_reservation'] === 'location' && !empty($validated['date_debut'])) {
+            $duplicateQuery->where('date_debut', $validated['date_debut']);
+        }
+        if ($duplicateQuery->exists()) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'You already have an active reservation for this equipment on the selected date.',
+            ], 422);
+        }
 
         // Card payment not available in v1
         if (($validated['payment_method'] ?? 'wallet') === 'card') {
@@ -173,7 +202,8 @@ class ReservationMaterielleController extends Controller
                 WalletTransaction::logDebit(
                     $user->id, 'reservation_payment', $montantTotal,
                     'materiel_reservation', null,
-                    "Paiement réservation matériel — {$materielle->name}"
+                    "Paiement réservation matériel — {$materielle->name}",
+                    (int) $validated['fournisseur_id']
                 );
             }
 
@@ -282,6 +312,46 @@ class ReservationMaterielleController extends Controller
             $reservation->confirmed_at = now();
             $reservation->save();
             $rawPin = $reservation->generatePin();
+
+            // Credit supplier immediately at confirmation (escrow release)
+            if ($reservation->montant_total > 0 && $reservation->payment_method === 'wallet') {
+                $reservation->load('fournisseur');
+                $receiverType    = ($reservation->fournisseur && $reservation->fournisseur->role_id === 4)
+                    ? 'supplier' : 'camper';
+                $platformFeeAmt  = (float) ($reservation->platform_fee_amount ?? 0);
+                $base            = max(0, round((float) $reservation->montant_total - $platformFeeAmt, 2));
+                $calc            = CommissionService::calculate($receiverType, $base);
+                Balance::forUser($reservation->fournisseur_id)->crediter($calc['net_revenue']);
+                WalletTransaction::logCredit(
+                    $reservation->fournisseur_id, 'reservation_income',
+                    $base,
+                    round($calc['rate'] * 100, 2),
+                    $calc['commission'],
+                    $calc['net_revenue'],
+                    'materiel_reservation', $reservation->id,
+                    "Revenu réservation matériel #{$reservation->id}",
+                    $reservation->user_id
+                );
+
+                // Log platform revenue
+                if ($platformFeeAmt > 0) {
+                    \App\Models\AdminWalletTransaction::log(
+                        'platform_fee', $platformFeeAmt,
+                        'materiel_reservation', $reservation->id,
+                        "Platform service fee — reservation #{$reservation->id}",
+                        $reservation->user_id
+                    );
+                }
+                if ($calc['commission'] > 0) {
+                    \App\Models\AdminWalletTransaction::log(
+                        'commission', $calc['commission'],
+                        'materiel_reservation', $reservation->id,
+                        "Commission ({$receiverType}) — reservation #{$reservation->id}",
+                        $reservation->fournisseur_id
+                    );
+                }
+            }
+
             DB::commit();
 
             \Log::info('Reservation confirmed, sending email', [
@@ -318,7 +388,8 @@ class ReservationMaterielleController extends Controller
                     $reservation->user_id, 'refund_in',
                     $reservation->montant_total, 0, 0, $reservation->montant_total,
                     'materiel_reservation', $reservation->id,
-                    "Remboursement — réservation refusée #{$reservation->id}"
+                    "Remboursement — réservation refusée #{$reservation->id}",
+                    $reservation->fournisseur_id
                 );
             } catch (\Throwable $e) {
                 \Log::error('Materiel reject wallet refund failed: ' . $e->getMessage());
@@ -349,28 +420,7 @@ class ReservationMaterielleController extends Controller
             return response()->json(['message' => 'Incorrect or already used PIN.'], 422);
         }
 
-        // For purchases: payout is immediate after PIN verification (wallet only)
-        if ($reservation->type_reservation === 'achat'
-            && $reservation->montant_total > 0
-            && $reservation->payment_method === 'wallet') {
-            $reservation->load('fournisseur');
-            $receiverType = ($reservation->fournisseur && $reservation->fournisseur->role_id === 4)
-                ? 'supplier'
-                : 'camper';
-            // Commission on base amount (total minus platform service fee)
-            $base = max(0, round((float) $reservation->montant_total - (float) ($reservation->platform_fee_amount ?? 0), 2));
-            $calc = CommissionService::calculate($receiverType, $base);
-            Balance::forUser($reservation->fournisseur_id)->crediter($calc['net_revenue']);
-            WalletTransaction::logCredit(
-                $reservation->fournisseur_id, 'reservation_income',
-                $base,
-                round($calc['rate'] * 100, 2),
-                $calc['commission'],
-                $calc['net_revenue'],
-                'materiel_reservation', $reservation->id,
-                "Revenu vente matériel — réservation #{$reservation->id}"
-            );
-        }
+        // Supplier was already credited at confirmation — PIN only confirms physical handoff
 
         return response()->json([
             'message'          => 'PIN verified. Equipment handoff confirmed.',
@@ -394,25 +444,7 @@ class ReservationMaterielleController extends Controller
             $reservation->save();
             $reservation->materielle->increment('quantite_dispo', $reservation->quantite);
 
-            // Payout supplier after commission deduction (rental completes at return, wallet only)
-            if ($reservation->montant_total > 0 && $reservation->payment_method === 'wallet') {
-                $reservation->load('fournisseur');
-                $receiverType = ($reservation->fournisseur && $reservation->fournisseur->role_id === 4)
-                    ? 'supplier'
-                    : 'camper';
-                $base = max(0, round((float) $reservation->montant_total - (float) ($reservation->platform_fee_amount ?? 0), 2));
-                $calc = CommissionService::calculate($receiverType, $base);
-                Balance::forUser($reservation->fournisseur_id)->crediter($calc['net_revenue']);
-                WalletTransaction::logCredit(
-                    $reservation->fournisseur_id, 'reservation_income',
-                    $base,
-                    round($calc['rate'] * 100, 2),
-                    $calc['commission'],
-                    $calc['net_revenue'],
-                    'materiel_reservation', $reservation->id,
-                    "Revenu location matériel — réservation #{$reservation->id}"
-                );
-            }
+            // Supplier was already credited at confirmation — return only restocks equipment
 
             DB::commit();
 
@@ -446,21 +478,53 @@ class ReservationMaterielleController extends Controller
             return response()->json(['message' => 'This reservation can no longer be canceled.'], 400);
         }
 
+        $originalStatus = $reservation->status;
+
         DB::beginTransaction();
         try {
-            if ($reservation->status === 'confirmed') {
+            if ($originalStatus === 'confirmed') {
                 $reservation->materielle->increment('quantite_dispo', $reservation->quantite);
             }
             $reservation->update(['status' => 'cancelled_by_fournisseur']);
 
-            // Wallet refund to camper
             if ($reservation->payment_method === 'wallet' && $reservation->montant_total > 0) {
-                Balance::forUser($reservation->user_id)->crediter($reservation->montant_total);
+                $gross = (float) $reservation->montant_total;
+
+                // If confirmed: supplier was credited at confirmation — claw it back
+                if ($originalStatus === 'confirmed') {
+                    $fournisseur  = Auth::user();
+                    $receiverType = $fournisseur->role_id === 4 ? 'supplier' : 'camper';
+                    $base = max(0, round($gross - (float) ($reservation->platform_fee_amount ?? 0), 2));
+                    $calc = CommissionService::calculate($receiverType, $base);
+                    Balance::forUser($reservation->fournisseur_id)->debiter($calc['net_revenue']);
+                    WalletTransaction::logDebit(
+                        $reservation->fournisseur_id, 'refund_out', $calc['net_revenue'],
+                        'materiel_reservation', $reservation->id,
+                        "Remboursement annulation confirmée — réservation #{$reservation->id}",
+                        $reservation->user_id
+                    );
+
+                    // Platform cancellation fee charged to supplier
+                    $platformCancFee = \App\Models\PlatformCancellationFee::feeAmount('supplier', $gross);
+                    if ($platformCancFee > 0) {
+                        Balance::forUser($reservation->fournisseur_id)->debiter($platformCancFee);
+                        WalletTransaction::logDebit(
+                            $reservation->fournisseur_id, 'refund_out', $platformCancFee,
+                            'materiel_reservation', $reservation->id,
+                            "Frais annulation plateforme — réservation #{$reservation->id}",
+                            $reservation->user_id
+                        );
+                    }
+                }
+
+                // Full refund to camper in all cases
+                Balance::forUser($reservation->user_id)->crediter($gross);
                 WalletTransaction::logCredit(
                     $reservation->user_id, 'refund_in',
-                    $reservation->montant_total, 0, 0, $reservation->montant_total,
+                    $gross, 0, 0, $gross,
                     'materiel_reservation', $reservation->id,
-                    "Remboursement — annulé par fournisseur #{$reservation->id}"
+                    "Remboursement — annulé par fournisseur #{$reservation->id}",
+                    $reservation->fournisseur_id
                 );
             }
 
@@ -485,24 +549,96 @@ class ReservationMaterielleController extends Controller
         $reservation = Reservations_materielles::with('materielle')->find($id);
         if (!$reservation) return response()->json(['message' => 'Reservation not found.'], 404);
         if ($reservation->user_id !== Auth::id()) return response()->json(['message' => 'Unauthorized.'], 403);
-        // Only allow camper to cancel if still pending (confirmed = supplier already committed)
-        if ($reservation->status !== 'pending') {
-            return response()->json(['message' => 'You can only cancel a reservation that is still pending supplier confirmation.'], 400);
+
+        $allowedStatuses = ['pending', 'confirmed'];
+        if (!in_array($reservation->status, $allowedStatuses)) {
+            return response()->json(['message' => 'This reservation can no longer be cancelled.'], 400);
         }
+
+        $originalStatus = $reservation->status;
 
         DB::beginTransaction();
         try {
+            // Restock if confirmed
+            if ($originalStatus === 'confirmed' && $reservation->materielle) {
+                $reservation->materielle->increment('quantite_dispo', $reservation->quantite);
+            }
+
             $reservation->update(['status' => 'cancelled_by_camper']);
 
-            // Wallet refund (pending = not yet confirmed, full refund)
             if ($reservation->payment_method === 'wallet' && $reservation->montant_total > 0) {
-                Balance::forUser($reservation->user_id)->crediter($reservation->montant_total);
-                WalletTransaction::logCredit(
-                    $reservation->user_id, 'refund_in',
-                    $reservation->montant_total, 0, 0, $reservation->montant_total,
-                    'materiel_reservation', $reservation->id,
-                    "Remboursement — annulation camper #{$reservation->id}"
-                );
+                $gross = (float) $reservation->montant_total;
+
+                if ($originalStatus === 'confirmed') {
+                    // Supplier was credited at confirmation — apply cancellation policy
+                    $startDate = $reservation->date_debut
+                        ? \Carbon\Carbon::parse($reservation->date_debut)
+                        : now();
+                    $feeCalc   = \App\Services\CancellationPolicyService::preview('materiel', $startDate, $gross, null, \Carbon\Carbon::parse($reservation->created_at));
+                    $refundAmt = $feeCalc ? $feeCalc['refund_amount'] : $gross;
+                    $feeDesc   = $feeCalc ? $feeCalc['tier_label']    : 'Full refund';
+
+                    // Claw back from supplier (debit what they received at confirmation)
+                    $reservation->load('fournisseur');
+                    $receiverType = ($reservation->fournisseur && $reservation->fournisseur->role_id === 4)
+                        ? 'supplier' : 'camper';
+                    $base = max(0, round($gross - (float) ($reservation->platform_fee_amount ?? 0), 2));
+                    $calc = \App\Services\CommissionService::calculate($receiverType, $base);
+                    Balance::forUser($reservation->fournisseur_id)->debiter($calc['net_revenue']);
+                    \App\Models\WalletTransaction::logDebit(
+                        $reservation->fournisseur_id, 'refund_out', $calc['net_revenue'],
+                        'materiel_reservation', $reservation->id,
+                        "Remboursement annulation camper — {$feeDesc} — #{$reservation->id}",
+                        $reservation->user_id
+                    );
+
+                    // Platform cancellation fee charged to camper (reduces refund)
+                    $platformCancFee = \App\Models\PlatformCancellationFee::feeAmount('camper', $gross);
+                    $actualRefund    = max(0, round($refundAmt - $platformCancFee, 2));
+
+                    // Refund camper minus cancellation fee and platform fee
+                    Balance::forUser($reservation->user_id)->crediter($actualRefund);
+                    WalletTransaction::logCredit(
+                        $reservation->user_id, 'refund_in',
+                        $actualRefund, 0, 0, $actualRefund,
+                        'materiel_reservation', $reservation->id,
+                        "Remboursement annulation — {$feeDesc} — #{$reservation->id}",
+                        $reservation->fournisseur_id
+                    );
+
+                    // Credit supplier the cancellation fee they retain
+                    $cancellationFee = round($gross - $refundAmt, 2);
+                    if ($cancellationFee > 0) {
+                        Balance::forUser($reservation->fournisseur_id)->crediter($cancellationFee);
+                        WalletTransaction::logCredit(
+                            $reservation->fournisseur_id, 'reservation_income',
+                            $cancellationFee, 0, 0, $cancellationFee,
+                            'materiel_reservation', $reservation->id,
+                            "Frais d'annulation — {$feeDesc} — #{$reservation->id}",
+                            $reservation->user_id
+                        );
+                    }
+
+                    // Log platform cancellation fee income
+                    if ($platformCancFee > 0) {
+                        \App\Models\AdminWalletTransaction::log(
+                            'platform_cancellation_fee', $platformCancFee,
+                            'materiel_reservation', $reservation->id,
+                            "Platform cancellation fee (camper) — {$feeDesc} — #{$reservation->id}",
+                            $reservation->user_id
+                        );
+                    }
+                } else {
+                    // Pending: supplier was never credited — full refund to camper
+                    Balance::forUser($reservation->user_id)->crediter($gross);
+                    WalletTransaction::logCredit(
+                        $reservation->user_id, 'refund_in',
+                        $gross, 0, 0, $gross,
+                        'materiel_reservation', $reservation->id,
+                        "Remboursement — annulation camper #{$reservation->id}",
+                        $reservation->fournisseur_id
+                    );
+                }
             }
 
             DB::commit();

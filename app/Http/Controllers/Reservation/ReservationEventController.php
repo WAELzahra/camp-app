@@ -23,6 +23,7 @@ use App\Mail\EventReservationStatusChanged;
 use App\Mail\EventReservationCanceledByGroup;
 use App\Models\Balance;
 use App\Models\WalletTransaction;
+use App\Services\CancellationPolicyService;
 use App\Services\CommissionService;
 
 
@@ -140,45 +141,65 @@ class ReservationEventController extends Controller
         // Load the event
         $event = \App\Models\Events::findOrFail($reservation->event_id);
 
-        // ── Fee calculation ──────────────────────────────────────────────────────
-        $totalPrice = $reservation->nbr_place * $event->price;
+        // ── Fee calculation using dynamic cancellation policy ───────────────────
+        // $totalPrice = base price (nbr_place × event->price), without platform fee
+        // $gross = what camper actually paid (base + platform fee)
+        $totalPrice     = $reservation->nbr_place * $event->price;
+        $platformFeeAmt = (float) ($reservation->platform_fee_amount ?? 0);
+        $gross          = round($totalPrice + $platformFeeAmt, 2);
+        $startDate      = \Carbon\Carbon::parse($event->start_date);
 
-        // Check if this is a "late" cancellation (within 48h of event start)
-        $isLate = now()->diffInHours(\Carbon\Carbon::parse($event->start_date), false) <= 48
-                && \Carbon\Carbon::parse($event->start_date)->isFuture();
+        // Policy applies to gross (total paid), consistent with centre & equipment
+        $feeCalc                = CancellationPolicyService::preview('event', $startDate, $gross, null, \Carbon\Carbon::parse($reservation->created_at));
+        $cancellationFeePercent = $feeCalc ? $feeCalc['fee_percentage'] : 0;
+        $cancellationFee        = $feeCalc ? $feeCalc['fee_amount']     : 0;
+        $refundAmount           = $feeCalc ? $feeCalc['refund_amount']  : $gross;
+        $processingFee          = 0;
+        $isLate                 = $feeCalc ? ($feeCalc['hours_remaining'] < 24) : false;
 
-        $cancellationFeePercent = $isLate
-            ? (float) config('app.late_cancellation_fee_percent', 50)
-            : (float) config('app.cancellation_fee_percent', 15);
+        // ── Wallet refund — only if the reservation was already confirmed (money was taken) ──
+        if ($reservation->payment_method === 'wallet' && $reservation->status === 'confirmée') {
+            // Organizer net_revenue: commission is taken from the base price (not gross)
+            $calc          = \App\Services\CommissionService::calculate('group', $totalPrice);
+            $orgNetRevenue = $calc['net_revenue'];
 
-        $processingFeePercent = (float) config('app.processing_fee_percent', 2);
+            // Platform cancellation fee reduces camper's refund
+            $platformCancFee = \App\Models\PlatformCancellationFee::feeAmount('camper', $gross);
+            $actualRefund    = max(0, round($refundAmount - $platformCancFee, 2));
+            $cancFeeForOrg   = round($gross - $refundAmount, 2); // policy fee the organizer keeps
 
-        $cancellationFee = round($totalPrice * $cancellationFeePercent / 100, 2);
-        $processingFee   = round($totalPrice * $processingFeePercent  / 100, 2);
-        $refundAmount    = max(0, round($totalPrice - $cancellationFee - $processingFee, 2));
-
-        // ── Wallet refund ────────────────────────────────────────────────────────
-        if ($reservation->payment_method === 'wallet' && $refundAmount > 0) {
             DB::beginTransaction();
             try {
-                // Debit organizer (they return the refund amount)
-                $orgBalance = Balance::forUser($event->group_id);
-                if ($orgBalance->solde_disponible >= $refundAmount) {
-                    $orgBalance->debiter($refundAmount);
-                    WalletTransaction::logDebit(
-                        $event->group_id, 'refund_out', $refundAmount,
+                // Claw back from organizer exactly what they received
+                Balance::forUser($event->group_id)->debiter($orgNetRevenue);
+                WalletTransaction::logDebit(
+                    $event->group_id, 'refund_out', $orgNetRevenue,
+                    'event_reservation', $reservation->id,
+                    "Remboursement annulation camper — réservation #{$reservation->id}",
+                    $user->id
+                );
+
+                // Credit camper (refund minus platform cancellation fee)
+                if ($actualRefund > 0) {
+                    Balance::forUser($user->id)->crediter($actualRefund);
+                    WalletTransaction::logCredit(
+                        $user->id, 'refund_in', $actualRefund, 0, 0, $actualRefund,
                         'event_reservation', $reservation->id,
-                        "Remboursement annulation — réservation #{$reservation->id}"
+                        "Remboursement annulation — réservation #{$reservation->id}",
+                        $event->group_id
                     );
                 }
 
-                // Credit camper
-                Balance::forUser($user->id)->crediter($refundAmount);
-                WalletTransaction::logCredit(
-                    $user->id, 'refund_in', $refundAmount, 0, 0, $refundAmount,
-                    'event_reservation', $reservation->id,
-                    "Remboursement annulation — réservation #{$reservation->id}"
-                );
+                // Credit organizer their cancellation fee (policy fee they retain)
+                if ($cancFeeForOrg > 0) {
+                    Balance::forUser($event->group_id)->crediter($cancFeeForOrg);
+                    WalletTransaction::logCredit(
+                        $event->group_id, 'reservation_income', $cancFeeForOrg, 0, 0, $cancFeeForOrg,
+                        'event_reservation', $reservation->id,
+                        "Frais d'annulation — réservation #{$reservation->id}",
+                        $user->id
+                    );
+                }
 
                 DB::commit();
             } catch (\Throwable $e) {
@@ -186,6 +207,7 @@ class ReservationEventController extends Controller
                 \Log::error('Event cancellation wallet refund failed: ' . $e->getMessage());
             }
         }
+        // If status was en_attente_validation, no money was ever taken — nothing to refund
 
         // ── Update reservation status ────────────────────────────────────────────
         $reservation->update([
@@ -431,37 +453,11 @@ public function updateManualParticipant(Request $request, $reservationId)
      * because the User model uses first_name + last_name (no `name` column).
      */
     /**
-     * Check whether the authenticated camper already has an active reservation
-     * whose event overlaps with the given event's dates.
+     * Conflict check endpoint — kept for route compatibility but always returns no conflict.
+     * Campers are free to join multiple events with overlapping dates.
      */
     public function checkConflict($eventId)
     {
-        $user  = auth()->user();
-        $event = Events::findOrFail($eventId);
-
-        $activeStatuses = ['en_attente_paiement', 'confirmée', 'en_attente_validation'];
-
-        $conflict = Reservations_events::where('user_id', $user->id)
-            ->whereIn('status', $activeStatuses)
-            ->whereHas('event', function ($q) use ($event) {
-                $q->where('start_date', '<=', $event->end_date)
-                  ->where('end_date',   '>=', $event->start_date);
-            })
-            ->with('event:id,title,start_date,end_date')
-            ->first();
-
-        if ($conflict) {
-            return response()->json([
-                'conflict' => true,
-                'conflict_event' => [
-                    'id'         => $conflict->event->id,
-                    'title'      => $conflict->event->title,
-                    'start_date' => $conflict->event->start_date,
-                    'end_date'   => $conflict->event->end_date,
-                ],
-            ]);
-        }
-
         return response()->json(['conflict' => false]);
     }
 
@@ -489,31 +485,7 @@ public function updateManualParticipant(Request $request, $reservationId)
             ], 422);
         }
 
-        $event          = Events::findOrFail($request->event_id);
-        $activeStatuses = ['en_attente_paiement', 'confirmée', 'en_attente_validation'];
-
-        // ── Overlap guard ────────────────────────────────────────────────────────
-        $conflict = Reservations_events::where('user_id', $user->id)
-            ->whereIn('status', $activeStatuses)
-            ->whereHas('event', function ($q) use ($event) {
-                $q->where('start_date', '<=', $event->end_date)
-                  ->where('end_date',   '>=', $event->start_date);
-            })
-            ->with('event:id,title,start_date,end_date')
-            ->first();
-
-        if ($conflict) {
-            return response()->json([
-                'message'        => 'You already have a reservation for "' . $conflict->event->title . '" which overlaps with this event\'s dates.',
-                'conflict'       => true,
-                'conflict_event' => [
-                    'id'         => $conflict->event->id,
-                    'title'      => $conflict->event->title,
-                    'start_date' => $conflict->event->start_date,
-                    'end_date'   => $conflict->event->end_date,
-                ],
-            ], 422);
-        }
+        $event = Events::findOrFail($request->event_id);
 
         $resolvedName = $request->name
             ?? trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? ''))
@@ -544,40 +516,20 @@ public function updateManualParticipant(Request $request, $reservationId)
         $platformFeeAmt  = $feeData['fee_amount'];
         $platformFeeRate = round($feeData['fee_rate'] * 100, 2);
 
-        // ── Wallet payment ───────────────────────────────────────────────────────
+        // ── Check balance upfront so camper knows before submitting ─────────────
+        if ($totalToPay > 0) {
+            $camperBalance = Balance::forUser($user->id);
+            if ($camperBalance->solde_disponible < $totalToPay) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Solde wallet insuffisant. Disponible : {$camperBalance->solde_disponible} TND, requis : {$totalToPay} TND.",
+                ], 422);
+            }
+        }
+
+        // ── Create reservation — no money moves until the group approves ─────────
         DB::beginTransaction();
         try {
-            if ($totalToPay > 0) {
-                $camperBalance = Balance::forUser($user->id);
-                if ($camperBalance->solde_disponible < $totalToPay) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => "Solde wallet insuffisant. Disponible : {$camperBalance->solde_disponible} TND, requis : {$totalToPay} TND.",
-                    ], 422);
-                }
-
-                // Deduct from camper
-                $camperBalance->debiter($totalToPay);
-                WalletTransaction::logDebit(
-                    $user->id, 'reservation_payment', $totalToPay,
-                    'event_reservation', null,
-                    "Paiement réservation événement : {$event->title}"
-                );
-
-                // Credit organizer (net of commission)
-                $orgCalc = CommissionService::calculate('group', $netBase);
-                Balance::forUser($request->group_id)->crediter($orgCalc['net_revenue']);
-                WalletTransaction::logCredit(
-                    $request->group_id, 'reservation_income',
-                    $netBase,
-                    round($orgCalc['rate'] * 100, 2),
-                    $orgCalc['commission'],
-                    $orgCalc['net_revenue'],
-                    'event_reservation', null,
-                    "Revenu réservation événement : {$event->title}"
-                );
-            }
-
             // ── Spots decrement ──────────────────────────────────────────────────
             if (isset($event->remaining_spots)) {
                 $event->decrement('remaining_spots', $request->nbr_place);
@@ -597,40 +549,19 @@ public function updateManualParticipant(Request $request, $reservationId)
                 'email'                => $request->email  ?? $user->email,
                 'phone'                => $request->phone  ?? $user->phone_number ?? null,
                 'nbr_place'            => $request->nbr_place,
-                'status'               => $totalToPay > 0 ? 'en_attente_validation' : 'en_attente_validation',
+                'status'               => 'en_attente_validation',
                 'created_by'           => $user->id,
                 'promo_code_id'        => $promoCodeId,
                 'discount_amount'      => $discountAmount,
                 'payment_method'       => 'wallet',
-                'platform_fee_amount'  => $totalToPay > 0 ? $platformFeeAmt  : null,
-                'platform_fee_rate'    => $totalToPay > 0 ? $platformFeeRate : null,
+                'platform_fee_amount'  => $platformFeeAmt,
+                'platform_fee_rate'    => $platformFeeRate,
             ]);
-
-            // Update wallet transaction references now that we have reservation ID
-            if ($totalToPay > 0) {
-                WalletTransaction::where('user_id', $user->id)
-                    ->where('type', 'debit')
-                    ->where('category', 'reservation_payment')
-                    ->where('reference_type', 'event_reservation')
-                    ->whereNull('reference_id')
-                    ->latest()
-                    ->limit(1)
-                    ->update(['reference_id' => $reservation->id]);
-
-                WalletTransaction::where('user_id', $request->group_id)
-                    ->where('type', 'credit')
-                    ->where('category', 'reservation_income')
-                    ->where('reference_type', 'event_reservation')
-                    ->whereNull('reference_id')
-                    ->latest()
-                    ->limit(1)
-                    ->update(['reference_id' => $reservation->id]);
-            }
 
             DB::commit();
         } catch (\Throwable $e) {
             DB::rollBack();
-            \Log::error('Event reservation wallet payment failed: ' . $e->getMessage());
+            \Log::error('Event reservation creation failed: ' . $e->getMessage());
             return response()->json(['success' => false, 'message' => 'Une erreur est survenue. Veuillez réessayer.'], 500);
         }
 
@@ -765,46 +696,95 @@ public function updateManualParticipant(Request $request, $reservationId)
 
     //  Mise à jour du statut (confirmé/refusé)
     public function updateStatus(Request $request, $id)
-{
-    $reservation = Reservations_events::findOrFail($id);
+    {
+        $reservation = Reservations_events::findOrFail($id);
 
-    if ($reservation->group_id !== Auth::id()) {
-        return response()->json(['message' => 'Non autorisé.'], 403);
-    }
-
-    // Récupérer les données JSON brutes
-    $data = $request->json()->all();
-
-    // Valider à partir de $data
-    $validator = \Validator::make($data, [
-        'status' => 'required|in:confirmé,refusé,en_attente,annulé'
-    ]);
-
-    if ($validator->fails()) {
-        return response()->json(['errors' => $validator->errors(), 'message' => 'Validation échouée.'], 422);
-    }
-
-    // Mise à jour
-    $reservation->status = $data['status'];
-    $reservation->save();
-
-    // Notify participant of the status change
-    try {
-        $event = Events::find($reservation->event_id);
-        if ($event && $reservation->email) {
-            Mail::to($reservation->email)->send(new EventReservationStatusChanged($reservation, $event));
+        if ($reservation->group_id !== Auth::id()) {
+            return response()->json(['message' => 'Non autorisé.'], 403);
         }
-    } catch (\Exception $e) {
-        \Log::error('Failed to send event status change email: ' . $e->getMessage());
-    }
 
-    return response()->json(['message' => 'Statut mis à jour avec succès.']);
-}
+        $data = $request->json()->all();
+
+        $validator = \Validator::make($data, [
+            'status' => 'required|in:confirmé,refusé,en_attente,annulé'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors(), 'message' => 'Validation échouée.'], 422);
+        }
+
+        $newStatus = $data['status'];
+        $event     = Events::findOrFail($reservation->event_id);
+        $netBase   = round(($reservation->nbr_place * $event->price) - ($reservation->discount_amount ?? 0), 2);
+
+        // ── Wallet movements triggered by group decision ──────────────────────────
+        if ($reservation->payment_method === 'wallet' && $reservation->status === 'en_attente_validation') {
+
+            if ($newStatus === 'confirmé') {
+                // Release escrowed funds to organizer now that they accepted
+                DB::beginTransaction();
+                try {
+                    $orgCalc = CommissionService::calculate('group', $netBase);
+                    Balance::forUser($reservation->group_id)->crediter($orgCalc['net_revenue']);
+                    WalletTransaction::logCredit(
+                        $reservation->group_id, 'reservation_income',
+                        $netBase,
+                        round($orgCalc['rate'] * 100, 2),
+                        $orgCalc['commission'],
+                        $orgCalc['net_revenue'],
+                        'event_reservation', $reservation->id,
+                        "Revenu réservation événement : {$event->title}",
+                        $reservation->user_id
+                    );
+                    DB::commit();
+                } catch (\Throwable $e) {
+                    DB::rollBack();
+                    \Log::error('Event reservation approval wallet credit failed: ' . $e->getMessage());
+                    return response()->json(['success' => false, 'message' => 'Erreur lors du paiement au groupe.'], 500);
+                }
+
+            } elseif ($newStatus === 'refusé') {
+                // Full refund to camper — group rejected, they never had the money
+                DB::beginTransaction();
+                try {
+                    $feeData   = CommissionService::addServiceFee($netBase);
+                    $totalPaid = round($feeData['total'], 2);
+                    Balance::forUser($reservation->user_id)->crediter($totalPaid);
+                    WalletTransaction::logCredit(
+                        $reservation->user_id, 'refund_in',
+                        $totalPaid, 0, 0, $totalPaid,
+                        'event_reservation', $reservation->id,
+                        "Remboursement — réservation refusée #{$reservation->id}",
+                        $reservation->group_id
+                    );
+                    $event->increment('remaining_spots', $reservation->nbr_place);
+                    DB::commit();
+                } catch (\Throwable $e) {
+                    DB::rollBack();
+                    \Log::error('Event reservation rejection wallet refund failed: ' . $e->getMessage());
+                    return response()->json(['success' => false, 'message' => 'Erreur lors du remboursement.'], 500);
+                }
+            }
+        }
+
+        $reservation->status = $newStatus;
+        $reservation->save();
+
+        try {
+            if ($reservation->email) {
+                Mail::to($reservation->email)->send(new EventReservationStatusChanged($reservation, $event));
+            }
+        } catch (\Exception $e) {
+            \Log::error('Failed to send event status change email: ' . $e->getMessage());
+        }
+
+        return response()->json(['message' => 'Statut mis à jour avec succès.']);
+    }
 
 
     // Annulation avec remboursement
     // Annuler une réservation et déclencher un remboursement.
-    
+
     public function cancelReservation($id)
     {
         $reservation = Reservations_events::with('payment')->findOrFail($id);
@@ -813,15 +793,53 @@ public function updateManualParticipant(Request $request, $reservationId)
             return response()->json(['message' => 'Non autorisé.'], 403);
         }
 
-        // Exemple : appel API remboursement Flouci ici via $reservation->payment->payment_id
+        $event   = Events::findOrFail($reservation->event_id);
+        $netBase = round(($reservation->nbr_place * $event->price) - ($reservation->discount_amount ?? 0), 2);
+
+        // ── Wallet refund when group cancels ─────────────────────────────────────
+        if ($reservation->payment_method === 'wallet') {
+            DB::beginTransaction();
+            try {
+                if ($reservation->status === 'confirmée') {
+                    // Money was collected at approval → full refund to camper + clawback from organizer
+                    $feeData   = CommissionService::addServiceFee($netBase);
+                    $totalPaid = round($feeData['total'], 2);
+                    $orgCalc   = CommissionService::calculate('group', $netBase);
+
+                    Balance::forUser($reservation->group_id)->debiter($orgCalc['net_revenue']);
+                    WalletTransaction::logDebit(
+                        $reservation->group_id, 'refund_out', $orgCalc['net_revenue'],
+                        'event_reservation', $reservation->id,
+                        "Remboursement — annulation groupe #{$reservation->id}",
+                        $reservation->user_id
+                    );
+
+                    Balance::forUser($reservation->user_id)->crediter($totalPaid);
+                    WalletTransaction::logCredit(
+                        $reservation->user_id, 'refund_in',
+                        $totalPaid, 0, 0, $totalPaid,
+                        'event_reservation', $reservation->id,
+                        "Remboursement — annulation par groupe #{$reservation->id}",
+                        $reservation->group_id
+                    );
+                }
+                // en_attente_validation: no money was taken at booking — nothing to refund
+
+                $event->increment('remaining_spots', $reservation->nbr_place);
+                DB::commit();
+            } catch (\Throwable $e) {
+                DB::rollBack();
+                \Log::error('Group cancellation wallet refund failed: ' . $e->getMessage());
+                return response()->json(['success' => false, 'message' => 'Erreur lors du remboursement.'], 500);
+            }
+        }
 
         $reservation->status = 'annulé';
         $reservation->save();
 
         // Notify the participant that their reservation was cancelled by the group
         try {
-            $event = Events::find($reservation->event_id);
-            if ($event && $reservation->email) {
+            if ($reservation->email) {
                 Mail::to($reservation->email)->send(new EventReservationCanceledByGroup($reservation, $event));
             }
         } catch (\Exception $e) {

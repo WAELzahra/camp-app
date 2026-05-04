@@ -20,6 +20,10 @@ use App\Models\Circuit;
 use Illuminate\Validation\Rule;
 use App\Notifications\EventInviteNotification;
 use App\Events\NewNotificationCreated;
+use App\Models\Balance;
+use App\Models\WalletTransaction;
+use App\Services\CommissionService;
+use Illuminate\Support\Facades\DB;
 
 class EventController extends Controller
 {
@@ -795,18 +799,109 @@ class EventController extends Controller
         ]);
 
         $reservation = Reservations_events::findOrFail($id);
-        
+
         $event = Events::where('id', $reservation->event_id)
-                      ->where('group_id', $user->id)
-                      ->firstOrFail();
+                       ->where('group_id', $user->id)
+                       ->firstOrFail();
 
-        $reservation->status = $request->status;
-        $reservation->save();
+        $newStatus = $request->status;
+        $netBase   = round(($reservation->nbr_place * $event->price) - ($reservation->discount_amount ?? 0), 2);
 
-        // If reservation is confirmed, decrease available spots
-        if ($request->status === 'confirmée') {
-            $event->decrement('remaining_spots', $reservation->nbr_place);
+        // ── Case 1: Group cancels a CONFIRMED (already paid) reservation → full refund ──
+        if ($reservation->payment_method === 'wallet'
+            && $reservation->status === 'confirmée'
+            && $newStatus === 'annulée_par_organisateur') {
+
+            DB::beginTransaction();
+            try {
+                $feeData    = CommissionService::addServiceFee($netBase);
+                $totalToPay = round($feeData['total'], 2);
+                $orgCalc    = CommissionService::calculate('group', $netBase);
+
+                // Clawback from organizer what they received
+                Balance::forUser($reservation->group_id)->debiter($orgCalc['net_revenue']);
+                WalletTransaction::logDebit(
+                    $reservation->group_id, 'refund_out', $orgCalc['net_revenue'],
+                    'event_reservation', $reservation->id,
+                    "Remboursement annulation organisateur : {$event->title}",
+                    $reservation->user_id
+                );
+
+                // Full refund to camper
+                Balance::forUser($reservation->user_id)->crediter($totalToPay);
+                WalletTransaction::logCredit(
+                    $reservation->user_id, 'refund_in',
+                    $totalToPay, 0, 0, $totalToPay,
+                    'event_reservation', $reservation->id,
+                    "Remboursement annulation organisateur : {$event->title}",
+                    $reservation->group_id
+                );
+
+                // Restore spots
+                $event->increment('remaining_spots', $reservation->nbr_place);
+
+                DB::commit();
+            } catch (\Throwable $e) {
+                DB::rollBack();
+                \Log::error('Event organizer cancellation refund failed: ' . $e->getMessage());
+                return response()->json(['success' => false, 'message' => 'Erreur lors du remboursement.'], 500);
+            }
         }
+
+        // ── Case 2: Group acts on a PENDING (not yet paid) reservation ────────────
+        if ($reservation->payment_method === 'wallet' && $reservation->status === 'en_attente_validation') {
+
+            if ($newStatus === 'confirmée') {
+                // Collect payment from camper and pay the organizer
+                DB::beginTransaction();
+                try {
+                    $feeData    = CommissionService::addServiceFee($netBase);
+                    $totalToPay = round($feeData['total'], 2);
+
+                    $camperBalance = Balance::forUser($reservation->user_id);
+                    if ($camperBalance->solde_disponible < $totalToPay) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => "Le camper n'a pas assez de solde pour confirmer cette réservation.",
+                        ], 422);
+                    }
+
+                    $camperBalance->debiter($totalToPay);
+                    WalletTransaction::logDebit(
+                        $reservation->user_id, 'reservation_payment', $totalToPay,
+                        'event_reservation', $reservation->id,
+                        "Paiement réservation événement : {$event->title}",
+                        $reservation->group_id
+                    );
+
+                    $orgCalc = CommissionService::calculate('group', $netBase);
+                    Balance::forUser($reservation->group_id)->crediter($orgCalc['net_revenue']);
+                    WalletTransaction::logCredit(
+                        $reservation->group_id, 'reservation_income',
+                        $netBase,
+                        round($orgCalc['rate'] * 100, 2),
+                        $orgCalc['commission'],
+                        $orgCalc['net_revenue'],
+                        'event_reservation', $reservation->id,
+                        "Revenu réservation événement : {$event->title}",
+                        $reservation->user_id
+                    );
+
+                    DB::commit();
+                } catch (\Throwable $e) {
+                    DB::rollBack();
+                    \Log::error('Event approval wallet payment failed: ' . $e->getMessage());
+                    return response()->json(['success' => false, 'message' => 'Erreur lors du paiement.'], 500);
+                }
+
+            } elseif (in_array($newStatus, ['refusée', 'annulée_par_organisateur'])) {
+                // No money was taken yet — just restore spots
+                $event->increment('remaining_spots', $reservation->nbr_place);
+            }
+        }
+
+        $reservation->status = $newStatus;
+        $reservation->save();
 
         return response()->json([
             'success' => true,

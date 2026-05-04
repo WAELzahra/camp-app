@@ -236,7 +236,8 @@ class AdminPaymentController extends Controller
                     WalletTransaction::logDebit(
                         $reservation->centre_id, 'refund_out', $netToDebit,
                         'centre_reservation', $reservation->id,
-                        "Remboursement déduit — réservation #{$reservation->id}"
+                        "Remboursement déduit — réservation #{$reservation->id}",
+                        $reservation->user_id
                     );
 
                     // Credit the camper the full gross amount they originally paid
@@ -248,7 +249,8 @@ class AdminPaymentController extends Controller
                         $reservation->user_id, 'refund_in',
                         $gross, 0, 0, $gross,
                         'centre_reservation', $reservation->id,
-                        "Remboursement reçu — réservation #{$reservation->id}"
+                        "Remboursement reçu — réservation #{$reservation->id}",
+                        $reservation->centre_id
                     );
                 }
                 return; // nothing more to do for wallet-centre refunds
@@ -527,9 +529,16 @@ class AdminPaymentController extends Controller
 
     public function walletPayments(Request $request)
     {
-        $query = WalletTransaction::with('user:id,first_name,last_name,email,avatar')
+        $query = WalletTransaction::with([
+                'user:id,first_name,last_name,email,avatar',
+                'relatedUser:id,first_name,last_name,email,avatar',
+            ])
             ->where('type', 'credit')
             ->latest();
+
+        if ($request->filled('reference_type') && $request->reference_type !== 'all') {
+            $query->where('reference_type', $request->reference_type);
+        }
 
         if ($request->filled('category') && $request->category !== 'all') {
             $query->where('category', $request->category);
@@ -545,35 +554,52 @@ class AdminPaymentController extends Controller
 
         $txns = $query->paginate($request->get('per_page', 15));
 
-        // Batch-load reservation counterparties to avoid N+1
-        $centreResIds = $txns->getCollection()
-            ->where('reference_type', 'centre_reservation')
-            ->pluck('reference_id')
-            ->unique()
-            ->values();
+        // Map beneficiary = recipient (user), payer = counterpart (relatedUser)
+        // For older records without relatedUser, fall back to reservation lookup
+        $col = $txns->getCollection();
 
-        $reservations = Reservations_centre::with('user:id,first_name,last_name,email')
-            ->whereIn('id', $centreResIds)
-            ->get()
-            ->keyBy('id');
+        $centreIds   = $col->where('reference_type', 'centre_reservation')->whereNull('related_user_id')->pluck('reference_id')->filter()->unique()->values();
+        $eventIds    = $col->where('reference_type', 'event_reservation')->whereNull('related_user_id')->pluck('reference_id')->filter()->unique()->values();
+        $materielIds = $col->where('reference_type', 'materiel_reservation')->whereNull('related_user_id')->pluck('reference_id')->filter()->unique()->values();
 
-        $txns->getCollection()->transform(function ($txn) use ($reservations) {
-            $txn->beneficiary = $txn->user;
-            if ($txn->reference_type === 'centre_reservation') {
-                $res = $reservations[$txn->reference_id] ?? null;
-                if ($res) {
-                    $txn->payer = $res->user;
-                    $txn->reservation_info = [
-                        'id'          => $res->id,
-                        'total_price' => $res->total_price,
-                        'status'      => $res->status,
-                        'date_debut'  => $res->date_debut,
-                        'date_fin'    => $res->date_fin,
-                    ];
-                }
+        $centreRes   = $centreIds->isNotEmpty()   ? Reservations_centre::whereIn('id', $centreIds)->get(['id','user_id'])->keyBy('id')               : collect();
+        $eventRes    = $eventIds->isNotEmpty()    ? \App\Models\Reservations_events::whereIn('id', $eventIds)->get(['id','user_id'])->keyBy('id')     : collect();
+        $materielRes = $materielIds->isNotEmpty() ? \App\Models\Reservations_materielles::whereIn('id', $materielIds)->get(['id','user_id'])->keyBy('id') : collect();
+
+        $fallbackIds = collect();
+        $fallbackMap = [];
+        foreach ($col as $txn) {
+            if ($txn->related_user_id) continue;
+            $rid = $txn->reference_id;
+            $payerId = null;
+            if ($txn->reference_type === 'centre_reservation' && $rid && isset($centreRes[$rid])) {
+                $payerId = $centreRes[$rid]->user_id;
+            } elseif ($txn->reference_type === 'event_reservation' && $rid && isset($eventRes[$rid])) {
+                $payerId = $eventRes[$rid]->user_id;
+            } elseif ($txn->reference_type === 'materiel_reservation' && $rid && isset($materielRes[$rid])) {
+                $payerId = $materielRes[$rid]->user_id;
             }
+            if ($payerId) {
+                $fallbackMap[$txn->id] = $payerId;
+                $fallbackIds->push($payerId);
+            }
+        }
+
+        $fallbackUsers = $fallbackIds->isNotEmpty()
+            ? \App\Models\User::whereIn('id', $fallbackIds->unique())->get(['id','first_name','last_name','email'])->keyBy('id')
+            : collect();
+
+        $col->transform(function ($txn) use ($fallbackMap, $fallbackUsers) {
+            $txn->beneficiary = $txn->user;
+            $payer = $txn->related_user;
+            if (!$payer && isset($fallbackMap[$txn->id])) {
+                $payer = $fallbackUsers[$fallbackMap[$txn->id]] ?? null;
+            }
+            $txn->payer = $payer;
             return $txn;
         });
+
+        $txns->setCollection($col);
 
         return response()->json(['success' => true, 'data' => $txns]);
     }

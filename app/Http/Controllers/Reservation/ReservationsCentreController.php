@@ -26,6 +26,7 @@ use App\Models\Balance;
 use App\Models\RefundRequest;
 use App\Models\WalletTransaction;
 use App\Services\CommissionService;
+use App\Services\CancellationPolicyService;
 use Carbon\Carbon;
 class ReservationsCentreController extends Controller
 {
@@ -270,13 +271,6 @@ class ReservationsCentreController extends Controller
             
         } catch (\Illuminate\Database\QueryException $e) {
             DB::rollBack();
-            
-            if ($e->getCode() === '23000') {
-                return response()->json([
-                    'message' => 'Conflict: Reservation already exists for this period.',
-                ], 409);
-            }
-            
             return response()->json([
                 'message' => 'Database error: ' . $e->getMessage(),
             ], 500);
@@ -475,47 +469,171 @@ class ReservationsCentreController extends Controller
         }
 
         // Determine who is canceling
-        $canceledBy     = ($userId == $reservation->user_id) ? 'user' : 'center';
+        $canceledBy       = ($userId == $reservation->user_id) ? 'user' : 'center';
         $cancellationDate = now();
-        $originalStatus = $reservation->status; // capture before overwrite
+        $originalStatus   = $reservation->status;
 
-        // Update reservation with cancellation details
-        $reservation->status     = 'canceled';
-        $reservation->canceled_by = $canceledBy;
-        $reservation->canceled_at = $cancellationDate;
-        $updated = $reservation->save();
-
-        if (!$updated) {
-            return response()->json(['message' => 'Failed to cancel reservation.'], 500);
-        }
-
-        // Also cancel all service items
-        ReservationServiceItem::where('reservation_id', $reservation->id)
-            ->update([
-                'status'      => 'canceled',
-                'rejected_by' => $canceledBy,
-                'rejected_at' => $cancellationDate,
-            ]);
-
-        // Only create a refund request if money was actually transferred (reservation was approved)
         $refundCreated = false;
-        if (
-            $reservation->payment_method === 'wallet' &&
-            $reservation->total_price > 0 &&
-            $originalStatus === 'approved'
-        ) {
-            $calc = CommissionService::calculate('center', (float) $reservation->total_price);
-            RefundRequest::create([
-                'reservation_centre_id' => $reservation->id,
-                'montant_rembourse'     => $reservation->total_price,
-                'net_amount'            => $calc['net_revenue'],
-                'commission_amount'     => $calc['commission'],
-                'commission_rate'       => round($calc['rate'] * 100, 2),
-                'payment_channel'       => 'wallet',
-                'reason'                => 'Annulation par ' . $canceledBy,
-                'status'                => 'en_attente',
-            ]);
-            $refundCreated = true;
+
+        // For centre-cancels-approved: wrap status + wallet in one transaction so
+        // the status is never stuck as 'canceled' if the wallet operation fails.
+        if ($canceledBy === 'center'
+            && $reservation->payment_method === 'wallet'
+            && $reservation->total_price > 0
+            && $originalStatus === 'approved') {
+
+            $gross       = (float) $reservation->total_price;
+            $platformFee = (float) ($reservation->platform_fee_amount ?? 0);
+            $base        = max(0, round($gross - $platformFee, 2));
+            $calc        = CommissionService::calculate('center', $base);
+
+            DB::beginTransaction();
+            try {
+                // Update status inside the transaction
+                $reservation->status      = 'canceled';
+                $reservation->canceled_by = $canceledBy;
+                $reservation->canceled_at = $cancellationDate;
+                $reservation->save();
+
+                ReservationServiceItem::where('reservation_id', $reservation->id)
+                    ->update(['status' => 'canceled', 'rejected_by' => $canceledBy, 'rejected_at' => $cancellationDate]);
+
+                // Clawback what the centre received
+                Balance::forUser($reservation->centre_id)->debiter($calc['net_revenue']);
+                WalletTransaction::logDebit(
+                    $reservation->centre_id, 'refund_out', $calc['net_revenue'],
+                    'centre_reservation', $reservation->id,
+                    "Remboursement annulation centre #{$reservation->id}",
+                    $reservation->user_id
+                );
+
+                // Platform cancellation fee charged to centre (additional debit)
+                $platformCancFee = \App\Models\PlatformCancellationFee::feeAmount('centre', $gross);
+                if ($platformCancFee > 0) {
+                    Balance::forUser($reservation->centre_id)->debiter($platformCancFee);
+                    WalletTransaction::logDebit(
+                        $reservation->centre_id, 'refund_out', $platformCancFee,
+                        'centre_reservation', $reservation->id,
+                        "Frais annulation plateforme #{$reservation->id}",
+                        $reservation->user_id
+                    );
+                    \App\Models\AdminWalletTransaction::log(
+                        'platform_cancellation_fee', $platformCancFee,
+                        'centre_reservation', $reservation->id,
+                        "Platform cancellation fee (centre) — #{$reservation->id}",
+                        $reservation->centre_id
+                    );
+                }
+
+                // Full refund to camper
+                Balance::forUser($reservation->user_id)->crediter($gross);
+                WalletTransaction::logCredit(
+                    $reservation->user_id, 'refund_in',
+                    $gross, 0, 0, $gross,
+                    'centre_reservation', $reservation->id,
+                    "Remboursement annulation centre #{$reservation->id}",
+                    $reservation->centre_id
+                );
+
+                DB::commit();
+                $refundCreated = true;
+            } catch (\Throwable $e) {
+                DB::rollBack();
+                \Log::error('Centre cancellation wallet refund failed: ' . $e->getMessage());
+                return response()->json(['success' => false, 'message' => 'Erreur lors du remboursement.'], 500);
+            }
+        } elseif ($canceledBy === 'user'
+            && $reservation->payment_method === 'wallet'
+            && $reservation->total_price > 0
+            && $originalStatus === 'approved') {
+
+            // Camper cancels an approved reservation → automatic refund using cancellation policy
+            $gross       = (float) $reservation->total_price;
+            $platformFee = (float) ($reservation->platform_fee_amount ?? 0);
+            $base        = max(0, round($gross - $platformFee, 2));
+            $calc        = CommissionService::calculate('center', $base);
+
+            $startDate = Carbon::parse($reservation->date_debut);
+            $feeCalc   = CancellationPolicyService::preview('centre', $startDate, $gross, (int) $reservation->centre_id, Carbon::parse($reservation->created_at));
+            $refundAmt = $feeCalc ? $feeCalc['refund_amount'] : $gross;
+            $feeDesc   = $feeCalc ? $feeCalc['tier_label']    : 'Full refund';
+
+            // Platform cancellation fee charged to camper (reduces their refund)
+            $platformCancFee = \App\Models\PlatformCancellationFee::feeAmount('camper', $gross);
+            $actualRefund    = max(0, round($refundAmt - $platformCancFee, 2));
+
+            DB::beginTransaction();
+            try {
+                $reservation->status      = 'canceled';
+                $reservation->canceled_by = $canceledBy;
+                $reservation->canceled_at = $cancellationDate;
+                $reservation->save();
+
+                ReservationServiceItem::where('reservation_id', $reservation->id)
+                    ->update(['status' => 'canceled', 'rejected_by' => $canceledBy, 'rejected_at' => $cancellationDate]);
+
+                // Claw back from centre exactly what they received at approval
+                Balance::forUser($reservation->centre_id)->debiter($calc['net_revenue']);
+                WalletTransaction::logDebit(
+                    $reservation->centre_id, 'refund_out', $calc['net_revenue'],
+                    'centre_reservation', $reservation->id,
+                    "Remboursement annulation camper — {$feeDesc} — #{$reservation->id}",
+                    $reservation->user_id
+                );
+
+                // Camper receives refund minus policy fee and platform cancellation fee
+                Balance::forUser($reservation->user_id)->crediter($actualRefund);
+                WalletTransaction::logCredit(
+                    $reservation->user_id, 'refund_in',
+                    $actualRefund, 0, 0, $actualRefund,
+                    'centre_reservation', $reservation->id,
+                    "Remboursement annulation — {$feeDesc} — #{$reservation->id}",
+                    $reservation->centre_id
+                );
+
+                // Centre retains their cancellation fee portion
+                $cancellationFee = round($gross - $refundAmt, 2);
+                if ($cancellationFee > 0) {
+                    Balance::forUser($reservation->centre_id)->crediter($cancellationFee);
+                    WalletTransaction::logCredit(
+                        $reservation->centre_id, 'reservation_income',
+                        $cancellationFee, 0, 0, $cancellationFee,
+                        'centre_reservation', $reservation->id,
+                        "Frais d'annulation — {$feeDesc} — #{$reservation->id}",
+                        $reservation->user_id
+                    );
+                }
+
+                // Log platform cancellation fee income
+                if ($platformCancFee > 0) {
+                    \App\Models\AdminWalletTransaction::log(
+                        'platform_cancellation_fee', $platformCancFee,
+                        'centre_reservation', $reservation->id,
+                        "Platform cancellation fee (camper) — {$feeDesc} — #{$reservation->id}",
+                        $reservation->user_id
+                    );
+                }
+
+                // Log platform fee charged to centre for cancelling
+                if (isset($platformCancFee) === false) {} // only in centre-cancels block above
+
+                DB::commit();
+                $refundCreated = true;
+            } catch (\Throwable $e) {
+                DB::rollBack();
+                \Log::error('Centre camper-cancel wallet refund failed: ' . $e->getMessage());
+                return response()->json(['success' => false, 'message' => 'Erreur lors du remboursement.'], 500);
+            }
+        } else {
+            // All other cases (pending, no wallet, etc.) — just cancel
+            $reservation->status      = 'canceled';
+            $reservation->canceled_by = $canceledBy;
+            $reservation->canceled_at = $cancellationDate;
+            if (!$reservation->save()) {
+                return response()->json(['message' => 'Failed to cancel reservation.'], 500);
+            }
+            ReservationServiceItem::where('reservation_id', $reservation->id)
+                ->update(['status' => 'canceled', 'rejected_by' => $canceledBy, 'rejected_at' => $cancellationDate]);
         }
 
         // Load relationships for email content
@@ -553,13 +671,13 @@ class ReservationsCentreController extends Controller
         }
 
         return response()->json([
-            'message' => $refundCreated
-                ? 'Reservation cancelled. A refund request has been submitted for admin review.'
+            'message'     => $refundCreated
+                ? 'Reservation cancelled. Refund processed automatically.'
                 : 'Reservation cancelled successfully.',
-            'canceled_by'    => $canceledBy,
-            'canceled_at'    => $cancellationDate->format('Y-m-d H:i:s'),
-            'refund_pending' => $refundCreated,
-            'reservation'    => $reservation,
+            'canceled_by' => $canceledBy,
+            'canceled_at' => $cancellationDate->format('Y-m-d H:i:s'),
+            'refunded'    => $refundCreated,
+            'reservation' => $reservation,
         ], 200);
     }
     /**
@@ -652,7 +770,8 @@ class ReservationsCentreController extends Controller
                 WalletTransaction::logDebit(
                     $reservation->user_id, 'reservation_payment', $gross,
                     'centre_reservation', $reservation->id,
-                    "Paiement réservation centre #{$reservation->id}"
+                    "Paiement réservation centre #{$reservation->id}",
+                    $reservation->centre_id
                 );
 
                 $centreBalance = Balance::forUser($reservation->centre_id);
@@ -661,7 +780,8 @@ class ReservationsCentreController extends Controller
                     $reservation->centre_id, 'reservation_income',
                     $gross, $commPct, $commAmt, $net,
                     'centre_reservation', $reservation->id,
-                    "Revenu réservation #{$reservation->id} — commission {$commPct}% ({$commAmt} TND déduits)"
+                    "Revenu réservation #{$reservation->id} — commission {$commPct}% ({$commAmt} TND déduits)",
+                    $reservation->user_id
                 );
             }
 

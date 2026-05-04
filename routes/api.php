@@ -347,10 +347,54 @@ Route::middleware('auth:sanctum')->group(function () {
         return response()->json(['success' => true, 'data' => $wds]);
     });
 
+    // ---- User refund request (manual, linked to a wallet debit transaction) ----
+    Route::post('/my/refund-request', function (\Illuminate\Http\Request $request) {
+        $data = $request->validate([
+            'wallet_transaction_id' => 'required|integer',
+            'motif'                 => 'required|string|min:10',
+            'montant_souhaite'      => 'nullable|numeric|min:0.01',
+        ]);
+
+        $tx = \App\Models\WalletTransaction::where('user_id', auth()->id())
+            ->where('type', 'debit')
+            ->where('category', 'reservation_payment')
+            ->find($data['wallet_transaction_id']);
+
+        if (!$tx) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Transaction introuvable ou non éligible au remboursement.',
+            ], 422);
+        }
+
+        $refundData = [
+            'montant_rembourse' => $data['montant_souhaite'] ?? $tx->net_amount,
+            'reason'            => $data['motif'],
+            'status'            => 'en_attente',
+            'payment_channel'   => 'wallet',
+        ];
+
+        if ($tx->reference_type === 'centre_reservation') {
+            $refundData['reservation_centre_id'] = $tx->reference_id;
+        } elseif ($tx->reference_type === 'event_reservation') {
+            $refundData['reservation_event_id'] = $tx->reference_id;
+        } else {
+            return response()->json([
+                'success' => false,
+                'message' => 'Ce type de transaction n\'est pas éligible au remboursement.',
+            ], 422);
+        }
+
+        $refund = \App\Models\RefundRequest::create($refundData);
+        return response()->json(['success' => true, 'data' => $refund], 201);
+    });
+
     // ---- My wallet transactions (all debit + credit for this user) ----
     Route::get('/my/wallet-transactions', function (\Illuminate\Http\Request $request) {
         $userId = auth()->id();
-        $query  = \App\Models\WalletTransaction::where('user_id', $userId)->latest();
+        $query  = \App\Models\WalletTransaction::with(['relatedUser:id,first_name,last_name,email'])
+            ->where('user_id', $userId)
+            ->latest();
 
         if ($request->filled('type') && in_array($request->type, ['credit', 'debit'])) {
             $query->where('type', $request->type);
@@ -360,6 +404,55 @@ Route::middleware('auth:sanctum')->group(function () {
         }
 
         $txns = $query->paginate($request->get('per_page', 15));
+
+        // For older records without related_user_id, derive the counterpart from the linked reservation
+        $col = $txns->getCollection();
+
+        $centreIds   = $col->where('reference_type', 'centre_reservation')->whereNull('related_user_id')->pluck('reference_id')->filter()->unique()->values();
+        $eventIds    = $col->where('reference_type', 'event_reservation')->whereNull('related_user_id')->pluck('reference_id')->filter()->unique()->values();
+        $materielIds = $col->where('reference_type', 'materiel_reservation')->whereNull('related_user_id')->pluck('reference_id')->filter()->unique()->values();
+
+        $centreRes   = $centreIds->isNotEmpty()   ? \App\Models\Reservations_centre::whereIn('id', $centreIds)->get(['id','user_id','centre_id'])->keyBy('id')           : collect();
+        $eventRes    = $eventIds->isNotEmpty()    ? \App\Models\Reservations_events::whereIn('id', $eventIds)->get(['id','user_id','group_id'])->keyBy('id')             : collect();
+        $materielRes = $materielIds->isNotEmpty() ? \App\Models\Reservations_materielles::whereIn('id', $materielIds)->get(['id','user_id','fournisseur_id'])->keyBy('id') : collect();
+
+        // Collect all counterpart IDs we need to look up
+        $counterpartMap = []; // tx_id => user_id
+        foreach ($col as $tx) {
+            if ($tx->related_user_id) continue;
+            $rid = $tx->reference_id;
+            $counterpartId = null;
+            if ($tx->reference_type === 'centre_reservation' && $rid && isset($centreRes[$rid])) {
+                $res = $centreRes[$rid];
+                $counterpartId = ($userId == $res->user_id) ? $res->centre_id : $res->user_id;
+            } elseif ($tx->reference_type === 'event_reservation' && $rid && isset($eventRes[$rid])) {
+                $res = $eventRes[$rid];
+                $counterpartId = ($userId == $res->user_id) ? $res->group_id : $res->user_id;
+            } elseif ($tx->reference_type === 'materiel_reservation' && $rid && isset($materielRes[$rid])) {
+                $res = $materielRes[$rid];
+                $counterpartId = ($userId == $res->user_id) ? $res->fournisseur_id : $res->user_id;
+            }
+            if ($counterpartId) {
+                $counterpartMap[$tx->id] = $counterpartId;
+            }
+        }
+
+        $counterpartUsers = !empty($counterpartMap)
+            ? \App\Models\User::whereIn('id', array_unique(array_values($counterpartMap)))->get(['id','first_name','last_name','email'])->keyBy('id')
+            : collect();
+
+        $col->transform(function ($tx) use ($counterpartMap, $counterpartUsers) {
+            if (!$tx->related_user && isset($counterpartMap[$tx->id])) {
+                $uid = $counterpartMap[$tx->id];
+                if (isset($counterpartUsers[$uid])) {
+                    $tx->setRelation('related_user', $counterpartUsers[$uid]);
+                }
+            }
+            return $tx;
+        });
+
+        $txns->setCollection($col);
+
         return response()->json(['success' => true, 'data' => $txns]);
     });
     Route::get('/user/{userId}/status', function ($userId) {
@@ -1103,6 +1196,36 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('feedbacks')->group(functio
         Route::post('/{id}/pin', [CommentController::class, 'togglePin']);
         Route::post('/{id}/hide', [CommentController::class, 'toggleHide']);
     });
+});
+
+// ==================== CANCELLATION POLICY ROUTES ====================
+
+// Camper: preview cancellation fee before confirming + policy info at booking time
+Route::middleware(['auth:sanctum'])->group(function () {
+    Route::get('/reservations/cancellation-preview', [\App\Http\Controllers\Reservation\CancellationPreviewController::class, 'preview']);
+    Route::get('/cancellation-policy/info', [\App\Http\Controllers\Reservation\CancellationPreviewController::class, 'policyInfo']);
+});
+
+// Admin: full CRUD for cancellation policies + tiers
+Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function () {
+    Route::prefix('cancellation-policies')->group(function () {
+        Route::get('/',                                  [\App\Http\Controllers\Admin\CancellationPolicyController::class, 'index']);
+        Route::post('/',                                 [\App\Http\Controllers\Admin\CancellationPolicyController::class, 'store']);
+        Route::get('/{id}',                              [\App\Http\Controllers\Admin\CancellationPolicyController::class, 'show']);
+        Route::put('/{id}',                              [\App\Http\Controllers\Admin\CancellationPolicyController::class, 'update']);
+        Route::delete('/{id}',                           [\App\Http\Controllers\Admin\CancellationPolicyController::class, 'destroy']);
+        Route::post('/{id}/tiers',                       [\App\Http\Controllers\Admin\CancellationPolicyController::class, 'storeTier']);
+        Route::put('/{id}/tiers/{tierId}',               [\App\Http\Controllers\Admin\CancellationPolicyController::class, 'updateTier']);
+        Route::delete('/{id}/tiers/{tierId}',            [\App\Http\Controllers\Admin\CancellationPolicyController::class, 'destroyTier']);
+    });
+
+    // Platform cancellation fees (one record per actor type: camper / centre / group)
+    Route::get('/platform-cancellation-fees',                      [\App\Http\Controllers\Admin\CancellationPolicyController::class, 'platformFees']);
+    Route::put('/platform-cancellation-fees/{actorType}',          [\App\Http\Controllers\Admin\CancellationPolicyController::class, 'updatePlatformFee']);
+
+    // Admin wallet
+    Route::get('/wallet/summary',      [\App\Http\Controllers\Admin\AdminWalletController::class, 'summary']);
+    Route::get('/wallet/transactions', [\App\Http\Controllers\Admin\AdminWalletController::class, 'transactions']);
 });
 
 // ==================== PROMO CODE ROUTES ====================
