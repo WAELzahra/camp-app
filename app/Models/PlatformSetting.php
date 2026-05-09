@@ -23,6 +23,7 @@ class PlatformSetting extends Model
         return match ($setting->type) {
             'boolean' => filter_var($setting->value, FILTER_VALIDATE_BOOLEAN),
             'integer' => (int) $setting->value,
+            'float'   => (float) $setting->value,
             'json'    => json_decode($setting->value, true),
             default   => $setting->value,
         };

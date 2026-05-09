@@ -188,6 +188,7 @@ class AdminSettingsController extends Controller
         return match ($s->type) {
             'boolean' => filter_var($s->value, FILTER_VALIDATE_BOOLEAN),
             'integer' => (int) $s->value,
+            'float'   => (float) $s->value,
             'json'    => json_decode($s->value, true),
             default   => $s->value,
         };
@@ -200,6 +201,7 @@ class AdminSettingsController extends Controller
                             ? json_encode(array_values(array_map('intval', $value)))
                             : (string) $value,
             'boolean' => $value ? '1' : '0',
+            'float'   => (string) (float) $value,
             default   => (string) $value,
         };
     }
@@ -208,6 +210,7 @@ class AdminSettingsController extends Controller
     {
         if (str_ends_with($key, '_enabled'))       return 'boolean';
         if ($key === 'withdrawal_allowed_days')     return 'json';
+        if ($key === 'withdrawal_min_amount')       return 'float';
         return 'integer';
     }
 

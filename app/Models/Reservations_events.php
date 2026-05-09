@@ -27,6 +27,8 @@ protected $table = 'reservations_events';
         'payment_method',
         'platform_fee_amount',
         'platform_fee_rate',
+        'group_skill_level',
+        'trip_purpose',
     ];
 
     protected $casts = [

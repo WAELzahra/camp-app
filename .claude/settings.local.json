@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem \"C:\\\\laragon\\\\www\\\\camp-app\\\\app\\\\Http\\\\Controllers\" -Filter \"*.php\")",
+      "Bash(Select-Object -ExpandProperty Name)",
+      "Bash(ls -1 \"C:\\\\Users\\\\deadx\\\\OneDrive\\\\Desktop\\\\TunisiaCamp\\\\Camp-app-front\\\\src\\\\types\" 2>/dev/null | head -30)",
+      "Read(//c/Users/deadx/OneDrive/Desktop/TunisiaCamp/Camp-app-front/src/types/**)",
+      "Read(//c/Users/deadx/OneDrive/Desktop/TunisiaCamp/Camp-app-front/**)",
+      "Bash(Get-ChildItem \"C:\\\\laragon\\\\www\\\\camp-app\\\\database\\\\migrations\\\\\" | Sort-Object Name | Select-Object -Last 20 | Select-Object Name)",
+      "PowerShell(\\(Get-Content \"C:\\\\Users\\\\deadx\\\\OneDrive\\\\Desktop\\\\TunisiaCamp\\\\Camp-app-front\\\\src\\\\pages\\\\\\(protected\\)\\\\Profile_settings\\\\EditProfile\\\\tabs\\\\ProfileTab.tsx\"\\).Count)",
+      "Bash(php artisan *)",
+      "Bash(npx tsc *)",
+      "Bash(node -e \"const p=require\\('./node_modules/@types/react/package.json'\\); console.log\\('@types/react', p.version\\)\")",
+      "Bash(npx vite *)"
+    ]
+  }
+}

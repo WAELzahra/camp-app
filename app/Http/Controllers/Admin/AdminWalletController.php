@@ -70,15 +70,122 @@ class AdminWalletController extends Controller
 
     public function transactions(Request $request)
     {
-        $query = AdminWalletTransaction::with('relatedUser:id,first_name,last_name,email')
-            ->latest();
+        $perPage  = (int) $request->get('per_page', 20);
+        $page     = (int) $request->get('page', 1);
+        $category = $request->filled('category') && $request->category !== 'all' ? $request->category : null;
+        $userId   = $request->filled('user_id') ? (int) $request->user_id : null;
 
-        if ($request->filled('category') && $request->category !== 'all') {
-            $query->where('category', $request->category);
+        // ── AdminWalletTransaction records (platform_fee, cancellation_fee, etc.) ──
+        $adminRows = AdminWalletTransaction::with('relatedUser:id,first_name,last_name,email')
+            ->when($category, fn($q) => $q->where('category', $category))
+            ->when($userId,   fn($q) => $q->where('related_user_id', $userId))
+            ->get()
+            ->map(fn($t) => [
+                'id'             => 'a-' . $t->id,
+                'category'       => $t->category,
+                'amount'         => (float) $t->amount,
+                'reference_type' => $t->reference_type,
+                'reference_id'   => $t->reference_id,
+                'description'    => $t->description,
+                'created_at'     => $t->created_at,
+                'related_user'   => $t->relatedUser ? [
+                    'id'         => $t->relatedUser->id,
+                    'first_name' => $t->relatedUser->first_name,
+                    'last_name'  => $t->relatedUser->last_name,
+                    'email'      => $t->relatedUser->email,
+                ] : null,
+                'source'         => 'admin_wallet',
+            ]);
+
+        // ── Commission records from WalletTransaction (covers all historical data) ──
+        // Only include if no category filter, or filtering by 'commission'
+        $commRows = collect();
+        if (!$category || $category === 'commission') {
+            // Get reference_ids already covered by AdminWalletTransaction commission records
+            $coveredIds = AdminWalletTransaction::where('category', 'commission')
+                ->pluck('reference_id')
+                ->filter()
+                ->unique()
+                ->toArray();
+
+            $commRows = WalletTransaction::with([
+                    'user:id,first_name,last_name,email',
+                    'relatedUser:id,first_name,last_name,email',
+                ])
+                ->where('type', 'credit')
+                ->where('commission_amount', '>', 0)
+                ->when(!empty($coveredIds), fn($q) => $q->whereNotIn('reference_id', $coveredIds))
+                ->when($userId, fn($q) => $q->where('user_id', $userId))
+                ->get()
+                ->map(fn($t) => [
+                    'id'             => 'w-' . $t->id,
+                    'category'       => 'commission',
+                    'amount'         => (float) $t->commission_amount,
+                    'reference_type' => $t->reference_type,
+                    'reference_id'   => $t->reference_id,
+                    'description'    => "Commission — {$t->description}",
+                    'created_at'     => $t->created_at,
+                    'related_user'   => $t->user ? [
+                        'id'         => $t->user->id,
+                        'first_name' => $t->user->first_name,
+                        'last_name'  => $t->user->last_name,
+                        'email'      => $t->user->email,
+                    ] : null,
+                    'source'         => 'wallet_transaction',
+                ]);
         }
 
-        $txns = $query->paginate($request->get('per_page', 20));
+        // ── Platform fee records from WalletTransaction (camper's debit — covers old data) ──
+        $feeRows = collect();
+        if (!$category || $category === 'platform_fee') {
+            $coveredFeeIds = AdminWalletTransaction::where('category', 'platform_fee')
+                ->pluck('reference_id')
+                ->filter()
+                ->unique()
+                ->toArray();
 
-        return response()->json(['success' => true, 'data' => $txns]);
+            $feeRows = WalletTransaction::with('relatedUser:id,first_name,last_name,email')
+                ->where('type', 'debit')
+                ->where('category', 'reservation_payment')
+                ->where('commission_amount', '>', 0)
+                ->when(!empty($coveredFeeIds), fn($q) => $q->whereNotIn('reference_id', $coveredFeeIds))
+                ->when($userId, fn($q) => $q->where('related_user_id', $userId))
+                ->get()
+                ->map(fn($t) => [
+                    'id'             => 'f-' . $t->id,
+                    'category'       => 'platform_fee',
+                    'amount'         => (float) $t->commission_amount,
+                    'reference_type' => $t->reference_type,
+                    'reference_id'   => $t->reference_id,
+                    'description'    => "Platform fee — {$t->description}",
+                    'created_at'     => $t->created_at,
+                    'related_user'   => $t->relatedUser ? [
+                        'id'         => $t->relatedUser->id,
+                        'first_name' => $t->relatedUser->first_name,
+                        'last_name'  => $t->relatedUser->last_name,
+                        'email'      => $t->relatedUser->email,
+                    ] : null,
+                    'source'         => 'wallet_transaction',
+                ]);
+        }
+
+        // ── Combine, sort, paginate ────────────────────────────────────────────
+        $all         = $adminRows->concat($commRows)->concat($feeRows)
+                                 ->sortByDesc('created_at')->values();
+        $total       = $all->count();
+        $totalAmount = round($all->sum('amount'), 2);
+        $items       = $all->slice(($page - 1) * $perPage, $perPage)->values();
+
+        return response()->json([
+            'success' => true,
+            'data'    => [
+                'data'         => $items,
+                'current_page' => $page,
+                'last_page'    => (int) ceil($total / $perPage) ?: 1,
+                'per_page'     => $perPage,
+                'total'        => $total,
+                'total_amount' => $totalAmount,
+            ],
+        ]);
     }
 }

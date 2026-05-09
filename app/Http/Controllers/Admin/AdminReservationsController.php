@@ -149,6 +149,10 @@ class AdminReservationsController extends Controller
                 'status',
                 'payments_id',
                 'total_price',
+                'platform_fee_amount',
+                'platform_fee_rate',
+                'payment_method',
+                'discount_amount',
                 'service_count',
                 'created_at',
                 'updated_at',
@@ -187,7 +191,7 @@ class AdminReservationsController extends Controller
             $item->display_name = "Réservation Centre #{$item->id}";
             $item->subtitle = "Centre: " . ($item->centre->name ?? 'N/A');
             $item->capacity = $item->nbr_place;
-            $item->price = $item->total_price ?? 0;
+            $item->price = (float)($item->total_price ?? 0);
             $item->code = "CR" . str_pad($item->id, 3, '0', STR_PAD_LEFT);
             return $item;
         });
@@ -199,57 +203,67 @@ class AdminReservationsController extends Controller
     private function getEventReservations(Request $request)
     {
         $query = Reservations_events::with(['user', 'event', 'group'])
+            ->join('events as ev', 'ev.id', '=', 'reservations_events.event_id')
             ->select(
-                'id',
-                'user_id',
-                'group_id',
-                'event_id',
-                'name',
-                'email',
-                'phone',
-                'nbr_place',
-                'status',
-                'payment_id',
-                'created_at',
-                'updated_at',
+                'reservations_events.id',
+                'reservations_events.user_id',
+                'reservations_events.group_id',
+                'reservations_events.event_id',
+                'reservations_events.name',
+                'reservations_events.email',
+                'reservations_events.phone',
+                'reservations_events.nbr_place',
+                'reservations_events.status',
+                'reservations_events.payment_id',
+                'reservations_events.discount_amount',
+                'reservations_events.platform_fee_amount',
+                'reservations_events.platform_fee_rate',
+                'reservations_events.payment_method',
+                'reservations_events.created_at',
+                'reservations_events.updated_at',
                 DB::raw("'events' as reservation_type"),
-                DB::raw("created_at as date_debut"),
-                DB::raw("created_at as date_fin")
+                'ev.start_date as date_debut',
+                'ev.end_date as date_fin',
+                'ev.price as event_price_per_person'
             );
 
         if ($request->has('status') && $request->status !== 'all') {
-            $query->where('status', $request->status);
+            $query->where('reservations_events.status', $request->status);
         }
 
         if ($request->has('user_id')) {
-            $query->where('user_id', $request->user_id);
+            $query->where('reservations_events.user_id', $request->user_id);
         }
 
         if ($request->has('search')) {
             $search = $request->search;
             $query->where(function($q) use ($search) {
-                $q->where('name', 'like', "%{$search}%")
-                  ->orWhere('email', 'like', "%{$search}%")
-                  ->orWhere('phone', 'like', "%{$search}%")
-                  ->orWhereHas('event', function($eq) use ($search) {
-                      $eq->where('title', 'like', "%{$search}%");
-                  });
+                $q->where('reservations_events.name', 'like', "%{$search}%")
+                  ->orWhere('reservations_events.email', 'like', "%{$search}%")
+                  ->orWhere('reservations_events.phone', 'like', "%{$search}%")
+                  ->orWhere('ev.title', 'like', "%{$search}%");
             });
         }
 
         if ($request->has('date_from')) {
-            $query->whereDate('created_at', '>=', $request->date_from);
+            $query->whereDate('ev.start_date', '>=', $request->date_from);
         }
 
         if ($request->has('date_to')) {
-            $query->whereDate('created_at', '<=', $request->date_to);
+            $query->whereDate('ev.end_date', '<=', $request->date_to);
         }
 
         return $query->get()->map(function($item) {
             $item->display_name = $item->name ?? "Réservation Événement #{$item->id}";
             $item->subtitle = "Événement: " . ($item->event->title ?? 'N/A');
             $item->capacity = $item->nbr_place;
-            $item->price = 0;
+
+            $gross    = (float)($item->event_price_per_person ?? 0) * (int)$item->nbr_place;
+            $discount = (float)($item->discount_amount ?? 0);
+            $fee      = (float)($item->platform_fee_amount ?? 0);
+            // Total what camper actually paid = base price - discount + service fee
+            $item->price = max(0, round($gross - $discount + $fee, 2));
+
             $item->code = "ER" . str_pad($item->id, 3, '0', STR_PAD_LEFT);
             return $item;
         });
@@ -271,6 +285,10 @@ class AdminReservationsController extends Controller
                 'date_fin',
                 'quantite',
                 'montant_total',
+                'platform_fee_amount',
+                'platform_fee_rate',
+                'payment_method',
+                'discount_amount',
                 'frais_livraison',
                 'mode_livraison',
                 'status',

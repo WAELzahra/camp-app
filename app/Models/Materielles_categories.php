@@ -12,7 +12,14 @@ class Materielles_categories extends Model
     protected $fillable = [
         'nom',
         'description',
-        // Removed 'creation_date' — use the standard created_at timestamp instead
+        'trip_contexts',
+        'icon',
+        'is_safety_critical',
+    ];
+
+    protected $casts = [
+        'trip_contexts'     => 'array',
+        'is_safety_critical'=> 'boolean',
     ];
 
     /**

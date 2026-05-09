@@ -71,7 +71,9 @@ class WalletTransaction extends Model
         string $referenceType,
         ?int $referenceId = null,
         string $description = '',
-        ?int $relatedUserId = null
+        ?int $relatedUserId = null,
+        float $commissionRate = 0,
+        float $commissionAmount = 0
     ): self {
         return self::create([
             'user_id'           => $userId,
@@ -79,9 +81,9 @@ class WalletTransaction extends Model
             'type'              => 'debit',
             'category'          => $category,
             'amount_gross'      => $amount,
-            'commission_rate'   => 0,
-            'commission_amount' => 0,
-            'net_amount'        => $amount,
+            'commission_rate'   => $commissionRate,
+            'commission_amount' => $commissionAmount,
+            'net_amount'        => round($amount - $commissionAmount, 2),
             'reference_type'    => $referenceType,
             'reference_id'      => $referenceId,
             'description'       => $description,

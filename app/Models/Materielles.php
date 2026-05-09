@@ -13,7 +13,11 @@ class Materielles extends Model
         'fournisseur_id',
         'category_id',
         'nom',
+        'brand',
         'description',
+        'trip_type_tags',
+        'weight_kg',
+        'condition',
         // Pricing
         'tarif_nuit',       // rental price per night (nullable if not rentable)
         'prix_vente',       // sale price (nullable if not sellable)
@@ -37,6 +41,8 @@ class Materielles extends Model
         'tarif_nuit'           => 'float',
         'prix_vente'           => 'float',
         'frais_livraison'      => 'float',
+        'weight_kg'            => 'float',
+        'trip_type_tags'       => 'array',
     ];
 
     /**

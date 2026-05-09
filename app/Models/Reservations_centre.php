@@ -30,7 +30,9 @@ class Reservations_centre extends Model
         'platform_fee_rate',
         'platform_fee_amount',
         'last_modified_by',
-        'last_modified_at'
+        'last_modified_at',
+        'group_skill_level',
+        'trip_purpose',
     ];
 
     protected $casts = [

@@ -53,6 +53,11 @@ class CampingZone extends Model
         'source',
         'centre_id',
         'added_by',
+        // AI readiness fields
+        'is_beginner_friendly',
+        'terrain_type',
+        'min_temp_celsius',
+        'max_temp_celsius',
     ];
 
     protected $casts = [
@@ -72,6 +77,9 @@ class CampingZone extends Model
         'rating'               => 'float',
         'lat'                  => 'float',
         'lng'                  => 'float',
+        'is_beginner_friendly' => 'boolean',
+        'min_temp_celsius'     => 'integer',
+        'max_temp_celsius'     => 'integer',
     ];
 
     protected $appends = [

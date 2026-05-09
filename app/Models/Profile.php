@@ -49,6 +49,11 @@ class Profile extends Model
         return $this->hasOne(ProfileFournisseur::class);
     }
 
+    public function profileCampeur()
+    {
+        return $this->hasOne(ProfileCampeur::class);
+    }
+
     public function feedbacks()
     {
         return $this->hasMany(Feedbacks::class, 'target_id', 'user_id');

@@ -119,11 +119,15 @@ class CampingZonesController extends Controller
             'contact_phone'    => 'nullable|string|max:50',
             'contact_email'    => 'nullable|email|max:255',
             'contact_website'  => 'nullable|url|max:255',
-            'max_capacity'     => 'nullable|integer|min:1',
-            'centre_id'        => 'nullable|exists:camping_centres,id',
-            'is_protected_area'=> 'nullable|boolean',
-            'photos'           => 'nullable|array', 
-            'photos.*'         => 'string|max:255', 
+            'max_capacity'          => 'nullable|integer|min:1',
+            'centre_id'             => 'nullable|exists:camping_centres,id',
+            'is_protected_area'     => 'nullable|boolean',
+            'is_beginner_friendly'  => 'nullable|boolean',
+            'terrain_type'          => 'nullable|in:forest,mountain,desert,coastal,plain,wetland',
+            'min_temp_celsius'      => 'nullable|integer|between:-60,60',
+            'max_temp_celsius'      => 'nullable|integer|between:-60,60',
+            'photos'                => 'nullable|array',
+            'photos.*'              => 'string|max:255',
         ]);
 
         $user = Auth::user();
@@ -190,11 +194,15 @@ class CampingZonesController extends Controller
             'contact_email'    => 'sometimes|nullable|email|max:255',
             'contact_website'  => 'sometimes|nullable|url|max:255',
             'max_capacity'     => 'sometimes|nullable|integer|min:1',
-            'danger_level'     => 'sometimes|in:low,moderate,high,extreme',
-            'is_public'        => 'sometimes|boolean',
-            'status'           => 'sometimes|boolean',
-            'is_protected_area'=> 'sometimes|boolean',
-            'centre_id'        => 'sometimes|nullable|exists:camping_centres,id',
+            'danger_level'          => 'sometimes|in:low,moderate,high,extreme',
+            'is_public'             => 'sometimes|boolean',
+            'status'                => 'sometimes|boolean',
+            'is_protected_area'     => 'sometimes|boolean',
+            'centre_id'             => 'sometimes|nullable|exists:camping_centres,id',
+            'is_beginner_friendly'  => 'sometimes|boolean',
+            'terrain_type'          => 'sometimes|nullable|in:forest,mountain,desert,coastal,plain,wetland',
+            'min_temp_celsius'      => 'sometimes|nullable|integer|between:-60,60',
+            'max_temp_celsius'      => 'sometimes|nullable|integer|between:-60,60',
         ]);
 
         $zone->update($validated);

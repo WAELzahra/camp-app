@@ -93,19 +93,25 @@ class AdminMaterielleController extends Controller
         $mat = Materielles::findOrFail($id);
 
         $request->validate([
-            'status'      => 'sometimes|in:up,down',
-            'nom'         => 'sometimes|string|max:255',
-            'description' => 'sometimes|nullable|string',
-            'tarif_nuit'  => 'sometimes|nullable|numeric|min:0',
-            'prix_vente'  => 'sometimes|nullable|numeric|min:0',
-            'is_rentable' => 'sometimes|boolean',
-            'is_sellable' => 'sometimes|boolean',
-            'quantite_dispo' => 'sometimes|integer|min:0',
+            'status'           => 'sometimes|in:up,down',
+            'nom'              => 'sometimes|string|max:255',
+            'brand'            => 'sometimes|nullable|string|max:255',
+            'description'      => 'sometimes|nullable|string',
+            'trip_type_tags'   => 'sometimes|nullable|array',
+            'trip_type_tags.*' => 'string|max:100',
+            'weight_kg'        => 'sometimes|nullable|numeric|min:0',
+            'condition'        => 'sometimes|nullable|in:new,like_new,good,fair',
+            'tarif_nuit'       => 'sometimes|nullable|numeric|min:0',
+            'prix_vente'       => 'sometimes|nullable|numeric|min:0',
+            'is_rentable'      => 'sometimes|boolean',
+            'is_sellable'      => 'sometimes|boolean',
+            'quantite_dispo'   => 'sometimes|integer|min:0',
         ]);
 
         $mat->update($request->only([
-            'status', 'nom', 'description', 'tarif_nuit', 'prix_vente',
-            'is_rentable', 'is_sellable', 'quantite_dispo',
+            'status', 'nom', 'brand', 'description', 'trip_type_tags', 'weight_kg',
+            'condition', 'tarif_nuit', 'prix_vente', 'is_rentable', 'is_sellable',
+            'quantite_dispo',
         ]));
 
         return response()->json(['success' => true, 'data' => $mat->fresh(['fournisseur:id,first_name,last_name,email', 'category:id,nom'])]);

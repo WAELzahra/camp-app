@@ -307,8 +307,8 @@ Route::middleware('auth:sanctum')->group(function () {
             return response()->json(['success' => false, 'message' => "Les retraits sont acceptés uniquement le $allowedNames."], 422);
         }
 
-        // Check minimum amount
-        $minAmount = \App\Models\PlatformSetting::get('withdrawal_min_amount', 50);
+        // Check minimum amount (default matches AdminSettingsController::COMMISSION_DEFAULTS)
+        $minAmount = \App\Models\PlatformSetting::get('withdrawal_min_amount', 20);
         if ($data['montant'] < $minAmount) {
             return response()->json(['success' => false, 'message' => "Le montant minimum de retrait est {$minAmount} TND."], 422);
         }
@@ -405,31 +405,38 @@ Route::middleware('auth:sanctum')->group(function () {
 
         $txns = $query->paginate($request->get('per_page', 15));
 
-        // For older records without related_user_id, derive the counterpart from the linked reservation
         $col = $txns->getCollection();
 
-        $centreIds   = $col->where('reference_type', 'centre_reservation')->whereNull('related_user_id')->pluck('reference_id')->filter()->unique()->values();
-        $eventIds    = $col->where('reference_type', 'event_reservation')->whereNull('related_user_id')->pluck('reference_id')->filter()->unique()->values();
-        $materielIds = $col->where('reference_type', 'materiel_reservation')->whereNull('related_user_id')->pluck('reference_id')->filter()->unique()->values();
+        // ── Batch-load reservation data (counterpart user + platform_fee_amount) ──
+        // Collect all reference IDs per type (for both related_user fallback and fee lookup)
+        $allCentreIds   = $col->where('reference_type', 'centre_reservation')->pluck('reference_id')->filter()->unique()->values();
+        $allEventIds    = $col->where('reference_type', 'event_reservation')->pluck('reference_id')->filter()->unique()->values();
+        $allMaterielIds = $col->where('reference_type', 'materiel_reservation')->pluck('reference_id')->filter()->unique()->values();
 
-        $centreRes   = $centreIds->isNotEmpty()   ? \App\Models\Reservations_centre::whereIn('id', $centreIds)->get(['id','user_id','centre_id'])->keyBy('id')           : collect();
-        $eventRes    = $eventIds->isNotEmpty()    ? \App\Models\Reservations_events::whereIn('id', $eventIds)->get(['id','user_id','group_id'])->keyBy('id')             : collect();
-        $materielRes = $materielIds->isNotEmpty() ? \App\Models\Reservations_materielles::whereIn('id', $materielIds)->get(['id','user_id','fournisseur_id'])->keyBy('id') : collect();
+        $allCentreRes   = $allCentreIds->isNotEmpty()
+            ? \App\Models\Reservations_centre::whereIn('id', $allCentreIds)->get(['id','user_id','centre_id','platform_fee_amount','platform_fee_rate'])->keyBy('id')
+            : collect();
+        $allEventRes    = $allEventIds->isNotEmpty()
+            ? \App\Models\Reservations_events::whereIn('id', $allEventIds)->get(['id','user_id','group_id','platform_fee_amount','platform_fee_rate'])->keyBy('id')
+            : collect();
+        $allMaterielRes = $allMaterielIds->isNotEmpty()
+            ? \App\Models\Reservations_materielles::whereIn('id', $allMaterielIds)->get(['id','user_id','fournisseur_id','platform_fee_amount','platform_fee_rate'])->keyBy('id')
+            : collect();
 
-        // Collect all counterpart IDs we need to look up
-        $counterpartMap = []; // tx_id => user_id
+        // Build counterpart map for records without related_user_id
+        $counterpartMap = [];
         foreach ($col as $tx) {
             if ($tx->related_user_id) continue;
             $rid = $tx->reference_id;
             $counterpartId = null;
-            if ($tx->reference_type === 'centre_reservation' && $rid && isset($centreRes[$rid])) {
-                $res = $centreRes[$rid];
+            if ($tx->reference_type === 'centre_reservation' && $rid && isset($allCentreRes[$rid])) {
+                $res = $allCentreRes[$rid];
                 $counterpartId = ($userId == $res->user_id) ? $res->centre_id : $res->user_id;
-            } elseif ($tx->reference_type === 'event_reservation' && $rid && isset($eventRes[$rid])) {
-                $res = $eventRes[$rid];
+            } elseif ($tx->reference_type === 'event_reservation' && $rid && isset($allEventRes[$rid])) {
+                $res = $allEventRes[$rid];
                 $counterpartId = ($userId == $res->user_id) ? $res->group_id : $res->user_id;
-            } elseif ($tx->reference_type === 'materiel_reservation' && $rid && isset($materielRes[$rid])) {
-                $res = $materielRes[$rid];
+            } elseif ($tx->reference_type === 'materiel_reservation' && $rid && isset($allMaterielRes[$rid])) {
+                $res = $allMaterielRes[$rid];
                 $counterpartId = ($userId == $res->user_id) ? $res->fournisseur_id : $res->user_id;
             }
             if ($counterpartId) {
@@ -441,13 +448,27 @@ Route::middleware('auth:sanctum')->group(function () {
             ? \App\Models\User::whereIn('id', array_unique(array_values($counterpartMap)))->get(['id','first_name','last_name','email'])->keyBy('id')
             : collect();
 
-        $col->transform(function ($tx) use ($counterpartMap, $counterpartUsers) {
-            if (!$tx->related_user && isset($counterpartMap[$tx->id])) {
+        $col->transform(function ($tx) use ($counterpartMap, $counterpartUsers, $allCentreRes, $allEventRes, $allMaterielRes) {
+            // Set counterpart user for older records without related_user_id
+            if (!$tx->relatedUser && isset($counterpartMap[$tx->id])) {
                 $uid = $counterpartMap[$tx->id];
                 if (isset($counterpartUsers[$uid])) {
                     $tx->setRelation('related_user', $counterpartUsers[$uid]);
                 }
             }
+
+            // Attach platform_fee_amount from the reservation (used by frontend to show fee breakdown
+            // for debit transactions where commission_amount was stored as 0 in older records)
+            $rid = $tx->reference_id;
+            $res = match($tx->reference_type) {
+                'centre_reservation'   => $allCentreRes[$rid]   ?? null,
+                'event_reservation'    => $allEventRes[$rid]    ?? null,
+                'materiel_reservation' => $allMaterielRes[$rid] ?? null,
+                default                => null,
+            };
+            $tx->platform_fee_amount = $res ? (float) ($res->platform_fee_amount ?? 0) : 0;
+            $tx->platform_fee_rate   = $res ? (float) ($res->platform_fee_rate   ?? 0) : 0;
+
             return $tx;
         });
 

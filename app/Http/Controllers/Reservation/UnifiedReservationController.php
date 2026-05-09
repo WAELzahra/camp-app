@@ -109,77 +109,85 @@ class UnifiedReservationController extends Controller
      */
     private function getEventReservationsAsCamper($userId)
     {
-        return \App\Models\Reservations_events::where('user_id', $userId)
+        $reservations = \App\Models\Reservations_events::where('user_id', $userId)
             ->with(['event.group.profile.profileGroupe', 'user'])
-            ->get()
-            ->map(function($reservation) {
-                return $this->formatEventReservation($reservation, 'camper');
-            });
+            ->get();
+        $txMap = $this->batchLoadWalletTx('event_reservation', $reservations->pluck('id'));
+        return $reservations->map(fn($r) => $this->formatEventReservation($r, 'camper', $txMap->get($r->id)));
     }
-    
+
     /**
      * Get event reservations where user is the group owner
      */
     private function getEventReservationsAsOwner($userId)
     {
-        return \App\Models\Reservations_events::where('group_id', $userId)
+        $reservations = \App\Models\Reservations_events::where('group_id', $userId)
             ->with(['event', 'user'])
-            ->get()
-            ->map(function($reservation) {
-                return $this->formatEventReservation($reservation, 'owner');
-            });
+            ->get();
+        $txMap = $this->batchLoadWalletTx('event_reservation', $reservations->pluck('id'));
+        return $reservations->map(fn($r) => $this->formatEventReservation($r, 'owner', $txMap->get($r->id)));
     }
-    
+
     /**
      * Get materiel reservations where user is the camper/buyer
      */
     private function getMaterielReservationsAsCamper($userId)
     {
-        return \App\Models\Reservations_materielles::where('user_id', $userId)
+        $reservations = \App\Models\Reservations_materielles::where('user_id', $userId)
             ->with(['materielle', 'fournisseur.profile.profileFournisseur', 'user'])
-            ->get()
-            ->map(function($reservation) {
-                return $this->formatMaterielReservation($reservation, 'camper');
-            });
+            ->get();
+        $txMap = $this->batchLoadWalletTx('materiel_reservation', $reservations->pluck('id'));
+        return $reservations->map(fn($r) => $this->formatMaterielReservation($r, 'camper', $txMap->get($r->id)));
     }
-    
+
     /**
      * Get materiel reservations where user is the supplier
      */
     private function getMaterielReservationsAsSupplier($userId)
     {
-        return \App\Models\Reservations_materielles::where('fournisseur_id', $userId)
+        $reservations = \App\Models\Reservations_materielles::where('fournisseur_id', $userId)
             ->with(['materielle', 'user', 'fournisseur'])
-            ->get()
-            ->map(function($reservation) {
-                return $this->formatMaterielReservation($reservation, 'supplier');
-            });
+            ->get();
+        $txMap = $this->batchLoadWalletTx('materiel_reservation', $reservations->pluck('id'));
+        return $reservations->map(fn($r) => $this->formatMaterielReservation($r, 'supplier', $txMap->get($r->id)));
     }
-    
+
     /**
      * Get centre reservations where user is the camper
      */
     private function getCentreReservationsAsCamper($userId)
     {
-        return \App\Models\Reservations_centre::where('user_id', $userId)
+        $reservations = \App\Models\Reservations_centre::where('user_id', $userId)
             ->with(['serviceItems', 'user', 'centre.profile.profileCentre'])
-            ->get()
-            ->map(function($reservation) {
-                return $this->formatCentreReservation($reservation, 'camper');
-            });
+            ->get();
+        $txMap = $this->batchLoadWalletTx('centre_reservation', $reservations->pluck('id'));
+        return $reservations->map(fn($r) => $this->formatCentreReservation($r, 'camper', $txMap->get($r->id)));
     }
-    
+
     /**
      * Get centre reservations where user is the centre owner
      */
     private function getCentreReservationsAsOwner($userId)
     {
-        return \App\Models\Reservations_centre::where('centre_id', $userId)
+        $reservations = \App\Models\Reservations_centre::where('centre_id', $userId)
             ->with(['serviceItems', 'user', 'centre'])
+            ->get();
+        $txMap = $this->batchLoadWalletTx('centre_reservation', $reservations->pluck('id'));
+        return $reservations->map(fn($r) => $this->formatCentreReservation($r, 'owner', $txMap->get($r->id)));
+    }
+
+    /**
+     * Batch-load wallet credit transactions for a set of reservation IDs, keyed by reference_id.
+     */
+    private function batchLoadWalletTx(string $referenceType, $ids): \Illuminate\Support\Collection
+    {
+        $ids = $ids->filter()->unique()->toArray();
+        if (empty($ids)) return collect();
+        return WalletTransaction::where('reference_type', $referenceType)
+            ->whereIn('reference_id', $ids)
+            ->where('type', 'credit')
             ->get()
-            ->map(function($reservation) {
-                return $this->formatCentreReservation($reservation, 'owner');
-            });
+            ->keyBy('reference_id');
     }
     
     /**
@@ -211,7 +219,7 @@ class UnifiedReservationController extends Controller
     /**
      * Format event reservation for unified display
      */
-    private function formatEventReservation($reservation, $role)
+    private function formatEventReservation($reservation, $role, $orgTx = null)
     {
         $event          = $reservation->event;
         $basePrice      = $event ? round((float)$event->price * (int)$reservation->nbr_place, 2) : 0;
@@ -221,11 +229,7 @@ class UnifiedReservationController extends Controller
         // Total the camper actually paid = base − discount + platform fee
         $totalPrice = max(0, round($basePrice - $discountAmt + $platformFeeAmt, 2));
 
-        // Commission from the organizer's wallet transaction
-        $orgTx = WalletTransaction::where('reference_type', 'event_reservation')
-            ->where('reference_id', $reservation->id)
-            ->where('type', 'credit')
-            ->first();
+        // Commission from the pre-loaded wallet transaction (or estimate)
         if ($orgTx) {
             $commissionAmt  = (float) $orgTx->commission_amount;
             $commissionRate = (float) $orgTx->commission_rate;
@@ -307,7 +311,7 @@ class UnifiedReservationController extends Controller
     /**
      * Format materiel reservation for unified display
      */
-    private function formatMaterielReservation($reservation, $role)
+    private function formatMaterielReservation($reservation, $role, $supTx = null)
     {
         $materielle     = $reservation->materielle;
         $montantTotal   = round((float)($reservation->montant_total ?? 0), 2);
@@ -315,11 +319,6 @@ class UnifiedReservationController extends Controller
         $platformFeeRate= round((float)($reservation->platform_fee_rate  ?? 0), 2);
         $discountAmt    = round((float)($reservation->discount_amount    ?? 0), 2);
 
-        // Look up supplier's wallet transaction for exact commission (if payment done)
-        $supTx = WalletTransaction::where('reference_type', 'materiel_reservation')
-            ->where('reference_id', $reservation->id)
-            ->where('type', 'credit')
-            ->first();
         if ($supTx) {
             $commissionAmt  = (float) $supTx->commission_amount;
             $commissionRate = (float) $supTx->commission_rate;
@@ -409,7 +408,7 @@ class UnifiedReservationController extends Controller
     /**
      * Format centre reservation for unified display
      */
-    private function formatCentreReservation($reservation, $role)
+    private function formatCentreReservation($reservation, $role, $centreTx = null)
     {
         $serviceItems = $reservation->serviceItems ?? collect();
         $serviceTypes = $serviceItems->map(function($item) {
@@ -463,24 +462,12 @@ class UnifiedReservationController extends Controller
             'platform_fee_rate' => $reservation->platform_fee_rate ?? 0,
             'payment_method' => $reservation->payment_method ?? 'wallet',
             'discount_amount' => $reservation->discount_amount ?? 0,
-            'commission_amount' => (function() use ($reservation) {
-                $tx = WalletTransaction::where('reference_type', 'centre_reservation')
-                    ->where('reference_id', $reservation->id)
-                    ->where('type', 'credit')
-                    ->first();
-                if ($tx) return (float) $tx->commission_amount;
-                // Reservation not yet confirmed — estimate from config
-                $netBase = round((float)($reservation->total_price ?? 0) - (float)($reservation->platform_fee_amount ?? 0), 2);
-                return round(CommissionService::calculate('center', $netBase)['commission'], 2);
-            })(),
-            'commission_rate' => (function() use ($reservation) {
-                $tx = WalletTransaction::where('reference_type', 'centre_reservation')
-                    ->where('reference_id', $reservation->id)
-                    ->where('type', 'credit')
-                    ->first();
-                if ($tx) return (float) $tx->commission_rate;
-                return round(CommissionService::calculate('center', 100)['rate'] * 100, 2);
-            })(),
+            'commission_amount' => $centreTx
+                ? (float) $centreTx->commission_amount
+                : round(CommissionService::calculate('center', max(0, round((float)($reservation->total_price ?? 0) - (float)($reservation->platform_fee_amount ?? 0), 2)))['commission'], 2),
+            'commission_rate' => $centreTx
+                ? (float) $centreTx->commission_rate
+                : round(CommissionService::calculate('center', 100)['rate'] * 100, 2),
             'nights' => $reservation->nights ?? 1,
             'user' => $reservation->user ? [
                 'id' => $reservation->user->id,

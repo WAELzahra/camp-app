@@ -541,21 +541,27 @@ class CampingCentreController extends Controller
     /**
      * GET /admin/centres/search-users?q=xxx
      * Recherche rapide d'utilisateurs pour l'assignation d'un centre.
+     * Searches by first_name, last_name, email, or centre name.
      */
     public function searchUsers(Request $request)
     {
         $q = trim($request->query('q', ''));
 
         $users = User::with('role')
+            ->leftJoin('camping_centres as cc', 'cc.user_id', '=', 'users.id')
+            ->select('users.*', 'cc.nom as centre_nom')
             ->when($q !== '', fn($query) =>
                 $query->where(function ($q2) use ($q) {
-                    $q2->where('first_name', 'like', "%{$q}%")
-                       ->orWhere('last_name',  'like', "%{$q}%")
-                       ->orWhere('email',       'like', "%{$q}%");
+                    $q2->where('users.first_name', 'like', "%{$q}%")
+                       ->orWhere('users.last_name',  'like', "%{$q}%")
+                       ->orWhere('users.email',       'like', "%{$q}%")
+                       ->orWhere('cc.nom',            'like', "%{$q}%");
                 })
             )
             ->limit(10)
             ->get()
+            ->unique('id')
+            ->values()
             ->map(fn($u) => [
                 'id'         => $u->id,
                 'first_name' => $u->first_name,
@@ -563,6 +569,7 @@ class CampingCentreController extends Controller
                 'email'      => $u->email,
                 'avatar'     => $u->avatar,
                 'role'       => $u->role?->name,
+                'centre_nom' => $u->centre_nom,
             ]);
 
         return response()->json(['status' => 'success', 'data' => $users]);

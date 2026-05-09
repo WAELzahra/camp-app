@@ -157,8 +157,25 @@ class ReservationEventController extends Controller
         $processingFee          = 0;
         $isLate                 = $feeCalc ? ($feeCalc['hours_remaining'] < 24) : false;
 
-        // ── Wallet refund — only if the reservation was already confirmed (money was taken) ──
-        if ($reservation->payment_method === 'wallet' && $reservation->status === 'confirmée') {
+        // ── Wallet refund ────────────────────────────────────────────────────────
+        if ($reservation->payment_method === 'wallet' && $reservation->status === 'en_attente_validation') {
+            // Funds were escrowed at creation — full refund, no cancellation policy (never confirmed)
+            $totalPaid = round($totalPrice + $platformFeeAmt, 2);
+            DB::beginTransaction();
+            try {
+                Balance::forUser($user->id)->refundEscrow($totalPaid);
+                WalletTransaction::logCredit(
+                    $user->id, 'refund_in', $totalPaid, 0, 0, $totalPaid,
+                    'event_reservation', $reservation->id,
+                    "Remboursement annulation (avant validation) — réservation #{$reservation->id}",
+                    $event->group_id
+                );
+                DB::commit();
+            } catch (\Throwable $e) {
+                DB::rollBack();
+                \Log::error('Event pending cancellation escrow refund failed: ' . $e->getMessage());
+            }
+        } elseif ($reservation->payment_method === 'wallet' && $reservation->status === 'confirmée') {
             // Organizer net_revenue: commission is taken from the base price (not gross)
             $calc          = \App\Services\CommissionService::calculate('group', $totalPrice);
             $orgNetRevenue = $calc['net_revenue'];
@@ -466,14 +483,16 @@ public function updateManualParticipant(Request $request, $reservationId)
         $user = auth()->user();
 
         $request->validate([
-            'event_id'       => 'required|exists:events,id',
-            'nbr_place'      => 'required|integer|min:1',
-            'group_id'       => 'required|exists:users,id',
-            'promo_code'     => 'nullable|string|max:50',
-            'name'           => 'nullable|string|max:255',
-            'email'          => 'nullable|email|max:255',
-            'phone'          => 'nullable|string|max:50',
-            'payment_method' => 'nullable|in:wallet,card',
+            'event_id'          => 'required|exists:events,id',
+            'nbr_place'         => 'required|integer|min:1',
+            'group_id'          => 'required|exists:users,id',
+            'promo_code'        => 'nullable|string|max:50',
+            'name'              => 'nullable|string|max:255',
+            'email'             => 'nullable|email|max:255',
+            'phone'             => 'nullable|string|max:50',
+            'payment_method'    => 'nullable|in:wallet,card',
+            'group_skill_level' => 'nullable|in:beginner,intermediate,advanced,mixed',
+            'trip_purpose'      => 'nullable|string|max:255',
         ]);
 
         // Card payment is not available in v1
@@ -527,7 +546,7 @@ public function updateManualParticipant(Request $request, $reservationId)
             }
         }
 
-        // ── Create reservation — no money moves until the group approves ─────────
+        // ── Create reservation and lock funds in escrow immediately ──────────────
         DB::beginTransaction();
         try {
             // ── Spots decrement ──────────────────────────────────────────────────
@@ -556,7 +575,22 @@ public function updateManualParticipant(Request $request, $reservationId)
                 'payment_method'       => 'wallet',
                 'platform_fee_amount'  => $platformFeeAmt,
                 'platform_fee_rate'    => $platformFeeRate,
+                'group_skill_level'    => $request->input('group_skill_level'),
+                'trip_purpose'         => $request->input('trip_purpose'),
             ]);
+
+            // Escrow: lock funds immediately so camper cannot spend them on other reservations
+            if ($totalToPay > 0) {
+                Balance::forUser($user->id)->lockFunds($totalToPay);
+                WalletTransaction::logDebit(
+                    $user->id, 'reservation_payment', $totalToPay,
+                    'event_reservation', $reservation->id,
+                    "Paiement réservation événement #{$reservation->id} (en attente de validation)",
+                    (int) $request->group_id,
+                    $platformFeeRate,
+                    $platformFeeAmt
+                );
+            }
 
             DB::commit();
         } catch (\Throwable $e) {
@@ -721,9 +755,17 @@ public function updateManualParticipant(Request $request, $reservationId)
         if ($reservation->payment_method === 'wallet' && $reservation->status === 'en_attente_validation') {
 
             if ($newStatus === 'confirmé') {
-                // Release escrowed funds to organizer now that they accepted
+                // Release escrow and credit organizer (funds were locked at reservation creation)
                 DB::beginTransaction();
                 try {
+                    $platformFeeAmt  = round((float) ($reservation->platform_fee_amount ?? 0), 2);
+                    $platformFeeRate = round((float) ($reservation->platform_fee_rate   ?? 0), 2);
+                    $totalPaid       = round($netBase + $platformFeeAmt, 2);
+
+                    // Release camper's escrowed funds (debit already happened at creation)
+                    Balance::forUser($reservation->user_id)->releaseEscrow($totalPaid);
+
+                    // Credit organizer minus group commission
                     $orgCalc = CommissionService::calculate('group', $netBase);
                     Balance::forUser($reservation->group_id)->crediter($orgCalc['net_revenue']);
                     WalletTransaction::logCredit(
@@ -736,20 +778,39 @@ public function updateManualParticipant(Request $request, $reservationId)
                         "Revenu réservation événement : {$event->title}",
                         $reservation->user_id
                     );
+
+                    // Log to admin wallet history
+                    if ($platformFeeAmt > 0) {
+                        \App\Models\AdminWalletTransaction::log(
+                            'platform_fee', $platformFeeAmt,
+                            'event_reservation', $reservation->id,
+                            "Platform fee — {$event->title} (réservation #{$reservation->id})",
+                            $reservation->user_id
+                        );
+                    }
+                    if ($orgCalc['commission'] > 0) {
+                        \App\Models\AdminWalletTransaction::log(
+                            'commission', $orgCalc['commission'],
+                            'event_reservation', $reservation->id,
+                            "Commission groupe — {$event->title} (réservation #{$reservation->id})",
+                            $reservation->group_id
+                        );
+                    }
+
                     DB::commit();
                 } catch (\Throwable $e) {
                     DB::rollBack();
-                    \Log::error('Event reservation approval wallet credit failed: ' . $e->getMessage());
-                    return response()->json(['success' => false, 'message' => 'Erreur lors du paiement au groupe.'], 500);
+                    \Log::error('Event reservation approval wallet movement failed: ' . $e->getMessage());
+                    return response()->json(['success' => false, 'message' => 'Erreur lors du paiement.'], 500);
                 }
 
             } elseif ($newStatus === 'refusé') {
-                // Full refund to camper — group rejected, they never had the money
+                // Refund escrowed funds — group rejected the reservation
                 DB::beginTransaction();
                 try {
                     $feeData   = CommissionService::addServiceFee($netBase);
                     $totalPaid = round($feeData['total'], 2);
-                    Balance::forUser($reservation->user_id)->crediter($totalPaid);
+                    Balance::forUser($reservation->user_id)->refundEscrow($totalPaid);
                     WalletTransaction::logCredit(
                         $reservation->user_id, 'refund_in',
                         $totalPaid, 0, 0, $totalPaid,
@@ -822,8 +883,19 @@ public function updateManualParticipant(Request $request, $reservationId)
                         "Remboursement — annulation par groupe #{$reservation->id}",
                         $reservation->group_id
                     );
+                } elseif ($reservation->status === 'en_attente_validation') {
+                    // Funds were escrowed at creation — full refund, organizer never received anything
+                    $feeData   = CommissionService::addServiceFee($netBase);
+                    $totalPaid = round($feeData['total'], 2);
+                    Balance::forUser($reservation->user_id)->refundEscrow($totalPaid);
+                    WalletTransaction::logCredit(
+                        $reservation->user_id, 'refund_in',
+                        $totalPaid, 0, 0, $totalPaid,
+                        'event_reservation', $reservation->id,
+                        "Remboursement — annulation groupe (avant validation) #{$reservation->id}",
+                        $event->group_id
+                    );
                 }
-                // en_attente_validation: no money was taken at booking — nothing to refund
 
                 $event->increment('remaining_spots', $reservation->nbr_place);
                 DB::commit();

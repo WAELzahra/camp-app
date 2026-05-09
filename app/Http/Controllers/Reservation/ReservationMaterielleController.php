@@ -196,14 +196,16 @@ class ReservationMaterielleController extends Controller
 
         DB::beginTransaction();
         try {
-            // Deduct from camper wallet (escrow — supplier paid after confirmation)
+            // Lock funds in escrow immediately — supplier is paid only after confirmation
             if ($montantTotal > 0) {
-                Balance::forUser($user->id)->debiter($montantTotal);
+                Balance::forUser($user->id)->lockFunds($montantTotal);
                 WalletTransaction::logDebit(
                     $user->id, 'reservation_payment', $montantTotal,
                     'materiel_reservation', null,
-                    "Paiement réservation matériel — {$materielle->name}",
-                    (int) $validated['fournisseur_id']
+                    "Paiement réservation matériel — {$materielle->name} (en attente de confirmation)",
+                    (int) $validated['fournisseur_id'],
+                    $platformFeeRate,
+                    $platformFeeAmt
                 );
             }
 
@@ -313,14 +315,19 @@ class ReservationMaterielleController extends Controller
             $reservation->save();
             $rawPin = $reservation->generatePin();
 
-            // Credit supplier immediately at confirmation (escrow release)
+            // Release escrow and credit supplier (funds were locked at reservation creation)
             if ($reservation->montant_total > 0 && $reservation->payment_method === 'wallet') {
                 $reservation->load('fournisseur');
                 $receiverType    = ($reservation->fournisseur && $reservation->fournisseur->role_id === 4)
                     ? 'supplier' : 'camper';
                 $platformFeeAmt  = (float) ($reservation->platform_fee_amount ?? 0);
-                $base            = max(0, round((float) $reservation->montant_total - $platformFeeAmt, 2));
+                $gross           = (float) $reservation->montant_total;
+                $base            = max(0, round($gross - $platformFeeAmt, 2));
                 $calc            = CommissionService::calculate($receiverType, $base);
+
+                // Release camper's escrowed funds (debit already happened at store())
+                Balance::forUser($reservation->user_id)->releaseEscrow($gross);
+
                 Balance::forUser($reservation->fournisseur_id)->crediter($calc['net_revenue']);
                 WalletTransaction::logCredit(
                     $reservation->fournisseur_id, 'reservation_income',
@@ -380,10 +387,10 @@ class ReservationMaterielleController extends Controller
 
         $reservation->update(['status' => 'rejected']);
 
-        // Wallet refund to camper
+        // Refund escrowed funds to camper (locked at store())
         if ($reservation->payment_method === 'wallet' && $reservation->montant_total > 0) {
             try {
-                Balance::forUser($reservation->user_id)->crediter($reservation->montant_total);
+                Balance::forUser($reservation->user_id)->refundEscrow((float) $reservation->montant_total);
                 WalletTransaction::logCredit(
                     $reservation->user_id, 'refund_in',
                     $reservation->montant_total, 0, 0, $reservation->montant_total,
@@ -517,8 +524,8 @@ class ReservationMaterielleController extends Controller
                     }
                 }
 
-                // Full refund to camper in all cases
-                Balance::forUser($reservation->user_id)->crediter($gross);
+                // Full refund to camper — refundEscrow handles both pending (en_attente) and confirmed (disponible) cases
+                Balance::forUser($reservation->user_id)->refundEscrow($gross);
                 WalletTransaction::logCredit(
                     $reservation->user_id, 'refund_in',
                     $gross, 0, 0, $gross,
@@ -629,8 +636,8 @@ class ReservationMaterielleController extends Controller
                         );
                     }
                 } else {
-                    // Pending: supplier was never credited — full refund to camper
-                    Balance::forUser($reservation->user_id)->crediter($gross);
+                    // Pending: funds still in escrow — return to camper
+                    Balance::forUser($reservation->user_id)->refundEscrow($gross);
                     WalletTransaction::logCredit(
                         $reservation->user_id, 'refund_in',
                         $gross, 0, 0, $gross,

@@ -19,6 +19,7 @@ use App\Models\Photo;
 use App\Models\User;
 use App\Http\Controllers\Controller;
 use App\Models\CentreClaim;
+use App\Models\ProfileCampeur;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 
@@ -220,6 +221,10 @@ class ProfileController extends Controller
             case 'centre':
                 $data['details'] = $profile->profileCentre ?? new ProfileCentre(['profile_id' => $profile->id]);
                 break;
+            case 'campeur':
+                $data['details'] = $profile->profileCampeur
+                    ?? ProfileCampeur::firstOrCreate(['profile_id' => $profile->id]);
+                break;
             case 'groupe':
                 $data['details'] = $profile->profileGroupe ?? new ProfileGroupe(['profile_id' => $profile->id]);
                 
@@ -407,7 +412,21 @@ class ProfileController extends Controller
             
             switch ($userType) {
                 case 'campeur':
-                    // Activities already handled above
+                    $campeurData = $request->only([
+                        'skill_level',
+                        'comfort_level',
+                        'budget_range',
+                        'preferred_trip_styles',
+                        'preferred_activities',
+                        'gear_preferences',
+                    ]);
+
+                    if (!empty($campeurData)) {
+                        ProfileCampeur::updateOrCreate(
+                            ['profile_id' => $profile->id],
+                            $campeurData
+                        );
+                    }
                     break;
                     
                 case 'guide':

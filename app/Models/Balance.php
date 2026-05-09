@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 
 class Balance extends Model
 {
@@ -47,6 +48,45 @@ class Balance extends Model
     {
         $this->decrement('solde_disponible', $montant);
         $this->update(['dernier_mouvement_at' => now()]);
+    }
+
+    /**
+     * Moves funds from disponible → en_attente (escrow lock at reservation creation).
+     */
+    public function lockFunds(float $montant): void
+    {
+        $this->decrement('solde_disponible', $montant);
+        $this->increment('solde_en_attente', $montant);
+        $this->update(['dernier_mouvement_at' => now()]);
+    }
+
+    /**
+     * Decrements en_attente when escrowed funds are released to the beneficiary.
+     * Safe: uses GREATEST(0,...) so legacy reservations (created via debiter) never go negative.
+     */
+    public function releaseEscrow(float $montant): void
+    {
+        DB::table('balances')
+            ->where('id', $this->id)
+            ->update([
+                'solde_en_attente'    => DB::raw("GREATEST(0, solde_en_attente - {$montant})"),
+                'dernier_mouvement_at' => now(),
+            ]);
+    }
+
+    /**
+     * Returns escrowed funds to disponible (refund on rejection or cancellation).
+     * Safe: always credits disponible; clears en_attente without going below 0.
+     */
+    public function refundEscrow(float $montant): void
+    {
+        DB::table('balances')
+            ->where('id', $this->id)
+            ->update([
+                'solde_en_attente'    => DB::raw("GREATEST(0, solde_en_attente - {$montant})"),
+                'solde_disponible'    => DB::raw("solde_disponible + {$montant}"),
+                'dernier_mouvement_at' => now(),
+            ]);
     }
 
     /**

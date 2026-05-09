@@ -562,9 +562,18 @@ class AdminPaymentController extends Controller
         $eventIds    = $col->where('reference_type', 'event_reservation')->whereNull('related_user_id')->pluck('reference_id')->filter()->unique()->values();
         $materielIds = $col->where('reference_type', 'materiel_reservation')->whereNull('related_user_id')->pluck('reference_id')->filter()->unique()->values();
 
-        $centreRes   = $centreIds->isNotEmpty()   ? Reservations_centre::whereIn('id', $centreIds)->get(['id','user_id'])->keyBy('id')               : collect();
-        $eventRes    = $eventIds->isNotEmpty()    ? \App\Models\Reservations_events::whereIn('id', $eventIds)->get(['id','user_id'])->keyBy('id')     : collect();
-        $materielRes = $materielIds->isNotEmpty() ? \App\Models\Reservations_materielles::whereIn('id', $materielIds)->get(['id','user_id'])->keyBy('id') : collect();
+        $centreRes   = $centreIds->isNotEmpty()   ? Reservations_centre::whereIn('id', $centreIds)->get(['id','user_id','platform_fee_amount'])->keyBy('id')               : collect();
+        $eventRes    = $eventIds->isNotEmpty()    ? \App\Models\Reservations_events::whereIn('id', $eventIds)->get(['id','user_id','platform_fee_amount'])->keyBy('id')     : collect();
+        $materielRes = $materielIds->isNotEmpty() ? \App\Models\Reservations_materielles::whereIn('id', $materielIds)->get(['id','user_id','platform_fee_amount'])->keyBy('id') : collect();
+
+        // Also fetch platform_fee_amount for all transactions (not just fallback ones)
+        $allCentreIds   = $col->where('reference_type', 'centre_reservation')->pluck('reference_id')->filter()->unique()->values();
+        $allEventIds    = $col->where('reference_type', 'event_reservation')->pluck('reference_id')->filter()->unique()->values();
+        $allMaterielIds = $col->where('reference_type', 'materiel_reservation')->pluck('reference_id')->filter()->unique()->values();
+
+        $allCentreRes   = $allCentreIds->isNotEmpty()   ? Reservations_centre::whereIn('id', $allCentreIds)->get(['id','user_id','platform_fee_amount'])->keyBy('id')               : collect();
+        $allEventRes    = $allEventIds->isNotEmpty()    ? \App\Models\Reservations_events::whereIn('id', $allEventIds)->get(['id','user_id','platform_fee_amount'])->keyBy('id')     : collect();
+        $allMaterielRes = $allMaterielIds->isNotEmpty() ? \App\Models\Reservations_materielles::whereIn('id', $allMaterielIds)->get(['id','user_id','platform_fee_amount'])->keyBy('id') : collect();
 
         $fallbackIds = collect();
         $fallbackMap = [];
@@ -589,13 +598,23 @@ class AdminPaymentController extends Controller
             ? \App\Models\User::whereIn('id', $fallbackIds->unique())->get(['id','first_name','last_name','email'])->keyBy('id')
             : collect();
 
-        $col->transform(function ($txn) use ($fallbackMap, $fallbackUsers) {
+        $col->transform(function ($txn) use ($fallbackMap, $fallbackUsers, $allCentreRes, $allEventRes, $allMaterielRes) {
             $txn->beneficiary = $txn->user;
-            $payer = $txn->related_user;
+            $payer = $txn->relatedUser;
             if (!$payer && isset($fallbackMap[$txn->id])) {
                 $payer = $fallbackUsers[$fallbackMap[$txn->id]] ?? null;
             }
             $txn->payer = $payer;
+
+            // Attach platform_fee_amount from the reservation
+            $rid = $txn->reference_id;
+            $txn->platform_fee_amount = match($txn->reference_type) {
+                'centre_reservation'   => (float) ($allCentreRes[$rid]?->platform_fee_amount  ?? 0),
+                'event_reservation'    => (float) ($allEventRes[$rid]?->platform_fee_amount   ?? 0),
+                'materiel_reservation' => (float) ($allMaterielRes[$rid]?->platform_fee_amount ?? 0),
+                default                => 0,
+            };
+
             return $txn;
         });
 
