@@ -1,0 +1,1763 @@
+[
+  {
+    "id": 1,
+    "name": "Cap Angela (Ras Ben Sakka)",
+    "region": "Bizerte",
+    "type": "beach",
+    "description": "Northernmost point of Africa and the entire African continent. Rocky headland with dramatic Mediterranean views, popular wild bivouac spot among Tunisian campers.",
+    "coordinates": { "lat": 37.3406, "lon": 9.7497 }
+  },
+  {
+    "id": 2,
+    "name": "Cap Serrat",
+    "region": "Bizerte",
+    "type": "beach",
+    "description": "Hidden gem on the north coast with pristine sandy coves, turquoise water and cork oak backdrop. One of Tunisia's most beautiful wild beaches for camping.",
+    "coordinates": { "lat": 37.2319, "lon": 9.2297 }
+  },
+  {
+    "id": 3,
+    "name": "Kef Abed",
+    "region": "Bizerte",
+    "type": "mountain",
+    "description": "Remote rocky massif near Bizerte with spectacular night skies and calm ambiance. A classic wild camping destination for Tunisian outdoor groups.",
+    "coordinates": { "lat": 37.1800, "lon": 9.5900 }
+  },
+  {
+    "id": 4,
+    "name": "Lac Ichkeul – Rive Nord",
+    "region": "Bizerte",
+    "type": "lake",
+    "description": "UNESCO World Heritage freshwater lake surrounded by marshes and Jebel Ichkeul. Outstanding birdwatching zone; wild camping on the northern bank away from the visitor center.",
+    "coordinates": { "lat": 37.1500, "lon": 9.6700 }
+  },
+  {
+    "id": 5,
+    "name": "Jebel Ichkeul – Versant Sud",
+    "region": "Bizerte",
+    "type": "mountain",
+    "description": "Forested southern slopes of Jebel Ichkeul rising above the lake. Shaded bivouac areas among maquis and olive trees with panoramic lake views.",
+    "coordinates": { "lat": 37.1300, "lon": 9.6600 }
+  },
+  {
+    "id": 6,
+    "name": "Plage de Sounine",
+    "region": "Bizerte",
+    "type": "beach",
+    "description": "Wild sandy beach west of Bizerte city, accessible via dirt track. Open dune camping with calm sea and few visitors outside summer.",
+    "coordinates": { "lat": 37.2800, "lon": 9.8200 }
+  },
+  {
+    "id": 7,
+    "name": "Plage de Ras Engela",
+    "region": "Bizerte",
+    "type": "beach",
+    "description": "Isolated headland beach near Sejnane with dramatic rocky outcrops and clear Mediterranean water. Minimal infrastructure, ideal for wild camping.",
+    "coordinates": { "lat": 37.2000, "lon": 9.2800 }
+  },
+  {
+    "id": 8,
+    "name": "Sidi El Barrak Dam Surroundings",
+    "region": "Béja",
+    "type": "lake",
+    "description": "Large artificial lake within Cap Négro–Chitana National Park zone. Forested banks with cork oaks provide excellent sheltered camping amid nature.",
+    "coordinates": { "lat": 37.1100, "lon": 9.3700 }
+  },
+  {
+    "id": 9,
+    "name": "El Mgasseb",
+    "region": "Béja",
+    "type": "forest",
+    "description": "One of the most pristine wild spots in northern Tunisia. Deep cork oak forest with a river valley, considered a virgin camping location by local outdoor communities.",
+    "coordinates": { "lat": 36.9500, "lon": 9.1500 }
+  },
+  {
+    "id": 10,
+    "name": "Oued Mejerda – Rive de Testour",
+    "region": "Béja",
+    "type": "forest",
+    "description": "Riverside camping along the Mejerda River near the historic town of Testour. Riparian forest with lush vegetation and calm waters.",
+    "coordinates": { "lat": 36.5500, "lon": 9.4500 }
+  },
+  {
+    "id": 11,
+    "name": "Forêt de Bellif",
+    "region": "Béja",
+    "type": "forest",
+    "description": "Dense mixed forest within the Cap Négro protected area. Cork oaks, holm oaks and rare peat bog habitat. Remote and barely visited.",
+    "coordinates": { "lat": 37.0500, "lon": 9.2500 }
+  },
+  {
+    "id": 12,
+    "name": "Jebel Tebaba",
+    "region": "Béja",
+    "type": "mountain",
+    "description": "Isolated mountain in Béja governorate with open limestone ridges and panoramic views over northern Tunisia's valleys. Low foot traffic.",
+    "coordinates": { "lat": 36.7800, "lon": 9.1000 }
+  },
+  {
+    "id": 13,
+    "name": "Ain Draham – Forêt de Kroumirie",
+    "region": "Jendouba",
+    "type": "forest",
+    "description": "Vast cork oak and holm oak forest in the Kroumirie Mountains. Coolest and most humid region in Tunisia, with excellent forested clearings for wild camping.",
+    "coordinates": { "lat": 36.7700, "lon": 8.6900 }
+  },
+  {
+    "id": 14,
+    "name": "Bni Mtir Dam",
+    "region": "Jendouba",
+    "type": "lake",
+    "description": "Scenic dam surrounded completely by forested hills near Ain Draham. Campers set up tents on the shore with views of the glassy reservoir and rolling green hills.",
+    "coordinates": { "lat": 36.8000, "lon": 8.7200 }
+  },
+  {
+    "id": 15,
+    "name": "El Feija National Park – Zone Périphérique",
+    "region": "Jendouba",
+    "type": "forest",
+    "description": "Peripheral zones of El Feija NP feature dense oak forest with Barbary deer. Camping is practiced in buffer areas; check with the local forestry office.",
+    "coordinates": { "lat": 36.4900, "lon": 8.3300 }
+  },
+  {
+    "id": 16,
+    "name": "Oued Zeen – Vallée Basse",
+    "region": "Jendouba",
+    "type": "forest",
+    "description": "Valley of the Zeen River within Oued Zeen National Park. Wooded riverbanks with oak and wild olive trees. Hiking and camping are common activities here.",
+    "coordinates": { "lat": 36.7500, "lon": 8.6200 }
+  },
+  {
+    "id": 17,
+    "name": "Hammam Bourguiba Forest",
+    "region": "Jendouba",
+    "type": "forest",
+    "description": "Cork oak forest near the thermal springs of Hammam Bourguiba. Cooler temperatures and shade make this a popular wild camping spot for northern Tunisian campers.",
+    "coordinates": { "lat": 36.8200, "lon": 8.5500 }
+  },
+  {
+    "id": 18,
+    "name": "Jebel Bir – Kroumirie",
+    "region": "Jendouba",
+    "type": "mountain",
+    "description": "Remote summit in the Kroumirie range with forest approaches. Panoramic views over Algeria and northern Tunisia. Rarely visited by outsiders.",
+    "coordinates": { "lat": 36.7000, "lon": 8.5000 }
+  },
+  {
+    "id": 19,
+    "name": "Forêt de Mhimech",
+    "region": "Jendouba",
+    "type": "forest",
+    "description": "Mixed cork oak and pine forest south of Ain Draham with river streams and rocky outcrops. Natural clearings suitable for tents.",
+    "coordinates": { "lat": 36.7200, "lon": 8.7400 }
+  },
+  {
+    "id": 20,
+    "name": "Lac de Ghezala",
+    "region": "Jendouba",
+    "type": "lake",
+    "description": "Small natural lake in the northwest forests, near the Algerian border. Surrounded by cork oaks and maquis shrubland; tranquil wild camping.",
+    "coordinates": { "lat": 36.8100, "lon": 8.4800 }
+  },
+  {
+    "id": 21,
+    "name": "Jebel Sidi Abdelaziz",
+    "region": "Jendouba",
+    "type": "mountain",
+    "description": "Forested mountain north of Jendouba city with a marabout shrine at the summit. Natural forest camps on the slopes among pines.",
+    "coordinates": { "lat": 36.6000, "lon": 8.9000 }
+  },
+  {
+    "id": 22,
+    "name": "Ain Soltane Forest",
+    "region": "Jendouba",
+    "type": "forest",
+    "description": "Protected forest near El Feija; cork oaks with clear streams running through. A lesser-known spot near the Algerian frontier.",
+    "coordinates": { "lat": 36.5000, "lon": 8.2800 }
+  },
+  {
+    "id": 23,
+    "name": "Tabarka – Plage de la Galite (Offshore)",
+    "region": "Jendouba",
+    "type": "beach",
+    "description": "Wild beaches east of Tabarka port with rocky pine-backed coves. Popular with local campers on weekends in summer.",
+    "coordinates": { "lat": 36.9500, "lon": 8.8700 }
+  },
+  {
+    "id": 24,
+    "name": "Plage Zouaraa",
+    "region": "Jendouba",
+    "type": "beach",
+    "description": "Undeveloped beach near Zouaraa with fine sand and calm sea. Pine forest directly backs the beach for shaded camping.",
+    "coordinates": { "lat": 37.0300, "lon": 9.0500 }
+  },
+  {
+    "id": 25,
+    "name": "Jebel Zaghouan – Versant Nord",
+    "region": "Zaghouan",
+    "type": "mountain",
+    "description": "Northern face of Jebel Zaghouan, Tunisia's most iconic mountain peak at 1295 m. Rocky approaches with cedar and pine; wild camping below the crags.",
+    "coordinates": { "lat": 36.3900, "lon": 10.1400 }
+  },
+  {
+    "id": 26,
+    "name": "Jebel Zaghouan – Source des Nymphes",
+    "region": "Zaghouan",
+    "type": "mountain",
+    "description": "Natural springs and Roman temple ruins at the foot of Zaghouan. Wooded area around the ancient water source, used for overnight stays by hikers.",
+    "coordinates": { "lat": 36.4000, "lon": 10.1500 }
+  },
+  {
+    "id": 27,
+    "name": "Jebel Ressas",
+    "region": "Ben Arous",
+    "type": "mountain",
+    "description": "Rocky limestone massif southeast of Tunis with Aleppo pine slopes. Popular for day hikes and short wild bivouacs with views over the Bay of Tunis.",
+    "coordinates": { "lat": 36.6800, "lon": 10.3700 }
+  },
+  {
+    "id": 28,
+    "name": "Jebel Boukornine",
+    "region": "Ben Arous",
+    "type": "mountain",
+    "description": "Twin-peak forested mountain within Boukornine National Park south of Tunis. Forest camping in pine and Aleppo pine zones on the outer park perimeter.",
+    "coordinates": { "lat": 36.7700, "lon": 10.3000 }
+  },
+  {
+    "id": 29,
+    "name": "Ghabet El Bondek – Beni Khiar",
+    "region": "Nabeul",
+    "type": "forest",
+    "description": "Dense pine forest in Beni Khiar near Nabeul city. One of Cap Bon's best-loved wild camping forests with shaded clearings.",
+    "coordinates": { "lat": 36.7500, "lon": 10.8700 }
+  },
+  {
+    "id": 30,
+    "name": "La Crique de Robinson – Nabel",
+    "region": "Nabeul",
+    "type": "beach",
+    "description": "Hidden cove south of Nabeul city with crystal-clear turquoise water. Very popular summer wild camping spot among Tunisian youth groups.",
+    "coordinates": { "lat": 36.4500, "lon": 10.7300 }
+  },
+  {
+    "id": 31,
+    "name": "Port aux Princes – Takelsa",
+    "region": "Nabeul",
+    "type": "beach",
+    "description": "Long sandy beach on the Gulf of Hammamet coastline. Campers line the beach with tents directly on the sand under pine trees.",
+    "coordinates": { "lat": 36.6700, "lon": 10.9000 }
+  },
+  {
+    "id": 32,
+    "name": "El Rtiba – Nabel",
+    "region": "Nabeul",
+    "type": "beach",
+    "description": "Scenic coastal area near Nabeul with pine forests meeting the sea. Wild camping in the forested dunes above the shoreline.",
+    "coordinates": { "lat": 36.5000, "lon": 10.7600 }
+  },
+  {
+    "id": 33,
+    "name": "Cap Bon – El Haouaria",
+    "region": "Nabeul",
+    "type": "beach",
+    "description": "Rugged northern tip of Cap Bon peninsula with dramatic cliffs and sea views. Wild camping near ancient cave quarries and falconry hunting grounds.",
+    "coordinates": { "lat": 37.0500, "lon": 11.0000 }
+  },
+  {
+    "id": 34,
+    "name": "Plage de Sidi Daoud",
+    "region": "Nabeul",
+    "type": "beach",
+    "description": "Quiet fishing village beach at the northern tip of Cap Bon. Sandy beach with clear waters and minimal tourist development; good for wild camping.",
+    "coordinates": { "lat": 36.9800, "lon": 10.9800 }
+  },
+  {
+    "id": 35,
+    "name": "Forêt de Beni Khiar",
+    "region": "Nabeul",
+    "type": "forest",
+    "description": "Pine and eucalyptus forest between Beni Khiar and the sea. Shaded wild camping clearings used by local campers throughout summer.",
+    "coordinates": { "lat": 36.7300, "lon": 10.8500 }
+  },
+  {
+    "id": 36,
+    "name": "Oued El Kebir – Cap Bon",
+    "region": "Nabeul",
+    "type": "forest",
+    "description": "River valley cutting through Cap Bon's forested interior. Riparian camping with freshwater access and shade in an otherwise arid peninsula.",
+    "coordinates": { "lat": 36.7000, "lon": 10.8000 }
+  },
+  {
+    "id": 37,
+    "name": "Jebel Abiodh – Cap Bon",
+    "region": "Nabeul",
+    "type": "mountain",
+    "description": "Limestone ridge forming the spine of Cap Bon. Panoramic views over both gulfs of Tunis and Hammamet. Sparse scrub vegetation with open summit camping.",
+    "coordinates": { "lat": 36.8000, "lon": 10.9200 }
+  },
+  {
+    "id": 38,
+    "name": "Kélibia – Plage Nord",
+    "region": "Nabeul",
+    "type": "beach",
+    "description": "Long sandy beach north of Kélibia town backed by dunes. Wild camping below the medieval fort headland with sea breezes.",
+    "coordinates": { "lat": 36.8700, "lon": 11.0900 }
+  },
+  {
+    "id": 39,
+    "name": "Plage de Menzel Temime",
+    "region": "Nabeul",
+    "type": "beach",
+    "description": "Undeveloped coastal strip near Menzel Temime with shallow sandy beaches. Pines meet the shoreline providing natural shade for campers.",
+    "coordinates": { "lat": 36.7900, "lon": 10.9800 }
+  },
+  {
+    "id": 40,
+    "name": "Zembra Island (Ile Zembra)",
+    "region": "Nabeul",
+    "type": "beach",
+    "description": "Protected island nature reserve in the Gulf of Tunis. Wild camping is practiced by those arriving by private boat; spectacular marine biodiversity.",
+    "coordinates": { "lat": 37.1100, "lon": 10.8000 }
+  },
+  {
+    "id": 41,
+    "name": "Jebel Serj – Versant Est",
+    "region": "Siliana",
+    "type": "mountain",
+    "description": "Eastern flank of the saddle-shaped Jebel Serj with Aleppo pine and cedar. Home to the longest cave system in Tunisia; overnight camping among pines.",
+    "coordinates": { "lat": 36.1200, "lon": 9.5500 }
+  },
+  {
+    "id": 42,
+    "name": "Bargou Mountain – Jebel Bargou",
+    "region": "Siliana",
+    "type": "mountain",
+    "description": "Known as Tunisia's most beautiful mountain at 1266 m. Stunning plateaus and ridges accessible by car from Bargou town; wild camping on summit plateau.",
+    "coordinates": { "lat": 36.0700, "lon": 9.5300 }
+  },
+  {
+    "id": 43,
+    "name": "Barrage Sidi Salem – Rive Est",
+    "region": "Béja",
+    "type": "lake",
+    "description": "One of Tunisia's largest reservoirs. Eastern shore flanked by oak forest and olive groves; wild camping on the shoreline in wooded clearings.",
+    "coordinates": { "lat": 36.8200, "lon": 9.5000 }
+  },
+  {
+    "id": 44,
+    "name": "Jebel Serdj – Zone Sud",
+    "region": "Siliana",
+    "type": "mountain",
+    "description": "Southern limestone plateau of Jebel Serdj NP with sparse juniper and pine. Quiet overnight spots away from trails.",
+    "coordinates": { "lat": 36.0800, "lon": 9.5700 }
+  },
+  {
+    "id": 45,
+    "name": "Ain Tebournok Forest",
+    "region": "Siliana",
+    "type": "forest",
+    "description": "Interior forest between Siliana and Makthar with varied oak and wild olive cover. Remote camping amid interior Tunisia's rolling hills.",
+    "coordinates": { "lat": 36.0000, "lon": 9.2500 }
+  },
+  {
+    "id": 46,
+    "name": "Jugurtha's Table (Kef Jugurtha)",
+    "region": "Kef",
+    "type": "mountain",
+    "description": "Spectacular 80-hectare flat-topped mesa at 1271 m with vertical cliffs. Named after Numidian king Jugurtha. Camping on the plateau is practiced by hikers.",
+    "coordinates": { "lat": 35.8600, "lon": 8.4200 }
+  },
+  {
+    "id": 47,
+    "name": "Jebel Chitane – El Kef",
+    "region": "Kef",
+    "type": "mountain",
+    "description": "Rocky summit near El Kef town with views over the Tunisian Tell. Wild camping on the ridge among garrigue vegetation.",
+    "coordinates": { "lat": 36.1700, "lon": 8.7000 }
+  },
+  {
+    "id": 48,
+    "name": "Oued Mellègue Valley",
+    "region": "Kef",
+    "type": "mountain",
+    "description": "Deep river gorge cutting through the high plateau near El Kef. Cliff camping and riverside bivouacs in a dramatic canyon landscape.",
+    "coordinates": { "lat": 35.9500, "lon": 8.5000 }
+  },
+  {
+    "id": 49,
+    "name": "Forêt de Kesra",
+    "region": "Siliana",
+    "type": "forest",
+    "description": "High-altitude Aleppo pine forest near the Berber village of Kesra. Cooler climate with forested escarpment ideal for autumn and spring camping.",
+    "coordinates": { "lat": 35.8100, "lon": 9.3700 }
+  },
+  {
+    "id": 50,
+    "name": "Jebel Chambi – Versant Nord (Zone Périphérique)",
+    "region": "Kasserine",
+    "type": "mountain",
+    "description": "Northern periphery of Tunisia's highest peak at 1544 m. Pine forest at mid-altitude with natural clearings for bivouacking outside the strict protected zone.",
+    "coordinates": { "lat": 35.2200, "lon": 8.6700 }
+  },
+  {
+    "id": 51,
+    "name": "Jebel Chambi – Versant Sud",
+    "region": "Kasserine",
+    "type": "mountain",
+    "description": "Southern slopes of Jebel Chambi with rocky ridges and Aleppo pine descending into steppe. Open-air camping with panoramic Saharan Atlas views.",
+    "coordinates": { "lat": 35.1500, "lon": 8.6700 }
+  },
+  {
+    "id": 52,
+    "name": "Forêt de Kasserine",
+    "region": "Kasserine",
+    "type": "forest",
+    "description": "Pine forest belt surrounding Kasserine town with natural clearings and streams. Commonly used by local groups for weekend wild camping.",
+    "coordinates": { "lat": 35.1700, "lon": 8.8300 }
+  },
+  {
+    "id": 53,
+    "name": "Jebel Mghila – Zone Est",
+    "region": "Kasserine",
+    "type": "mountain",
+    "description": "Eastern slopes of Jebel Mghila National Park on the Kasserine–Sidi Bouzid boundary. Semi-arid mountain with esparto grass and juniper. Quiet camping.",
+    "coordinates": { "lat": 35.4000, "lon": 9.2000 }
+  },
+  {
+    "id": 54,
+    "name": "Oued Hatab",
+    "region": "Kasserine",
+    "type": "mountain",
+    "description": "River valley carving through the Kasserine uplands. Seasonal watercourse with rock shelters and shaded spots used for overnight stays.",
+    "coordinates": { "lat": 35.3000, "lon": 8.9000 }
+  },
+  {
+    "id": 55,
+    "name": "Jebel Semmama",
+    "region": "Kasserine",
+    "type": "mountain",
+    "description": "Remote summit southeast of Kasserine with mixed scrubland. Panoramic views over the central Tunisian plateau and Atlas foothills.",
+    "coordinates": { "lat": 35.3500, "lon": 8.9500 }
+  },
+  {
+    "id": 56,
+    "name": "Jebel Mrhila Périphérie",
+    "region": "Sidi Bouzid",
+    "type": "mountain",
+    "description": "Buffer zone around Jebel Mghila NP on the Sidi Bouzid side. Steppe grassland transitioning to mountain shrubs; silent landscape for solo camping.",
+    "coordinates": { "lat": 35.4500, "lon": 9.2500 }
+  },
+  {
+    "id": 57,
+    "name": "Sebkha de Sidi El Hani",
+    "region": "Sousse",
+    "type": "lake",
+    "description": "Seasonal salt lake attracting flocks of flamingos and waders. Camping on the steppe margins during spring bird migration is practiced by naturalists.",
+    "coordinates": { "lat": 35.7200, "lon": 10.4500 }
+  },
+  {
+    "id": 58,
+    "name": "Plage de Sidi Bou Ali",
+    "region": "Sousse",
+    "type": "beach",
+    "description": "Quiet sandy beach north of Sousse with minimal development. Duneside wild camping away from resort zones.",
+    "coordinates": { "lat": 36.0600, "lon": 10.5300 }
+  },
+  {
+    "id": 59,
+    "name": "Plage de Sidi Khelifa",
+    "region": "Sousse",
+    "type": "beach",
+    "description": "Undeveloped sandy bay between Hammamet and Sousse. Open beach camping with access via coastal piste.",
+    "coordinates": { "lat": 36.3500, "lon": 10.6600 }
+  },
+  {
+    "id": 60,
+    "name": "Barrage El Haouareb",
+    "region": "Kairouan",
+    "type": "lake",
+    "description": "Large reservoir on Oued Merguellil south of Kairouan. Steppe banks with scattered tamarisk trees; wild camping on the western shore.",
+    "coordinates": { "lat": 35.5700, "lon": 9.8100 }
+  },
+  {
+    "id": 61,
+    "name": "Jebel Ousselet",
+    "region": "Kairouan",
+    "type": "mountain",
+    "description": "Isolated limestone mountain in the central Tunisian steppe with natural flat terraces for camping and sweeping views over the Haouareb plain.",
+    "coordinates": { "lat": 35.4000, "lon": 9.6000 }
+  },
+  {
+    "id": 62,
+    "name": "Plage de Akouda",
+    "region": "Sousse",
+    "type": "beach",
+    "description": "Northern coastal strip of Akouda with calm shallow waters. Adjacent dune and pine areas used for overnight camping by youth groups.",
+    "coordinates": { "lat": 35.9200, "lon": 10.5700 }
+  },
+  {
+    "id": 63,
+    "name": "Sebkha Kelbia",
+    "region": "Kairouan",
+    "type": "lake",
+    "description": "Seasonal lake north of Kairouan attracting migratory birds. Flat salt margins with open skies; camping on the steppe edge during spring.",
+    "coordinates": { "lat": 35.9000, "lon": 10.1000 }
+  },
+  {
+    "id": 64,
+    "name": "Forêt de Bou Hedma",
+    "region": "Gafsa",
+    "type": "forest",
+    "description": "Acacia forest in Bou Hedma National Park at the pre-Saharan transition. Africa's last native acacia woodland; wild camping near park periphery.",
+    "coordinates": { "lat": 34.5500, "lon": 9.5000 }
+  },
+  {
+    "id": 65,
+    "name": "Jebel Orbata",
+    "region": "Gafsa",
+    "type": "mountain",
+    "description": "Massive isolated mountain range rising above the Gafsa plain. Semi-arid slopes with Barbary sheep and wild camping on its lower ridges.",
+    "coordinates": { "lat": 34.4500, "lon": 8.7000 }
+  },
+  {
+    "id": 66,
+    "name": "Oasis de Tozeur – Palmiers Sauvages",
+    "region": "Tozeur",
+    "type": "desert",
+    "description": "Edges of the Tozeur oasis away from town, where date palm groves meet desert. Classic bivouac experience under palm canopy at the Sahara's edge.",
+    "coordinates": { "lat": 33.9200, "lon": 8.1300 }
+  },
+  {
+    "id": 67,
+    "name": "Chott El Jerid – Rive Nord",
+    "region": "Tozeur",
+    "type": "desert",
+    "description": "Edge of the world's largest salt flat outside the Arctic. Wild camping on the flat mineral crust with surreal mirages and halite formations.",
+    "coordinates": { "lat": 33.8000, "lon": 8.4000 }
+  },
+  {
+    "id": 68,
+    "name": "Chott El Jerid – Zone Centrale",
+    "region": "Tozeur",
+    "type": "desert",
+    "description": "Deep interior of the great salt lake (accessible only in dry season by 4x4). Extreme wild camping on a vast white expanse under a starry Saharan sky.",
+    "coordinates": { "lat": 33.6000, "lon": 8.6000 }
+  },
+  {
+    "id": 69,
+    "name": "Nefta – Corbeille du Paradis",
+    "region": "Tozeur",
+    "type": "desert",
+    "description": "Natural bowl of oasis springs below the town of Nefta. Palm-shaded gorge used for quiet desert camping near the Great Erg.",
+    "coordinates": { "lat": 33.8700, "lon": 7.8900 }
+  },
+  {
+    "id": 70,
+    "name": "Jebel Tembaine",
+    "region": "Tozeur",
+    "type": "mountain",
+    "description": "Pre-Saharan mountain between Tozeur and Nefta. Rocky escarpment with flat summit camping and desert vistas extending to the Algerian border.",
+    "coordinates": { "lat": 33.9800, "lon": 8.0500 }
+  },
+  {
+    "id": 71,
+    "name": "Erg Oriental – Dunes de Ksar Ghilane",
+    "region": "Tataouine",
+    "type": "desert",
+    "description": "Remote sand sea with towering dunes near the hot spring oasis of Ksar Ghilane. Classic wild Sahara camping under the stars far from any camp.",
+    "coordinates": { "lat": 32.9900, "lon": 9.6400 }
+  },
+  {
+    "id": 72,
+    "name": "Erg Oriental – Dunes de Douz Nord",
+    "region": "Kébili",
+    "type": "desert",
+    "description": "Northern dune field of the Great Eastern Erg, accessible from Douz (gateway to the Sahara). Open bivouac on towering sand dunes away from organised camps.",
+    "coordinates": { "lat": 33.5500, "lon": 9.0500 }
+  },
+  {
+    "id": 73,
+    "name": "Erg Oriental – Sabria",
+    "region": "Kébili",
+    "type": "desert",
+    "description": "Remote dune area near Sabria village south of Douz. Dunes reach over 100m high; wild bivouac with complete solitude and exceptional stargazing.",
+    "coordinates": { "lat": 33.2000, "lon": 9.1000 }
+  },
+  {
+    "id": 74,
+    "name": "Chott El Fejaj",
+    "region": "Kébili",
+    "type": "desert",
+    "description": "Salt lake east of Douz with flamingo colonies in season. Wild camping on the flat sabkha margins in a surreal mineral landscape.",
+    "coordinates": { "lat": 33.7000, "lon": 9.4000 }
+  },
+  {
+    "id": 75,
+    "name": "Oasis de Kébili",
+    "region": "Kébili",
+    "type": "desert",
+    "description": "Ancient oasis at Kébili with date palms and warm springs. Camping in the palm groves on the desert fringe is a long local tradition.",
+    "coordinates": { "lat": 33.7000, "lon": 8.9700 }
+  },
+  {
+    "id": 76,
+    "name": "Jebel Dahar – Versant Nord",
+    "region": "Médenine",
+    "type": "mountain",
+    "description": "Limestone escarpment forming the northern face of the Jebel Dahar massif. Dramatic canyons and rocky valleys with Berber ruins; remote wild camping.",
+    "coordinates": { "lat": 33.0000, "lon": 10.0000 }
+  },
+  {
+    "id": 77,
+    "name": "Jebel Dahar – Vallée de Ksar",
+    "region": "Tataouine",
+    "type": "mountain",
+    "description": "Valley between ancient Berber ksour in the Jebel Dahar. Open stony landscape with sheltered wadis ideal for overnight desert mountain camping.",
+    "coordinates": { "lat": 32.8000, "lon": 10.0500 }
+  },
+  {
+    "id": 78,
+    "name": "Oued Oum Zessar",
+    "region": "Médenine",
+    "type": "mountain",
+    "description": "Scenic wadi in Médenine with ancient Berber tabias (earth dams) and tamarisk trees. Spring and autumn camping in a dramatic valley landscape.",
+    "coordinates": { "lat": 33.3500, "lon": 10.5000 }
+  },
+  {
+    "id": 79,
+    "name": "Plage de Ras Marmour",
+    "region": "Médenine",
+    "type": "beach",
+    "description": "Isolated sandy headland on the Gulf of Boughrara coast near Zarzis. Wild camping on a quiet beach with crystal-clear shallow water.",
+    "coordinates": { "lat": 33.3800, "lon": 11.2000 }
+  },
+  {
+    "id": 80,
+    "name": "Île de Djerba – Plage de Sidi Garrous",
+    "region": "Médenine",
+    "type": "beach",
+    "description": "Northern coast of Djerba with remote sandy beach and dunes. Wild camping away from resort zones with access via dirt track through olive groves.",
+    "coordinates": { "lat": 33.8800, "lon": 10.9200 }
+  },
+  {
+    "id": 81,
+    "name": "Île de Djerba – Plage de Guellala",
+    "region": "Médenine",
+    "type": "beach",
+    "description": "Southern Djerba beach near the artisan village of Guellala. Shallow lagoon waters and isolated beach suitable for wild camping.",
+    "coordinates": { "lat": 33.7200, "lon": 10.8700 }
+  },
+  {
+    "id": 82,
+    "name": "Île de Djerba – Spiaggia Naturale Est",
+    "region": "Médenine",
+    "type": "beach",
+    "description": "Undeveloped eastern beaches of Djerba below the Roman causeway area. Sandy flats and mangrove-like margins attract campers outside peak season.",
+    "coordinates": { "lat": 33.7800, "lon": 11.0800 }
+  },
+  {
+    "id": 83,
+    "name": "Plage de Zarzis Sud",
+    "region": "Médenine",
+    "type": "beach",
+    "description": "Southern coastline near Zarzis with long sandy beaches backed by palm and olive trees. Quiet wild camping area away from the resort strip.",
+    "coordinates": { "lat": 33.4500, "lon": 11.1500 }
+  },
+  {
+    "id": 84,
+    "name": "Ksar Hadada – Wadi Camping",
+    "region": "Tataouine",
+    "type": "mountain",
+    "description": "Rocky wadi below the ancient ksar at Hadada. Stone shelters and tamarisk shade provide protection; classic Berber landscape camping.",
+    "coordinates": { "lat": 32.5500, "lon": 9.9500 }
+  },
+  {
+    "id": 85,
+    "name": "Chenini – Plateau et Vallée",
+    "region": "Tataouine",
+    "type": "mountain",
+    "description": "Ancient Berber hilltop village of Chenini with surrounding rock valley. Wild bivouac on the stony plateau with extraordinary panoramic desert views.",
+    "coordinates": { "lat": 32.9100, "lon": 10.2600 }
+  },
+  {
+    "id": 86,
+    "name": "Guermessa – Jebel",
+    "region": "Tataouine",
+    "type": "mountain",
+    "description": "Abandoned troglodyte village on a rocky ridge near Tataouine. Camping among ancient ruins on the limestone crest with desert panoramas.",
+    "coordinates": { "lat": 32.9800, "lon": 10.1900 }
+  },
+  {
+    "id": 87,
+    "name": "Jebel Sidi Toui – Périphérie",
+    "region": "Médenine",
+    "type": "desert",
+    "description": "Buffer zone around Sidi Toui National Park near the Libya border. Acacia savanna with gazelle and desert hedgehog; wild camping in open steppe.",
+    "coordinates": { "lat": 32.7000, "lon": 11.2000 }
+  },
+  {
+    "id": 88,
+    "name": "Plage de Bibane",
+    "region": "Médenine",
+    "type": "beach",
+    "description": "Lagoon beach system at Bibane near the Libyan border. Protected shallow waters with vast sandy spits ideal for camping.",
+    "coordinates": { "lat": 33.2200, "lon": 11.2500 }
+  },
+  {
+    "id": 89,
+    "name": "Douz – Lisière du Grand Erg Est",
+    "region": "Kébili",
+    "type": "desert",
+    "description": "The very edge of the Great Eastern Erg at Douz town. Wild camping on the first dune fields beyond the town with access to pure Saharan solitude.",
+    "coordinates": { "lat": 33.4500, "lon": 9.0200 }
+  },
+  {
+    "id": 90,
+    "name": "Erg de Nefzaoua",
+    "region": "Kébili",
+    "type": "desert",
+    "description": "Dune fields in the Nefzaoua region southwest of Douz. Less visited than Douz dunes with equal scenic beauty; perfect for totally free bivouac.",
+    "coordinates": { "lat": 33.3000, "lon": 8.8000 }
+  },
+  {
+    "id": 91,
+    "name": "Plage Aghir – Djerba",
+    "region": "Médenine",
+    "type": "beach",
+    "description": "Eastern coast of Djerba south of the hotels zone with natural dunes and sea access. Camping is practiced in the dune area at off-season times.",
+    "coordinates": { "lat": 33.7500, "lon": 11.0000 }
+  },
+  {
+    "id": 92,
+    "name": "Forêt de Fernana",
+    "region": "Jendouba",
+    "type": "forest",
+    "description": "Cork and green oak forest near Fernana in the Kroumirie foothills. Streams and natural clearings make this a perfect forest bivouac location.",
+    "coordinates": { "lat": 36.6700, "lon": 8.7800 }
+  },
+  {
+    "id": 93,
+    "name": "Jebel Bir Mchergua",
+    "region": "Nabeul",
+    "type": "mountain",
+    "description": "Inland mountain of Cap Bon with scrub vegetation and views over the peninsula. Low-traffic area for hiking and overnight camping.",
+    "coordinates": { "lat": 36.6500, "lon": 10.8500 }
+  },
+  {
+    "id": 94,
+    "name": "Plage de Korbous – Falaises Nord",
+    "region": "Nabeul",
+    "type": "beach",
+    "description": "Rocky thermal coast north of the Korbous hot springs village. Dramatic cliff camping above hot springs flowing directly into the sea.",
+    "coordinates": { "lat": 36.8000, "lon": 10.5700 }
+  },
+  {
+    "id": 95,
+    "name": "Barrage Bir M'Cherga",
+    "region": "Nabeul",
+    "type": "lake",
+    "description": "Reservoir in inland Cap Bon with eucalyptus and pine surroundings. Lakeside wild camping among planted forest.",
+    "coordinates": { "lat": 36.6000, "lon": 10.6000 }
+  },
+  {
+    "id": 96,
+    "name": "Plage d'El Biban",
+    "region": "Nabeul",
+    "type": "beach",
+    "description": "Southern Cap Bon coast near El Biban with shallow sandy shore. Locally used for end-of-year camping traditions.",
+    "coordinates": { "lat": 36.5000, "lon": 10.7000 }
+  },
+  {
+    "id": 97,
+    "name": "Oued Ezzen – Gorges",
+    "region": "Kef",
+    "type": "mountain",
+    "description": "Rocky gorges carved by Oued Ezzen in El Kef governorate. Dramatic limestone canyon with seasonal waterfalls; bivouac on canyon floor or rim.",
+    "coordinates": { "lat": 36.2000, "lon": 8.8000 }
+  },
+  {
+    "id": 98,
+    "name": "Jebel Sidi Aich – El Kef",
+    "region": "Kef",
+    "type": "mountain",
+    "description": "High ridge dominating El Kef town with Roman and Byzantine remains at the top. Remote sections of the ridge used for overnight camping.",
+    "coordinates": { "lat": 36.1700, "lon": 8.7100 }
+  },
+  {
+    "id": 99,
+    "name": "Ain Draham – Pistes Forestières",
+    "region": "Jendouba",
+    "type": "forest",
+    "description": "Network of forestry tracks north of Ain Draham crossing dense cork oak. Numerous informal wild camping clearings used by hikers.",
+    "coordinates": { "lat": 36.7900, "lon": 8.7100 }
+  },
+  {
+    "id": 100,
+    "name": "Jebel Mansour – Médenine",
+    "region": "Médenine",
+    "type": "mountain",
+    "description": "Limestone massif in southern Tunisia with canyons and palm-filled wadis. Wild camping in the protected rock shelters of the Jebel Dahar.",
+    "coordinates": { "lat": 33.1500, "lon": 10.4000 }
+  },
+  {
+    "id": 101,
+    "name": "Chott El Gharsa – Rive Sud",
+    "region": "Tozeur",
+    "type": "desert",
+    "description": "Southern rim of the Chott El Gharsa salt lake near the Algerian border. Vast flat white mineral landscape for extreme wild camping with 4x4.",
+    "coordinates": { "lat": 34.0800, "lon": 7.9000 }
+  },
+  {
+    "id": 102,
+    "name": "Forêt d'Aïn Sbaita",
+    "region": "Kasserine",
+    "type": "forest",
+    "description": "Pine forest near the Ain Sbaita spring in Kasserine highlands. Spring water and shade create a natural camping spot at altitude.",
+    "coordinates": { "lat": 35.1800, "lon": 8.7000 }
+  },
+  {
+    "id": 103,
+    "name": "Plage de Bir Zitoun – Sfax",
+    "region": "Sfax",
+    "type": "beach",
+    "description": "Wild olive tree coastline south of Sfax with isolated sandy inlets. Camping on the scrubby dune margins away from industrial zones.",
+    "coordinates": { "lat": 34.5000, "lon": 10.8000 }
+  },
+  {
+    "id": 104,
+    "name": "Iles Kerkennah – Plages Est",
+    "region": "Sfax",
+    "type": "beach",
+    "description": "Eastern beaches of the flat Kerkennah Islands with shallow crystal waters. Traditional fishing island setting for barefoot wild camping.",
+    "coordinates": { "lat": 34.7200, "lon": 11.2500 }
+  },
+  {
+    "id": 105,
+    "name": "Iles Kerkennah – Pointe Nord",
+    "region": "Sfax",
+    "type": "beach",
+    "description": "Northern tip of Kerkennah with posidonia seagrass beaches and calm water. Remote sandy point used for tented camping by island visitors.",
+    "coordinates": { "lat": 34.8000, "lon": 11.1800 }
+  },
+  {
+    "id": 106,
+    "name": "Barrage Sidi Saad",
+    "region": "Kairouan",
+    "type": "lake",
+    "description": "Large reservoir on Oued Zeroud southwest of Kairouan. Steppe-edge camping on the reservoir banks surrounded by flat olive-tree landscape.",
+    "coordinates": { "lat": 35.2500, "lon": 9.5000 }
+  },
+  {
+    "id": 107,
+    "name": "Plage de Rejich",
+    "region": "Mahdia",
+    "type": "beach",
+    "description": "Sandy beach north of Mahdia with low dunes and clear sea. Wild camping behind the dune line away from the resort zone.",
+    "coordinates": { "lat": 35.5800, "lon": 11.0300 }
+  },
+  {
+    "id": 108,
+    "name": "Cap Afrique – Mahdia",
+    "region": "Mahdia",
+    "type": "beach",
+    "description": "Southernmost headland of Cap Bon coastline extension near Mahdia. Rocky cape with natural rocky platforms and dramatic waves; wild camping on flat rocks.",
+    "coordinates": { "lat": 35.5000, "lon": 11.0600 }
+  },
+  {
+    "id": 109,
+    "name": "Plage de Sidi Alouane",
+    "region": "Mahdia",
+    "type": "beach",
+    "description": "Undeveloped beach south of Mahdia near the lagoon. Sandy coves with minimal traffic and good access for tenters.",
+    "coordinates": { "lat": 35.4000, "lon": 11.0500 }
+  },
+  {
+    "id": 110,
+    "name": "Dghoumes National Park – Périphérie",
+    "region": "Tozeur",
+    "type": "desert",
+    "description": "Buffer zone of Dghoumes NP near Tozeur. Pre-Saharan acacia and palm landscape; wild camping near the park entrance is practiced by naturalists.",
+    "coordinates": { "lat": 34.0000, "lon": 8.3000 }
+  },
+  {
+    "id": 111,
+    "name": "Chebika – Montagne et Gorges",
+    "region": "Tozeur",
+    "type": "mountain",
+    "description": "Mountain oasis of Chebika at the foot of the Atlas escarpment. Dramatic palm gorge with waterfall; camping on the plateau above the oasis.",
+    "coordinates": { "lat": 34.2300, "lon": 7.9800 }
+  },
+  {
+    "id": 112,
+    "name": "Tamerza – Canyons",
+    "region": "Tozeur",
+    "type": "mountain",
+    "description": "Largest mountain oasis in Tunisia cut by a seasonal river with cascades. Camping in the canyon valley below the old abandoned Berber village.",
+    "coordinates": { "lat": 34.3800, "lon": 7.9700 }
+  },
+  {
+    "id": 113,
+    "name": "Midès – Gorge",
+    "region": "Tozeur",
+    "type": "mountain",
+    "description": "Spectacular deep gorge at Midès, one of the deepest canyons in Tunisia. Camping on the gorge rim with vertical cliff views into the canyon below.",
+    "coordinates": { "lat": 34.4200, "lon": 7.9500 }
+  },
+  {
+    "id": 114,
+    "name": "Jebel El Asker",
+    "region": "Tozeur",
+    "type": "mountain",
+    "description": "Rocky plateau mountain near the Algerian border in the Tozeur hinterland. Pre-Saharan wilderness with no facilities; pure wild camping experience.",
+    "coordinates": { "lat": 34.1500, "lon": 7.7500 }
+  },
+  {
+    "id": 115,
+    "name": "Forêt de Haidra",
+    "region": "Kasserine",
+    "type": "forest",
+    "description": "Forest of pines and junipers near Haïdra Roman ruins on the Algerian border. Solitary woodland camping with ancient ruins nearby.",
+    "coordinates": { "lat": 35.5800, "lon": 8.4000 }
+  },
+  {
+    "id": 116,
+    "name": "Oued Melah – Chott Jerid",
+    "region": "Tozeur",
+    "type": "desert",
+    "description": "Seasonal saltwater river draining into the Chott Jerid. Tamarisk and salt flat camping in a surreal pre-Saharan transition zone.",
+    "coordinates": { "lat": 33.9000, "lon": 8.2000 }
+  },
+  {
+    "id": 117,
+    "name": "Plage de Monastir Nord",
+    "region": "Monastir",
+    "type": "beach",
+    "description": "Sandy beaches north of Monastir near Frina and Skanes with pine-backed dune systems. Wild camping spots exist in forested sectors away from resorts.",
+    "coordinates": { "lat": 35.8200, "lon": 10.8100 }
+  },
+  {
+    "id": 118,
+    "name": "Plage de Teboulba",
+    "region": "Monastir",
+    "type": "beach",
+    "description": "Quiet fishing village beach south of Monastir with access to isolated sandy coves. Overnight wild camping used by local fishing families.",
+    "coordinates": { "lat": 35.6600, "lon": 10.9100 }
+  },
+  {
+    "id": 119,
+    "name": "Jebel Zaghouan – Vallon des Sources",
+    "region": "Zaghouan",
+    "type": "mountain",
+    "description": "Hidden valley on the western face of Jebel Zaghouan with natural springs and mixed forest. Shaded and cool; excellent mountain camping site.",
+    "coordinates": { "lat": 36.3700, "lon": 10.1200 }
+  },
+  {
+    "id": 120,
+    "name": "Parc National de Jebel Serj – Lisière",
+    "region": "Siliana",
+    "type": "mountain",
+    "description": "Outer edge of Jebel Serj NP with Montpellier maple and Barbary cedar forest. Wild overnight camping on the accessible lower ridges.",
+    "coordinates": { "lat": 36.1000, "lon": 9.5300 }
+  },
+  {
+    "id": 121,
+    "name": "Oued Siliana – Gorges",
+    "region": "Siliana",
+    "type": "mountain",
+    "description": "Canyon section of Oued Siliana with dramatic limestone cliffs. River valley camping in a remote interior setting.",
+    "coordinates": { "lat": 36.0500, "lon": 9.3800 }
+  },
+  {
+    "id": 122,
+    "name": "Jebel Kebbouch",
+    "region": "Jendouba",
+    "type": "mountain",
+    "description": "Green forested summit northeast of Jendouba city. Forest clearings ideal for camping beneath a canopy of oaks and pines.",
+    "coordinates": { "lat": 36.5800, "lon": 9.0200 }
+  },
+  {
+    "id": 123,
+    "name": "Barrage Beni M'tir – Rive Sud",
+    "region": "Jendouba",
+    "type": "lake",
+    "description": "Southern shore of Bni Mtir reservoir surrounded by forest. Quieter shore than the north side; secluded wild camping spots.",
+    "coordinates": { "lat": 36.7800, "lon": 8.7000 }
+  },
+  {
+    "id": 124,
+    "name": "Plage de Sidi Ali El Mekki",
+    "region": "Bizerte",
+    "type": "beach",
+    "description": "Beautiful natural beach west of Bizerte near the isthmus. One of Tunisia's finest wild beaches backed by pine forest with clear turquoise water.",
+    "coordinates": { "lat": 37.1700, "lon": 9.8100 }
+  },
+  {
+    "id": 125,
+    "name": "Plage de Ras Jebel",
+    "region": "Bizerte",
+    "type": "beach",
+    "description": "Coastal strip at Ras Jebel cape east of Bizerte with sandy coves and rocky points. Informal wild camping sites among coastal scrub.",
+    "coordinates": { "lat": 37.2400, "lon": 10.1200 }
+  },
+  {
+    "id": 126,
+    "name": "Ain Draham – Cascade Hammam",
+    "region": "Jendouba",
+    "type": "forest",
+    "description": "Forest waterfall near Ain Draham used as a reference point for local camping groups. Shaded and cool even in summer.",
+    "coordinates": { "lat": 36.7600, "lon": 8.7000 }
+  },
+  {
+    "id": 127,
+    "name": "Forêt de Tabarka – Pistes NW",
+    "region": "Jendouba",
+    "type": "forest",
+    "description": "Northwest forestry tracks beyond Tabarka city cutting through cork oak. Remote camping plots accessed only on foot or by 4x4.",
+    "coordinates": { "lat": 36.9600, "lon": 8.8400 }
+  },
+  {
+    "id": 128,
+    "name": "Barrage Joumine",
+    "region": "Bizerte",
+    "type": "lake",
+    "description": "Reservoir on Oued Joumine with forested hills. Lake edge camping in a quiet valley with good bird watching.",
+    "coordinates": { "lat": 37.0600, "lon": 9.4800 }
+  },
+  {
+    "id": 129,
+    "name": "Sebkha de Monastir (Sebkha Sidi Khelifa)",
+    "region": "Monastir",
+    "type": "lake",
+    "description": "Coastal lagoon south of Sousse attracting flamingo colonies. Camping on the steppe margin of this seasonal salt lake.",
+    "coordinates": { "lat": 35.7500, "lon": 10.8000 }
+  },
+  {
+    "id": 130,
+    "name": "Jebel Tiouchcha",
+    "region": "Kef",
+    "type": "mountain",
+    "description": "High limestone plateau in El Kef governorate with alpine steppe vegetation. Little-visited summit with free camping on the broad flat top.",
+    "description": "High limestone plateau in El Kef governorate near the Algerian border. Alpine steppe with wide flat camping areas and views toward Algeria.",
+    "coordinates": { "lat": 36.0000, "lon": 8.3000 }
+  },
+  {
+    "id": 131,
+    "name": "Oued Sarrath Valley",
+    "region": "Kef",
+    "type": "mountain",
+    "description": "Remote river valley in northwest Tunisia with sparse settlement. River bank camping beneath willows and tamarisk in a quiet highland valley.",
+    "coordinates": { "lat": 36.3000, "lon": 8.6000 }
+  },
+  {
+    "id": 132,
+    "name": "Jebel Nara",
+    "region": "Kasserine",
+    "type": "mountain",
+    "description": "Mountain near the centre of Tunisia with Aleppo pine and chaparral. Windy summit plateau with open bivouac camping used by scouts and hikers.",
+    "coordinates": { "lat": 35.4000, "lon": 8.8000 }
+  },
+  {
+    "id": 133,
+    "name": "Sebkha Sidi El Heni",
+    "region": "Sfax",
+    "type": "lake",
+    "description": "Coastal salt lake north of Sfax with flamingo and wader habitat. Camping on the salt flat margins in spring during bird migration.",
+    "coordinates": { "lat": 35.0000, "lon": 11.0000 }
+  },
+  {
+    "id": 134,
+    "name": "Oued Zigzaou",
+    "region": "Médenine",
+    "type": "mountain",
+    "description": "Wadi famous for World War II battles near Mareth. Palm-lined gorge with historical remains and wild camping in the valley.",
+    "coordinates": { "lat": 33.6000, "lon": 10.5500 }
+  },
+  {
+    "id": 135,
+    "name": "Jebel Nedhour",
+    "region": "Gafsa",
+    "type": "mountain",
+    "description": "Isolated mountain massif in Gafsa with desert steppe vegetation. Panoramic view toward the Chott basins; camping on rocky ledges.",
+    "coordinates": { "lat": 34.6000, "lon": 8.9000 }
+  },
+  {
+    "id": 136,
+    "name": "Oasis de Nefzaoua – El Faouar",
+    "region": "Kébili",
+    "type": "desert",
+    "description": "Remote desert oasis town at the edge of the Great Erg. Date palm groves and artesian wells; camping under the palms in complete silence.",
+    "coordinates": { "lat": 33.1000, "lon": 8.7500 }
+  },
+  {
+    "id": 137,
+    "name": "Plage de Ouled Yaneg – Mahdia",
+    "region": "Mahdia",
+    "type": "beach",
+    "description": "Long sandy beach near the El Jem–Mahdia coast with dunes. Wild camping on uncrowded beach sections in spring and autumn.",
+    "coordinates": { "lat": 35.2000, "lon": 11.0500 }
+  },
+  {
+    "id": 138,
+    "name": "Jebel Semène – Kasserine",
+    "region": "Kasserine",
+    "type": "mountain",
+    "description": "Secondary ridge south of Kasserine with open meadows and juniper patches. Low visitor footprint; ideal for quiet mountain camping.",
+    "coordinates": { "lat": 35.0000, "lon": 8.7000 }
+  },
+  {
+    "id": 139,
+    "name": "Plage de Sidi Rais",
+    "region": "Tunis",
+    "type": "beach",
+    "description": "Wild beach south of the Tunis lagoon near the salt marshes. Accessible by coastal piste; flat sandy camping on the south shore of Lac Tunis.",
+    "coordinates": { "lat": 36.7800, "lon": 10.3000 }
+  },
+  {
+    "id": 140,
+    "name": "Jebel Ammar",
+    "region": "Tunis",
+    "type": "mountain",
+    "description": "Small forested hill northeast of Tunis offering quick access wild camping near the capital. Pine-covered slopes with views over the bay.",
+    "coordinates": { "lat": 36.9500, "lon": 10.2000 }
+  },
+  {
+    "id": 141,
+    "name": "Plage de Sidi Bou Saïd – Cap Carthage",
+    "region": "Tunis",
+    "type": "beach",
+    "description": "Rocky coves north of Sidi Bou Saïd with access via Gammarth corniche. Some small coves allow discreet wild camping.",
+    "coordinates": { "lat": 36.9300, "lon": 10.3200 }
+  },
+  {
+    "id": 142,
+    "name": "Lac de Tunis – Rive Ouest (Sebkha)",
+    "region": "Tunis",
+    "type": "lake",
+    "description": "Marshland bordering the western shore of Lac de Tunis near Sijoumi. Flamingos and waders; camping on the scrub margins in winter.",
+    "coordinates": { "lat": 36.8200, "lon": 10.1300 }
+  },
+  {
+    "id": 143,
+    "name": "Jebel Bou Kornine Nord",
+    "region": "Ben Arous",
+    "type": "mountain",
+    "description": "Northern limestone face of Boukornine massif. Maquis and pine scrub with open rocky ledges for overnight camping with Tunis Bay views.",
+    "coordinates": { "lat": 36.7900, "lon": 10.3100 }
+  },
+  {
+    "id": 144,
+    "name": "Barrage de l'Oued Lebna",
+    "region": "Nabeul",
+    "type": "lake",
+    "description": "Small reservoir in inland Cap Bon. Quiet lakeside camping surrounded by fruit orchards and Mediterranean scrub.",
+    "coordinates": { "lat": 36.7000, "lon": 10.7200 }
+  },
+  {
+    "id": 145,
+    "name": "Plage d'El Mansourah – Kélibia",
+    "region": "Nabeul",
+    "type": "beach",
+    "description": "Wide bay beach south of Kélibia fortress with white sand and blue sea. Local youth traditionally camp here in large groups in summer.",
+    "coordinates": { "lat": 36.8300, "lon": 11.1000 }
+  },
+  {
+    "id": 146,
+    "name": "Plage de Tazarka",
+    "region": "Nabeul",
+    "type": "beach",
+    "description": "Sandy beach north of Nabeul with pine-backed dunes and a small cove. Wild camping spots between the dune line and the sea.",
+    "coordinates": { "lat": 36.5800, "lon": 10.7900 }
+  },
+  {
+    "id": 147,
+    "name": "Barrage Masri – Siliana",
+    "region": "Siliana",
+    "type": "lake",
+    "description": "Reservoir near Makthar plateau with rolling steppe hills around. Quiet wild camping on the stony banks of this interior lake.",
+    "coordinates": { "lat": 35.9000, "lon": 9.1500 }
+  },
+  {
+    "id": 148,
+    "name": "Jebel Mrhila – Versant NE",
+    "region": "Kairouan",
+    "type": "mountain",
+    "description": "Northeast face of the Mrhila massif transitioning into the central steppe. Open rocky landscape with juniper patches for high-altitude camping.",
+    "coordinates": { "lat": 35.5000, "lon": 9.4000 }
+  },
+  {
+    "id": 149,
+    "name": "Ain Khechem Forest",
+    "region": "Béja",
+    "type": "forest",
+    "description": "Forest and spring area west of Medjez El Bab. Cork oak and wild olive with a natural stream; camping under the trees near the spring.",
+    "coordinates": { "lat": 36.7000, "lon": 9.3500 }
+  },
+  {
+    "id": 150,
+    "name": "Dunes de Metlaoui",
+    "region": "Gafsa",
+    "type": "desert",
+    "description": "Mini-dune field near the phosphate mining area of Metlaoui at the desert's edge. Camping on the sand dunes overlooking the Thelja Gorges.",
+    "coordinates": { "lat": 34.3000, "lon": 8.4000 }
+  },
+  {
+    "id": 151,
+    "name": "Gorges de Selja (Seldja)",
+    "region": "Gafsa",
+    "type": "mountain",
+    "description": "Spectacular red sandstone canyon near Metlaoui traversed by the Lézard Rouge heritage train. Wild camping on the canyon floor near the Oued Thelja.",
+    "coordinates": { "lat": 34.3800, "lon": 8.3500 }
+  },
+  {
+    "id": 152,
+    "name": "Jebel Ben Younes",
+    "region": "Gafsa",
+    "type": "mountain",
+    "description": "Isolated mesa mountain in the Gafsa depression. Flat-topped summit accessible with 4x4; camping under vast desert skies.",
+    "coordinates": { "lat": 34.2000, "lon": 8.8500 }
+  },
+  {
+    "id": 153,
+    "name": "Plage de Hammam Lif",
+    "region": "Ben Arous",
+    "type": "beach",
+    "description": "Coastal strip at Hammam Lif south of Tunis with access to rocky coves east of the town. Small wild camping spots on the rocky coast.",
+    "coordinates": { "lat": 36.7300, "lon": 10.3700 }
+  },
+  {
+    "id": 154,
+    "name": "Forêt de Ouled Haffouz",
+    "region": "Sidi Bouzid",
+    "type": "forest",
+    "description": "Sparse acacia and halfa grass steppe forest south of Jebel Mghila. Open landscape camping in the semi-arid interior of Tunisia.",
+    "coordinates": { "lat": 35.2000, "lon": 9.4500 }
+  },
+  {
+    "id": 155,
+    "name": "Jebel Sidi Abid – Kairouan",
+    "region": "Kairouan",
+    "type": "mountain",
+    "description": "Low steppe mountain south of Kairouan with flat limestone summit. Panoramic views over the central plains; open bivouac camping.",
+    "coordinates": { "lat": 35.2500, "lon": 9.8000 }
+  },
+  {
+    "id": 156,
+    "name": "Oued Dekouk – Tataouine",
+    "region": "Tataouine",
+    "type": "desert",
+    "description": "Dry riverbed with palm oasis pockets near Dekouk oasis. Camping under wild palms in a remote southern oasis valley.",
+    "coordinates": { "lat": 32.6500, "lon": 10.4500 }
+  },
+  {
+    "id": 157,
+    "name": "Erg de Tataouine – Sabkha Oum El Kheyal",
+    "region": "Tataouine",
+    "type": "desert",
+    "description": "Remote salt pan and mini-erg south of Tataouine city. Stark desert landscape with scattered acacia for windbreak camping.",
+    "coordinates": { "lat": 32.3000, "lon": 10.2000 }
+  },
+  {
+    "id": 158,
+    "name": "Plage d'El Ketf – Sfax",
+    "region": "Sfax",
+    "type": "beach",
+    "description": "Isolated sandy beach south of Sfax accessible via coastal piste. Wild camping on the flat sandy shore with views toward Kerkennah.",
+    "coordinates": { "lat": 34.6000, "lon": 10.9000 }
+  },
+  {
+    "id": 159,
+    "name": "Forêt de Haffouz",
+    "region": "Sidi Bouzid",
+    "type": "forest",
+    "description": "Planted Aleppo pine forest on the slopes above Haffouz town. Popular with local families for weekend camping in the interior.",
+    "coordinates": { "lat": 35.6000, "lon": 9.6700 }
+  },
+  {
+    "id": 160,
+    "name": "Jebel Lessoud",
+    "region": "Kasserine",
+    "type": "mountain",
+    "description": "Remote limestone peak in the centre of Tunisia. Very low foot traffic; ideal for experienced wild campers seeking isolation.",
+    "coordinates": { "lat": 35.0000, "lon": 8.5500 }
+  },
+  {
+    "id": 161,
+    "name": "Plage de Remla – Kerkennah",
+    "region": "Sfax",
+    "type": "beach",
+    "description": "Sandy beach on Gharbi island of Kerkennah archipelago near the ferry port. Flat traditional beach camping on the island's north shore.",
+    "coordinates": { "lat": 34.7500, "lon": 11.1200 }
+  },
+  {
+    "id": 162,
+    "name": "Jebel Orbata – Versant Nord",
+    "region": "Gafsa",
+    "type": "mountain",
+    "description": "Northern flank of the Orbata massif with deep gorges. Rocky spires and sheltered wadis used for mountaineering and overnight camps.",
+    "coordinates": { "lat": 34.5000, "lon": 8.7500 }
+  },
+  {
+    "id": 163,
+    "name": "Barrage de Nebeur",
+    "region": "Kef",
+    "type": "lake",
+    "description": "Reservoir on Oued Mellegue with maquis-covered hills. Lakeside wild camping in the remote northwest interior.",
+    "coordinates": { "lat": 36.3000, "lon": 8.8000 }
+  },
+  {
+    "id": 164,
+    "name": "Jebel Souiga",
+    "region": "Bizerte",
+    "type": "mountain",
+    "description": "Coastal mountain near Bizerte with dense maquis and sea views. Short access from the city for quick wild camping on the scrubby ridge.",
+    "coordinates": { "lat": 37.2000, "lon": 9.9000 }
+  },
+  {
+    "id": 165,
+    "name": "Plage de Sidi Mechrig",
+    "region": "Bizerte",
+    "type": "beach",
+    "description": "Remote beach west of Tabarka between cap serrat and Sidi Mechrig creek. Pristine white sand beach rarely reached without 4x4; ideal for wild camping.",
+    "coordinates": { "lat": 37.1500, "lon": 9.0300 }
+  },
+  {
+    "id": 166,
+    "name": "Plage de Zouaraa Ouest",
+    "region": "Bizerte",
+    "type": "beach",
+    "description": "Long semi-wild beach west of Tabarka at Zouaraa, with adjacent pine plantation. Off-season wild camping in the dune system.",
+    "coordinates": { "lat": 37.0800, "lon": 9.0100 }
+  },
+  {
+    "id": 167,
+    "name": "Ain El Karma – Jendouba",
+    "region": "Jendouba",
+    "type": "forest",
+    "description": "Natural spring in the Kroumirie hills with surrounding cork oak forest. Local groups traditionally camp here near the spring source.",
+    "coordinates": { "lat": 36.7400, "lon": 8.7600 }
+  },
+  {
+    "id": 168,
+    "name": "Jebel El Fej – Béja",
+    "region": "Béja",
+    "type": "mountain",
+    "description": "Forested summit in the Béja highlands east of Nefza. Oak forest with natural clearings; spring and autumn camping in the hill country.",
+    "coordinates": { "lat": 37.0000, "lon": 9.4000 }
+  },
+  {
+    "id": 169,
+    "name": "Oued Sejnane – Camping Rivière",
+    "region": "Bizerte",
+    "type": "forest",
+    "description": "River camping along Oued Sejnane in the cork oak foothills of Bizerte. Swimming holes and flat sandy banks for tents.",
+    "coordinates": { "lat": 37.0800, "lon": 9.3000 }
+  },
+  {
+    "id": 170,
+    "name": "Jebel Ghorra",
+    "region": "Béja",
+    "type": "mountain",
+    "description": "High ridge northwest of Béja city with forest cover and panoramic views over the Medjerda valley. Wild camping on the ridge.",
+    "coordinates": { "lat": 36.8800, "lon": 9.0500 }
+  },
+  {
+    "id": 171,
+    "name": "Plage de Ras El Ma – Nabeul",
+    "region": "Nabeul",
+    "type": "beach",
+    "description": "Wild beach near Ras El Ma cape with rocky outcrops and sandy pockets. Accessible by unmaintained track; free wild camping.",
+    "coordinates": { "lat": 37.0300, "lon": 10.9500 }
+  },
+  {
+    "id": 172,
+    "name": "Plage de Ain Mestir",
+    "region": "Nabeul",
+    "type": "beach",
+    "description": "Remote beach in eastern Cap Bon accessed via farm tracks. Sandy and clean; good for quiet overnight stays.",
+    "coordinates": { "lat": 36.9500, "lon": 11.0300 }
+  },
+  {
+    "id": 173,
+    "name": "Forêt de Kef El Karma",
+    "region": "Kef",
+    "type": "forest",
+    "description": "Natural forest south of Tajerouine with pines and wild olive. Camping in clearings along the western highland forest corridor.",
+    "coordinates": { "lat": 35.9500, "lon": 8.6700 }
+  },
+  {
+    "id": 174,
+    "name": "Jebel Bir El Hafey",
+    "region": "Sidi Bouzid",
+    "type": "mountain",
+    "description": "Steppe mountain in central Tunisia with esparto grass and drought-adapted vegetation. Completely remote camping in the high steppe zone.",
+    "coordinates": { "lat": 35.0800, "lon": 9.6600 }
+  },
+  {
+    "id": 175,
+    "name": "Oasis de Gafsa – Lala",
+    "region": "Gafsa",
+    "type": "desert",
+    "description": "Mountain oasis pools near Gafsa town (Ain Biadha). Natural rock pools and palm groves used for camping by hikers.",
+    "coordinates": { "lat": 34.4200, "lon": 8.7900 }
+  },
+  {
+    "id": 176,
+    "name": "Plage de Frine Nord – Monastir",
+    "region": "Monastir",
+    "type": "beach",
+    "description": "Natural sandy beach north of Monastir between tourist zones with pine tree backing. Wild camping in the pine edge at off-season times.",
+    "coordinates": { "lat": 35.8500, "lon": 10.8000 }
+  },
+  {
+    "id": 177,
+    "name": "Barrage Sidi Barak – Nefza",
+    "region": "Béja",
+    "type": "lake",
+    "description": "Large northern dam on the Oued Brak river. Surrounded by pine and cork oak forest; wild camping on the lake margins.",
+    "coordinates": { "lat": 37.0800, "lon": 9.3500 }
+  },
+  {
+    "id": 178,
+    "name": "Jebel Hamra – Kébili",
+    "region": "Kébili",
+    "type": "desert",
+    "description": "Red sand dune landscape near Kébili with iron oxide coloring the dunes. Wild camping at sunset on the red dunes.",
+    "coordinates": { "lat": 33.6500, "lon": 9.2000 }
+  },
+  {
+    "id": 179,
+    "name": "Chott El Jerid – Rive Ouest",
+    "region": "Tozeur",
+    "type": "desert",
+    "description": "Western edge of Chott Jerid near Nefta with access by 4x4 on the salt crust. Camping at the extreme Saharan frontier near Algeria.",
+    "coordinates": { "lat": 33.7500, "lon": 8.0000 }
+  },
+  {
+    "id": 180,
+    "name": "Plage de La Galite – Île",
+    "region": "Bizerte",
+    "type": "beach",
+    "description": "Remote uninhabited islands 60 km north of Tabarka. Wild camping on the protected island beaches, accessible only by private boat.",
+    "coordinates": { "lat": 37.5200, "lon": 8.9300 }
+  },
+  {
+    "id": 181,
+    "name": "Oued Melah – Ariana",
+    "region": "Ariana",
+    "type": "lake",
+    "description": "Salt marsh and wetland north of Tunis near Sidi Thabet. Winter camping on the open steppe margins of this flamingo feeding site.",
+    "coordinates": { "lat": 37.0000, "lon": 10.1000 }
+  },
+  {
+    "id": 182,
+    "name": "Jebel Nahli",
+    "region": "Ariana",
+    "type": "mountain",
+    "description": "Small forested hill north of Tunis city near Raoued. Easy access for short wild camping trips close to the capital.",
+    "coordinates": { "lat": 36.9800, "lon": 10.2500 }
+  },
+  {
+    "id": 183,
+    "name": "Plage de Ras El Ahmar",
+    "region": "Bizerte",
+    "type": "beach",
+    "description": "Red-cliff cove beach between Bizerte and Cap Angela. Dramatic red sandstone cliffs with sandy pocket beach; wild camping under the cliffs.",
+    "coordinates": { "lat": 37.3000, "lon": 9.8500 }
+  },
+  {
+    "id": 184,
+    "name": "Plage de Sidi Gnaoui",
+    "region": "Bizerte",
+    "type": "beach",
+    "description": "Quiet beach south of Ras Jebel cape. Sandy cove with tamarisk trees providing shade; free camping on the dune area.",
+    "coordinates": { "lat": 37.2200, "lon": 10.1500 }
+  },
+  {
+    "id": 185,
+    "name": "Ain Babouch – Jendouba",
+    "region": "Jendouba",
+    "type": "forest",
+    "description": "Forest spring area in the Kroumirie foothills between Ain Draham and Tabarka. Verdant setting with running water; classic forest bivouac.",
+    "coordinates": { "lat": 36.8500, "lon": 8.8000 }
+  },
+  {
+    "id": 186,
+    "name": "Jebel Zaghouan – Crête Sud",
+    "region": "Zaghouan",
+    "type": "mountain",
+    "description": "Southern ridge of Zaghouan mountain with limestone pinnacles and Aleppo pine. Exposed ridge camping with 360-degree views.",
+    "coordinates": { "lat": 36.3600, "lon": 10.1500 }
+  },
+  {
+    "id": 187,
+    "name": "Oued Sra – Vallée",
+    "region": "Zaghouan",
+    "type": "mountain",
+    "description": "Hidden mountain valley southeast of Zaghouan with seasonal waterfall and fig trees. Camping in the valley floor on natural terraces.",
+    "coordinates": { "lat": 36.3200, "lon": 10.2000 }
+  },
+  {
+    "id": 188,
+    "name": "Forêt de Ain Defla",
+    "region": "Béja",
+    "type": "forest",
+    "description": "Natural forest area near Ain Defla spring in the northwest Tell. Dense oak with a reliable spring providing drinking water for campers.",
+    "coordinates": { "lat": 36.9000, "lon": 9.2000 }
+  },
+  {
+    "id": 189,
+    "name": "Plage des Mouettes – Bizerte",
+    "region": "Bizerte",
+    "type": "beach",
+    "description": "Sandy beach near Bizerte lake outlet with shallow lagoon-style waters. Out-of-season free camping on the sandy spit.",
+    "coordinates": { "lat": 37.2700, "lon": 9.9000 }
+  },
+  {
+    "id": 190,
+    "name": "Jebel Dyr",
+    "region": "Kasserine",
+    "type": "mountain",
+    "description": "Remote limestone ridge near the Kasserine Pass. Site of World War II battles; now a quiet mountain for wild camping and historical exploration.",
+    "coordinates": { "lat": 35.1200, "lon": 8.8500 }
+  },
+  {
+    "id": 191,
+    "name": "Bou Hedma – Zone Steppe Périphérique",
+    "region": "Sfax",
+    "type": "desert",
+    "description": "Steppe buffer zone around Bou Hedma NP on the Sfax side. Scattered acacia woodland with gazelle and small antelopes; open-air camping.",
+    "coordinates": { "lat": 34.6000, "lon": 9.8000 }
+  },
+  {
+    "id": 192,
+    "name": "Plage de Farwa – Zarzis",
+    "region": "Médenine",
+    "type": "beach",
+    "description": "Secluded beach on the Zarzis peninsula south of the hotels area. Olive groves and sand dunes; wild camping accessed by sandy track.",
+    "coordinates": { "lat": 33.5000, "lon": 11.1200 }
+  },
+  {
+    "id": 193,
+    "name": "Ain Teboursouk – Bulla Regia",
+    "region": "Béja",
+    "type": "forest",
+    "description": "Forest and valley around the Bulla Regia Roman site. Olive trees and Mediterranean scrub on the site periphery; camping near ancient ruins.",
+    "coordinates": { "lat": 36.5500, "lon": 8.7500 }
+  },
+  {
+    "id": 194,
+    "name": "Jebel El Ousif",
+    "region": "Kef",
+    "type": "mountain",
+    "description": "Plateau mountain in the Tunisian Atlas near Kalaat Khasba. High-altitude steppe with wild thyme and spectacular desert-facing views.",
+    "coordinates": { "lat": 35.9000, "lon": 8.5500 }
+  },
+  {
+    "id": 195,
+    "name": "Plage de Nabeul – Secteur Sauvage",
+    "region": "Nabeul",
+    "type": "beach",
+    "description": "Unbuilt beach sections north and south of Nabeul city between hotel clusters. Natural dune camping away from the tourist infrastructure.",
+    "coordinates": { "lat": 36.5200, "lon": 10.7400 }
+  },
+  {
+    "id": 196,
+    "name": "Jebel Sidi Aïssa",
+    "region": "Kairouan",
+    "type": "mountain",
+    "description": "Sacred mountain in the Kairouan steppe with a saint's tomb on the summit. Open plateau for overnight camping in spring with wildflowers.",
+    "coordinates": { "lat": 35.5000, "lon": 9.9000 }
+  },
+  {
+    "id": 197,
+    "name": "Oued Zeroud – Gorges",
+    "region": "Kasserine",
+    "type": "mountain",
+    "description": "Gorge section of Oued Zeroud near its mountain source. Narrow canyon with cliff walls and tamarisk trees; seasonal river camping.",
+    "coordinates": { "lat": 35.3000, "lon": 9.0000 }
+  },
+  {
+    "id": 198,
+    "name": "Sebkha Ben Ghayadha – Kébili",
+    "region": "Kébili",
+    "type": "desert",
+    "description": "Salt flat east of Kébili with flamingo and desert bird habitat. Camping on the steppe margin of this shallow seasonal lake.",
+    "coordinates": { "lat": 33.8000, "lon": 9.4000 }
+  },
+  {
+    "id": 199,
+    "name": "Tozeur – Dunes de Sabl d'Or",
+    "region": "Tozeur",
+    "type": "desert",
+    "description": "Golden dune field east of Tozeur accessible by dirt track. Small erg with excellent stargazing; wild bivouac far from organised camps.",
+    "coordinates": { "lat": 33.9500, "lon": 8.2500 }
+  },
+  {
+    "id": 200,
+    "name": "Plage Borj Cedria",
+    "region": "Ben Arous",
+    "type": "beach",
+    "description": "Sandy beach south of Tunis near Borj Cedria with access to uncrowded sections. Pine forest backs the beach for shaded camping in shoulder seasons.",
+    "coordinates": { "lat": 36.7100, "lon": 10.4100 }
+  },
+  {
+    "id": 201,
+    "name": "Jebel Skarna",
+    "region": "Bizerte",
+    "type": "mountain",
+    "description": "High limestone massif east of Sejnane with dense maquis. Remote mountain with very low human traffic; ideal for solitude camping.",
+    "coordinates": { "lat": 37.0500, "lon": 9.5500 }
+  },
+  {
+    "id": 202,
+    "name": "Plage de Sidi Daoud – Pointe",
+    "region": "Nabeul",
+    "type": "beach",
+    "description": "Rocky point and beach at Sidi Daoud fish-canning village on the northern cap. Wild camping on the headland with sea on three sides.",
+    "coordinates": { "lat": 36.9700, "lon": 10.9500 }
+  },
+  {
+    "id": 203,
+    "name": "Ain El Ghoula – Kasserine",
+    "region": "Kasserine",
+    "type": "forest",
+    "description": "Isolated spring forest in the Kasserine uplands with Aleppo pine and wild olive. Rare water source in a dry landscape; traditional camping spot.",
+    "coordinates": { "lat": 35.2500, "lon": 8.7500 }
+  },
+  {
+    "id": 204,
+    "name": "Forêt de Dkhila – Siliana",
+    "region": "Siliana",
+    "type": "forest",
+    "description": "Planted forest near Siliana city on the Jebel Serj foothills. Shaded and easily accessible for interior Tunisia camping.",
+    "coordinates": { "lat": 36.0800, "lon": 9.4000 }
+  },
+  {
+    "id": 205,
+    "name": "Jebel Orbata – Col de Sif",
+    "region": "Gafsa",
+    "type": "mountain",
+    "description": "Mountain pass on the Orbata massif used by Bedouin herders. Camp at the col under stars between two rocky ridges in the Saharan Atlas.",
+    "coordinates": { "lat": 34.4800, "lon": 8.8000 }
+  },
+  {
+    "id": 206,
+    "name": "Oasis de Tamezret",
+    "region": "Médenine",
+    "type": "mountain",
+    "description": "Berber hillside village near Matmata with desert mountain views. Camping on the rocky terraces between Berber houses in a traditional landscape.",
+    "coordinates": { "lat": 33.5500, "lon": 9.9500 }
+  },
+  {
+    "id": 207,
+    "name": "Barrage Nebhana",
+    "region": "Kairouan",
+    "type": "lake",
+    "description": "Reservoir east of Kairouan on Oued Nebhana. Steppe lake with seasonal bird activity; wild camping on the earthen banks.",
+    "coordinates": { "lat": 35.7000, "lon": 9.8500 }
+  },
+  {
+    "id": 208,
+    "name": "Plage de Ain Tounine",
+    "region": "Bizerte",
+    "type": "beach",
+    "description": "Hidden cove near Ain Tounine east of Bizerte with minimal access road. Pristine water and rocky scenery for secluded wild camping.",
+    "coordinates": { "lat": 37.2000, "lon": 10.0500 }
+  },
+  {
+    "id": 209,
+    "name": "Jebel Chambi – Pic Principal",
+    "region": "Kasserine",
+    "type": "mountain",
+    "description": "Below-summit approach zone to Tunisia's highest peak at 1544 m. Experienced campers bivouac at the pine line on the approach route.",
+    "coordinates": { "lat": 35.2000, "lon": 8.6800 }
+  },
+  {
+    "id": 210,
+    "name": "Plage de Ras Ben Sakka Côté Est",
+    "region": "Bizerte",
+    "type": "beach",
+    "description": "Eastern side of Africa's northernmost cape with rocky platforms and sandy pockets. Wild camping on the historic latitude point.",
+    "coordinates": { "lat": 37.3400, "lon": 9.7600 }
+  },
+  {
+    "id": 211,
+    "name": "Oued Tessa – Jendouba",
+    "region": "Jendouba",
+    "type": "forest",
+    "description": "River valley south of Jendouba city with riparian forest and gravel banks. Local camping tradition along the tree-lined river.",
+    "coordinates": { "lat": 36.5000, "lon": 8.9500 }
+  },
+  {
+    "id": 212,
+    "name": "Jebel Hamra – Tataouine",
+    "region": "Tataouine",
+    "type": "mountain",
+    "description": "Red mountain in the far south Tataouine with iron-rich rock formations. Desert mountain camping in an exotic colour landscape.",
+    "coordinates": { "lat": 32.5000, "lon": 10.5000 }
+  },
+  {
+    "id": 213,
+    "name": "Plage de Borj el Khadra",
+    "region": "Tataouine",
+    "type": "desert",
+    "description": "Area near Borj el Khadra at Tunisia's extreme southwest corner. Erg Wan Kasa dunes and flat Sahara; the most remote bivouac in Tunisia.",
+    "coordinates": { "lat": 31.9000, "lon": 9.5000 }
+  },
+  {
+    "id": 214,
+    "name": "Jebel Tébaga",
+    "region": "Médenine",
+    "type": "mountain",
+    "description": "Long cuesta mountain northwest of Médenine city. Scene of WWII battles; rocky flanks with sheltered wadis for camping.",
+    "coordinates": { "lat": 33.5500, "lon": 10.2000 }
+  },
+  {
+    "id": 215,
+    "name": "Oasis de Ksar Ghilane – Lisière Est",
+    "region": "Tataouine",
+    "type": "desert",
+    "description": "Eastern dune edge of Ksar Ghilane oasis, away from the organised camps. Free bivouac on pure Saharan dunes with hot spring access on foot.",
+    "coordinates": { "lat": 32.9500, "lon": 9.7000 }
+  },
+  {
+    "id": 216,
+    "name": "Sebkha Oum El Kheyal – Tataouine",
+    "region": "Tataouine",
+    "type": "desert",
+    "description": "Large salt flat in deep southern Tunisia accessible by 4x4. Absolutely flat white horizon; extreme desert camping for adventurers.",
+    "coordinates": { "lat": 31.8500, "lon": 10.3000 }
+  },
+  {
+    "id": 217,
+    "name": "Barrage Leila – Bizerte",
+    "region": "Bizerte",
+    "type": "lake",
+    "description": "Small reservoir in the Sejnane valley surrounded by cork oak. Peaceful lakeside camping in a forested northern basin.",
+    "coordinates": { "lat": 37.0300, "lon": 9.4000 }
+  },
+  {
+    "id": 218,
+    "name": "Plage de Remel – Bizerte",
+    "region": "Bizerte",
+    "type": "beach",
+    "description": "Protected beach spit at Remel between Bizerte Lake and the sea. Sandy camping on the tombolo strip with lake on one side and sea on the other.",
+    "coordinates": { "lat": 37.2500, "lon": 9.9200 }
+  },
+  {
+    "id": 219,
+    "name": "Forêt de Nefza",
+    "region": "Béja",
+    "type": "forest",
+    "description": "Cork oak and holm oak forest around Nefza town. Dense and quiet forest with clearings; often used by Tabarka campers as an alternative.",
+    "coordinates": { "lat": 37.0200, "lon": 9.3000 }
+  },
+  {
+    "id": 220,
+    "name": "Jebel Rassas",
+    "region": "Nabeul",
+    "type": "mountain",
+    "description": "Lead-rich mountain in Cap Bon with old mining heritage and sparse pine. Rocky saddle and ridge camping with Gulf of Hammamet views.",
+    "coordinates": { "lat": 36.5500, "lon": 10.7200 }
+  }
+]

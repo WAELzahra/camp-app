@@ -7,13 +7,13 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 
-class CampingZonesSeeder extends Seeder
+class FixCampingZonesSeeder extends Seeder
 {
     public function run(): void
     {
         $files = [
-            database_path('data/tunisia_wild_camping_zones.json'),
-            database_path('data/tunisia_wild_camping_zones_lot2.json'),
+            base_path('tunisia_wild_camping_zones.json'),
+            base_path('tunisia_wild_camping_zones_lot2.json'),
         ];
 
         $zones = [];
@@ -41,7 +41,6 @@ class CampingZonesSeeder extends Seeder
                 $lat = $coords['lat'] ?? null;
                 $lng = $coords['lng'] ?? $coords['lon'] ?? null;
 
-                // On ignore seulement les lignes sans données essentielles réelles.
                 if ($nom === '' || $region === '' || $description === '' || $lat === null || $lng === null) {
                     continue;
                 }
@@ -108,8 +107,13 @@ class CampingZonesSeeder extends Seeder
             }
         }
 
+        DB::statement('SET FOREIGN_KEY_CHECKS=0');
         DB::table('camping_zones')->truncate();
-        DB::table('camping_zones')->insert($zones);
+        DB::statement('SET FOREIGN_KEY_CHECKS=1');
+
+        foreach (array_chunk($zones, 50) as $chunk) {
+            DB::table('camping_zones')->insert($chunk);
+        }
 
         $this->command?->info('✅ ' . count($zones) . ' zones réelles insérées dans camping_zones.');
     }
@@ -216,9 +220,9 @@ class CampingZonesSeeder extends Seeder
             'Respecter la faune, la flore et les habitants locaux',
         ];
 
-        if ($water) $rules[] = 'Préserver les points d’eau et éviter toute pollution';
+        if ($water) $rules[] = 'Préserver les points d\'eau et éviter toute pollution';
         if ($swimming) $rules[] = 'Se baigner uniquement si les conditions sont sûres';
-        if (in_array($type, ['desert', 'mountain', 'montagne'], true)) $rules[] = 'Prévoir un équipement adapté et informer quelqu’un de l’itinéraire';
+        if (in_array($type, ['desert', 'mountain', 'montagne'], true)) $rules[] = 'Prévoir un équipement adapté et informer quelqu\'un de l\'itinéraire';
 
         return $rules;
     }
