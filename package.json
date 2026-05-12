@@ -3,7 +3,7 @@
     "type": "module",
     "scripts": {
         "dev": "vite",
-        "build": "vite build"
+        "build": "echo 'Frontend deployed on Cloudflare Pages'"
     },
     "devDependencies": {
         "@tailwindcss/forms": "^0.5.2",
