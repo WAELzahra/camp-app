@@ -273,7 +273,12 @@ Route::get('/roles', function () {
 Route::middleware('auth:sanctum')->group(function () {
     
     // Current User
-    Route::get('/user', fn(Request $request) => $request->user());
+    Route::get('/user', function (Request $request) {
+        $user = $request->user();
+        $data = $user->toArray();
+        $data['avatar'] = $user->avatar ? storage_url($user->avatar) : null;
+        return $data;
+    });
     Route::post('/logout', [AuthenticatedSessionController::class, 'destroy']);
 
     // ---- Expenses (per-user CRUD) ----

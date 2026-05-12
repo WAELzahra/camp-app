@@ -207,7 +207,7 @@ class ProfileController extends Controller
                 'date_naissance' => $user->date_naissance,
                 'sexe' => $user->sexe,
                 'langue' => $user->langue,
-                'avatar' => $user->avatar,
+                'avatar' => $user->avatar ? storage_url($user->avatar) : null,
                 'role_id' => $user->role_id,
             ],
             'profile' => $profile,
@@ -1288,7 +1288,7 @@ class ProfileController extends Controller
                     'id'         => $user->id,
                     'first_name' => $user->first_name,
                     'last_name'  => $user->last_name,
-                    'avatar'     => $user->avatar,
+                    'avatar'     => $user->avatar ? storage_url($user->avatar) : null,
                     'role_id'    => $user->role_id,
                 ],
             ], 403);
@@ -1301,7 +1301,7 @@ class ProfileController extends Controller
             'email' => $user->email,
             'phone_number' => $user->phone_number,
             'ville' => $user->ville,
-            'avatar' => $user->avatar,
+            'avatar' => $user->avatar ? storage_url($user->avatar) : null,
             'role_id' => $user->role_id,
             'created_at' => $user->created_at,
         ];
