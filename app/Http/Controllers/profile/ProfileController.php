@@ -743,21 +743,26 @@ class ProfileController extends Controller
 
         $user = Auth::user();
 
-        // Delete old avatar if exists
-        if ($user->avatar && Storage::disk('public')->exists($user->avatar)) {
-            Storage::disk('public')->delete($user->avatar);
+        try {
+            // Delete old avatar if exists
+            if ($user->avatar && !filter_var($user->avatar, FILTER_VALIDATE_URL)) {
+                Storage::disk('public')->delete($user->avatar);
+            }
+
+            $avatarPath = $request->file('avatar')->store('avatars', 'public');
+
+            $user->update(['avatar' => $avatarPath]);
+
+            return response()->json([
+                'message' => 'Avatar updated successfully.',
+                'avatar_url' => storage_url($avatarPath),
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Avatar upload failed.',
+                'error' => $e->getMessage(),
+            ], 500);
         }
-
-        // Store new file
-        $avatarPath = $request->file('avatar')->store('avatars', 'public');
-        
-        // Update avatar field
-        $user->update(['avatar' => $avatarPath]);
-
-        return response()->json([
-            'message' => 'Avatar updated successfully.',
-            'avatar_url' => storage_url($avatarPath),
-        ]);
     }
 
     public function updateInfo(Request $request)
