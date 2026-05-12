@@ -18,7 +18,9 @@
       "Bash(git push *)",
       "Bash(composer update *)",
       "Bash(composer require *)",
-      "Bash(composer dump-autoload *)"
+      "Bash(composer dump-autoload *)",
+      "Bash(Get-ChildItem -Force -Recurse -Directory)",
+      "Bash(Select-Object -First 20 FullName)"
     ]
   }
 }
