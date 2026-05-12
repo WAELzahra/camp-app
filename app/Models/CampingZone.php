@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Storage;
 
 class CampingZone extends Model
 {
@@ -118,7 +119,7 @@ class CampingZone extends Model
             }
             
             // Otherwise, prepend the storage URL
-            return url('storage/' . $cover->path_to_img);
+            return Storage::disk('public')->url($cover->path_to_img);
         }
         
         // Return null if no cover image exists
@@ -137,7 +138,7 @@ class CampingZone extends Model
             }
             
             // Otherwise, prepend the storage URL
-            return url('storage/' . $photo->path_to_img);
+            return Storage::disk('public')->url($photo->path_to_img);
         })->toArray();
     }
 

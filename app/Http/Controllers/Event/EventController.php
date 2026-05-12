@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 namespace App\Http\Controllers\Event;
 
@@ -160,7 +160,7 @@ class EventController extends Controller
                 $cover = $event->photos->firstWhere('is_cover', true) ?? $event->photos->first();
                 $event->cover_image = $cover->url ?? (
                     $cover->path_to_img
-                        ? url('storage/' . $cover->path_to_img)
+                        ? storage_url($cover->path_to_img)
                         : null
                 );
             }

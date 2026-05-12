@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 namespace App\Http\Controllers\Materielle;
 
@@ -525,7 +525,7 @@ class MaterielleController extends Controller
                 'livraison_disponible' => $m->livraison_disponible,
                 'frais_livraison'      => $m->frais_livraison,
                 'status'               => $m->status,
-                'cover_image'          => $cover ? asset('storage/' . $cover->path_to_img) : null,
+                'cover_image'          => $cover ? storage_url($cover->path_to_img) : null,
                 'category'             => $m->category ? [
                     'id'  => $m->category->id,
                     'nom' => $m->category->nom,

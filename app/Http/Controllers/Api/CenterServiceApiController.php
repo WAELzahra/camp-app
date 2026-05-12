@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 namespace App\Http\Controllers\Api;
 
@@ -10,6 +10,7 @@ use App\Models\Photo;
 use App\Models\ProfileCentre;
 use App\Models\ServiceCategory;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 
 class CenterServiceApiController extends Controller
 {
@@ -21,7 +22,7 @@ class CenterServiceApiController extends Controller
     {
         if (!$path) return null;
         if (filter_var($path, FILTER_VALIDATE_URL)) return $path;
-        return url('storage/' . $path);
+        return Storage::disk('public')->url($path);
     }
 
     /**
@@ -304,8 +305,8 @@ class CenterServiceApiController extends Controller
                     'city'        => null,
                     'address'     => $c->adresse,
                     'cover_image' => $c->image
-                        ? url('storage/' . $c->image)
-                        : ($c->coverPhoto ? url('storage/' . $c->coverPhoto->path_to_img) : null),
+                        ? storage_url($c->image)
+                        : ($c->coverPhoto ? storage_url($c->coverPhoto->path_to_img) : null),
                     'user'        => null,
                 ],
                 'available_services'  => [],

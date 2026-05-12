@@ -41,7 +41,7 @@ class MessageAttachment extends Model
      */
     public function getUrlAttribute()
     {
-        return Storage::url($this->file_path);
+        return Storage::disk('public')->url($this->file_path);
     }
 
     /**

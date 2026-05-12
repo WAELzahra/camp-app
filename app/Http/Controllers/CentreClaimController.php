@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 namespace App\Http\Controllers;
 
@@ -35,9 +35,9 @@ class CentreClaimController extends Controller
 
         $centres->transform(function ($c) {
             if (!$c->image && $c->coverPhoto) {
-                $c->image = asset('storage/' . $c->coverPhoto->path_to_img);
+                $c->image = storage_url($c->coverPhoto->path_to_img);
             } elseif ($c->image && !str_starts_with($c->image, 'http')) {
-                $c->image = asset('storage/' . $c->image);
+                $c->image = storage_url($c->image);
             }
             unset($c->coverPhoto);
             return $c;
@@ -388,7 +388,7 @@ class CentreClaimController extends Controller
         $docUrl  = $docPath
             ? (str_starts_with($docPath, 'http')
                 ? $docPath
-                : asset('storage/' . $docPath))
+                : storage_url($docPath))
             : null;
 
         return [

@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Storage;
 
 class Photo extends Model
 {
@@ -142,7 +143,7 @@ class Photo extends Model
         }
         
         // Return the full URL with storage path
-        return url('storage/' . $this->path_to_img);
+        return Storage::disk('public')->url($this->path_to_img);
     }
     // Add this method to Photo model
     public function campingZone()

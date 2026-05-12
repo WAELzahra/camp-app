@@ -16,7 +16,9 @@
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
       "Bash(git push *)",
-      "Bash(composer update *)"
+      "Bash(composer update *)",
+      "Bash(composer require *)",
+      "Bash(composer dump-autoload *)"
     ]
   }
 }

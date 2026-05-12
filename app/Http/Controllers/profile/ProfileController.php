@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 namespace App\Http\Controllers\profile;
 
@@ -262,7 +262,7 @@ class ProfileController extends Controller
 
         // Cover image full URL
         if ($profile->cover_image) {
-            $data['cover_image_url'] = asset('storage/' . ltrim($profile->cover_image, '/'));
+            $data['cover_image_url'] = storage_url(ltrim($profile->cover_image, '/'));
         }
 
         // Profile gallery photos
@@ -276,7 +276,7 @@ class ProfileController extends Controller
                     ->get()
                     ->map(fn($p) => [
                         'id'       => $p->id,
-                        'url'      => asset('storage/' . $p->path_to_img),
+                        'url'      => storage_url($p->path_to_img),
                         'is_cover' => (bool) $p->is_cover,
                         'order'    => $p->order,
                     ])->values();
@@ -292,7 +292,7 @@ class ProfileController extends Controller
             if ($galleryAlbum) {
                 $data['photos'] = $galleryAlbum->photos->map(fn($p) => [
                     'id'       => $p->id,
-                    'url'      => asset('storage/' . $p->path_to_img),
+                    'url'      => storage_url($p->path_to_img),
                     'is_cover' => (bool) $p->is_cover,
                     'order'    => $p->order,
                 ])->values();
@@ -756,7 +756,7 @@ class ProfileController extends Controller
 
         return response()->json([
             'message' => 'Avatar updated successfully.',
-            'avatar_url' => asset('storage/' . $avatarPath),
+            'avatar_url' => storage_url($avatarPath),
         ]);
     }
 
@@ -799,7 +799,7 @@ class ProfileController extends Controller
                     'id' => $album->id,
                     'title' => $album->titre,
                     'description' => $album->description,
-                    'cover_image' => $album->path_to_img ? asset('storage/' . $album->path_to_img) : null,
+                    'cover_image' => $album->path_to_img ? storage_url($album->path_to_img) : null,
                     'photo_count' => $album->photos()->count(),
                     'created_at' => $album->created_at ? $album->created_at->format('Y-m-d H:i:s') : null,
                 ],
@@ -899,7 +899,7 @@ class ProfileController extends Controller
                 $uploadedPhotos[] = [
                     'id' => $photoRecord->id,
                     'path' => $path,
-                    'url' => asset('storage/' . $path),
+                    'url' => storage_url($path),
                     'is_cover' => $photoRecord->is_cover,
                     'order' => $photoRecord->order,
                 ];
@@ -921,7 +921,7 @@ class ProfileController extends Controller
                     'id' => $album->id,
                     'title' => $album->titre,
                     'description' => $album->description,
-                    'cover_image' => $album->path_to_img ? asset('storage/' . $album->path_to_img) : null,
+                    'cover_image' => $album->path_to_img ? storage_url($album->path_to_img) : null,
                     'photo_count' => $album->photos()->count(),
                 ],
                 'photos' => $uploadedPhotos,
@@ -960,7 +960,7 @@ class ProfileController extends Controller
 
                 $formattedPhotos = $photos->map(fn($p) => [
                     'id'          => $p->id,
-                    'url'         => asset('storage/' . $p->path_to_img),
+                    'url'         => storage_url($p->path_to_img),
                     'path'        => $p->path_to_img,
                     'is_cover'    => (bool) $p->is_cover,
                     'order'       => $p->order,
@@ -979,7 +979,7 @@ class ProfileController extends Controller
                         'id'          => $album->id,
                         'title'       => $album->titre,
                         'description' => $album->description,
-                        'cover_image' => $album->path_to_img ? asset('storage/' . $album->path_to_img) : null,
+                        'cover_image' => $album->path_to_img ? storage_url($album->path_to_img) : null,
                         'photo_count' => $photos->count(),
                         'created_at'  => $album->created_at?->format('Y-m-d H:i:s'),
                     ] : null,
@@ -1001,7 +1001,7 @@ class ProfileController extends Controller
 
             $formattedPhotos = $photos->map(fn($p) => [
                 'id'         => $p->id,
-                'url'        => asset('storage/' . $p->path_to_img),
+                'url'        => storage_url($p->path_to_img),
                 'path'       => $p->path_to_img,
                 'is_cover'   => (bool) $p->is_cover,
                 'order'      => $p->order,
@@ -1014,7 +1014,7 @@ class ProfileController extends Controller
                     'id'          => $album->id,
                     'title'       => $album->titre,
                     'description' => $album->description,
-                    'cover_image' => $album->path_to_img ? asset('storage/' . $album->path_to_img) : null,
+                    'cover_image' => $album->path_to_img ? storage_url($album->path_to_img) : null,
                     'photo_count' => $photos->count(),
                     'created_at'  => $album->created_at?->format('Y-m-d H:i:s'),
                 ],
@@ -1351,7 +1351,7 @@ class ProfileController extends Controller
                                 'first_name' => $u->first_name,
                                 'last_name'  => $u->last_name,
                                 'email'      => $u->email,
-                                'avatar'     => $u->avatar ? asset('storage/' . $u->avatar) : null,
+                                'avatar'     => $u->avatar ? storage_url($u->avatar) : null,
                             ])
                         : [];
 
@@ -1384,7 +1384,7 @@ class ProfileController extends Controller
 
             // Cover image URL (full URL for frontend)
             if ($profile->cover_image) {
-                $data['cover_image_url'] = asset('storage/' . ltrim($profile->cover_image, '/'));
+                $data['cover_image_url'] = storage_url(ltrim($profile->cover_image, '/'));
             }
 
             // Profile gallery photos (visible to everyone when profile is public)
@@ -1398,7 +1398,7 @@ class ProfileController extends Controller
                         ->get()
                         ->map(fn($p) => [
                             'id'       => $p->id,
-                            'url'      => asset('storage/' . $p->path_to_img),
+                            'url'      => storage_url($p->path_to_img),
                             'is_cover' => (bool) $p->is_cover,
                             'order'    => $p->order,
                         ])->values();
@@ -1414,7 +1414,7 @@ class ProfileController extends Controller
                 if ($album) {
                     $data['photos'] = $album->photos->map(fn($p) => [
                         'id'       => $p->id,
-                        'url'      => asset('storage/' . $p->path_to_img),
+                        'url'      => storage_url($p->path_to_img),
                         'is_cover' => (bool) $p->is_cover,
                         'order'    => $p->order,
                     ])->values();

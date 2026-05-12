@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 namespace App\Models;
 
@@ -221,7 +221,7 @@ class ProfileCentre extends Model
      */
     public function getLegalDocumentUrlAttribute(): ?string
     {
-        return $this->legal_document ? asset('storage/' . $this->legal_document) : null;
+        return $this->legal_document ? storage_url($this->legal_document) : null;
     }
 
     /**

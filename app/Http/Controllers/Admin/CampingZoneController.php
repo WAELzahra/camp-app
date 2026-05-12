@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 namespace App\Http\Controllers\Admin;
 
@@ -32,7 +32,7 @@ class CampingZoneController extends Controller
                   ?? collect($zone->photos)->first();
             if ($cover && $cover->path_to_img) {
                 $p = $cover->path_to_img;
-                return filter_var($p, FILTER_VALIDATE_URL) ? $p : asset('storage/' . $p);
+                return filter_var($p, FILTER_VALIDATE_URL) ? $p : storage_url($p);
             }
         }
         return null;
@@ -116,7 +116,7 @@ class CampingZoneController extends Controller
             'photos' => $zone->relationLoaded('photos')
                 ? collect($zone->photos)->map(fn($p) => [
                     'id'          => (int) $p->id,
-                    'url'         => asset('storage/' . $p->path_to_img),
+                    'url'         => storage_url($p->path_to_img),
                     'path_to_img' => $p->path_to_img,
                     'is_cover'    => (bool) $p->is_cover,
                     'order'       => (int) ($p->order ?? 0),
@@ -585,7 +585,7 @@ class CampingZoneController extends Controller
 
         $photos = $zone->fresh('photos')->photos->map(fn($p) => [
             'id'       => $p->id,
-            'url'      => asset('storage/' . $p->path_to_img),
+            'url'      => storage_url($p->path_to_img),
             'path'     => $p->path_to_img,
             'is_cover' => (bool) $p->is_cover,
             'order'    => $p->order,

@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 namespace App\Models;
 
@@ -46,7 +46,7 @@ class ProfileGroupe extends Model
      */
     public function getPatenteUrlAttribute(): ?string
     {
-        return $this->patente_path ? asset('storage/' . $this->patente_path) : null;
+        return $this->patente_path ? storage_url($this->patente_path) : null;
     }
 
     /**

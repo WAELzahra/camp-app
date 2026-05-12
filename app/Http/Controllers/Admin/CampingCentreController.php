@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 namespace App\Http\Controllers\Admin;
 
@@ -242,7 +242,7 @@ class CampingCentreController extends Controller
         $centreData = $centre->toArray();
         $centreData['photos'] = $centre->photos->map(fn($p) => [
             'id'       => $p->id,
-            'url'      => asset('storage/' . $p->path_to_img),
+            'url'      => storage_url($p->path_to_img),
             'path'     => $p->path_to_img,
             'is_cover' => (bool) $p->is_cover,
             'order'    => $p->order,
@@ -452,7 +452,7 @@ class CampingCentreController extends Controller
             'status' => 'success',
             'photos' => $centre->fresh('photos')->photos->map(fn($p) => [
                 'id'         => $p->id,
-                'url'        => asset('storage/' . $p->path_to_img),
+                'url'        => storage_url($p->path_to_img),
                 'path'       => $p->path_to_img,
                 'is_cover'   => (bool) $p->is_cover,
                 'order'      => $p->order,

@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 namespace App\Http\Controllers\Admin;
 
@@ -578,7 +578,7 @@ class AdminAnnonceController extends Controller
             'photos' => $annonce->photos->map(function ($photo) {
                 return [
                     'id'       => $photo->id,
-                    'url'      => asset('storage/' . $photo->path_to_img),  // ← toujours défini
+                    'url'      => storage_url($photo->path_to_img),  // ← toujours défini
                     'is_cover' => (bool) ($photo->is_cover ?? false),
                 ];
             })->values()->toArray(),

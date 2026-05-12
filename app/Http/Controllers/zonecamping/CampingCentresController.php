@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 namespace App\Http\Controllers\zonecamping;
 
@@ -47,7 +47,7 @@ class CampingCentresController extends Controller
                     $photos = Photo::where('camping_centre_id', $campingCentreId)
                         ->limit(5)
                         ->pluck('path_to_img')
-                        ->map(fn($p) => asset('storage/' . $p))
+                        ->map(fn($p) => storage_url($p))
                         ->values()
                         ->toArray();
                 }
@@ -82,7 +82,7 @@ class CampingCentresController extends Controller
                      && ($centre->user?->is_active == 1);
 
         $buildUrl = fn(?string $path): ?string =>
-            $path ? (filter_var($path, FILTER_VALIDATE_URL) ? $path : url('storage/' . $path)) : null;
+            $path ? (filter_var($path, FILTER_VALIDATE_URL) ? $path : storage_url($path)) : null;
 
         $coverImage = $buildUrl($centre->image);
 

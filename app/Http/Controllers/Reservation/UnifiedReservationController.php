@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 namespace App\Http\Controllers\Reservation;
 
@@ -269,7 +269,7 @@ class UnifiedReservationController extends Controller
                 'phone_number' => $reservation->user->phone_number,
                 'ville' => $reservation->user->ville,
                 'address' => $reservation->user->addresse,
-                'avatar' => $reservation->user->avatar ? asset('storage/' . $reservation->user->avatar) : null,
+                'avatar' => $reservation->user->avatar ? storage_url($reservation->user->avatar) : null,
                 'created_at' => $reservation->user->created_at,
             ] : null,
             'event' => $event ? [
@@ -291,7 +291,7 @@ class UnifiedReservationController extends Controller
                 'last_name'  => $event->group->last_name,
                 'email'      => $event->group->email,
                 'phone_number' => $event->group->phone_number,
-                'avatar'     => $event->group->avatar ? asset('storage/' . $event->group->avatar) : null,
+                'avatar'     => $event->group->avatar ? storage_url($event->group->avatar) : null,
                 'group_name' => $event->group->profile?->profileGroupe?->nom_groupe ?? null,
             ] : null,
             'location' => $event->address ?? '',
@@ -368,7 +368,7 @@ class UnifiedReservationController extends Controller
                 'phone_number' => $reservation->user->phone_number,
                 'ville' => $reservation->user->ville,
                 'address' => $reservation->user->addresse,
-                'avatar' => $reservation->user->avatar ? asset('storage/' . $reservation->user->avatar) : null,
+                'avatar' => $reservation->user->avatar ? storage_url($reservation->user->avatar) : null,
                 'created_at' => $reservation->user->created_at,
             ] : null,
             'supplier' => $reservation->fournisseur ? (function($f) {
@@ -380,7 +380,7 @@ class UnifiedReservationController extends Controller
                     'email'        => $f->email,
                     'phone_number' => $f->phone_number,
                     'ville'        => $f->ville,
-                    'avatar'       => $f->avatar ? asset('storage/' . $f->avatar) : null,
+                    'avatar'       => $f->avatar ? storage_url($f->avatar) : null,
                     'product_category' => $pf?->product_category ?? null,
                     'intervale_prix'   => $pf?->intervale_prix ?? null,
                 ];
@@ -477,7 +477,7 @@ class UnifiedReservationController extends Controller
                 'phone_number' => $reservation->user->phone_number,
                 'ville' => $reservation->user->ville,
                 'address' => $reservation->user->addresse,
-                'avatar' => $reservation->user->avatar ? asset('storage/' . $reservation->user->avatar) : null,
+                'avatar' => $reservation->user->avatar ? storage_url($reservation->user->avatar) : null,
                 'created_at' => $reservation->user->created_at,
             ] : null,
             'centre' => $reservation->centre ? (function($c) {
@@ -495,7 +495,7 @@ class UnifiedReservationController extends Controller
                     'longitude'     => $pc?->longitude ?? null,
                     'capacite'      => $pc?->capacite ?? null,
                     'price_per_night' => $pc?->price_per_night ?? null,
-                    'avatar'        => $c->avatar ? asset('storage/' . $c->avatar) : null,
+                    'avatar'        => $c->avatar ? storage_url($c->avatar) : null,
                 ];
             })($reservation->centre) : null,
             'location' => $reservation->centre->ville ?? '',
@@ -552,7 +552,7 @@ class UnifiedReservationController extends Controller
                 'phone_number' => $reservation->user->phone_number,
                 'ville' => $reservation->user->ville,
                 'address' => $reservation->user->addresse,
-                'avatar' => $reservation->user->avatar ? asset('storage/' . $reservation->user->avatar) : null,
+                'avatar' => $reservation->user->avatar ? storage_url($reservation->user->avatar) : null,
                 'created_at' => $reservation->user->created_at,
             ] : null,
             'guide' => $reservation->guide_id ? [

@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 namespace App\Http\Controllers\Admin;
 
@@ -477,7 +477,7 @@ class AdminUserController extends Controller
                 'message' => 'Document uploadé avec succès',
                 'data' => [
                     'path' => $path,
-                    'url' => asset('storage/' . $path),
+                    'url' => storage_url($path),
                     'filename' => $file->getClientOriginalName(),
                     'type' => $documentType
                 ]
@@ -778,7 +778,7 @@ class AdminUserController extends Controller
                 'activities' => $user->profile->activities,
                 'cin_path' => $user->profile->cin_path,
                 'cin_filename' => $user->profile->cin_filename,
-                'cin_url' => $user->profile->cin_path ? asset('storage/' . $user->profile->cin_path) : null,
+                'cin_url' => $user->profile->cin_path ? storage_url($user->profile->cin_path) : null,
             ];
         }
 
@@ -829,7 +829,7 @@ class AdminUserController extends Controller
             $documents['cin'] = [
                 'path' => $user->profile->cin_path,
                 'filename' => $user->profile->cin_filename,
-                'url' => $user->profile->cin_path ? asset('storage/' . $user->profile->cin_path) : null,
+                'url' => $user->profile->cin_path ? storage_url($user->profile->cin_path) : null,
             ];
 
             // Documents guide
@@ -840,7 +840,7 @@ class AdminUserController extends Controller
                     'certificat_filename' => $guide->certificat_filename,
                     'certificat_type' => $guide->certificat_type,
                     'certificat_expiration' => $guide->certificat_expiration,
-                    'certificat_url' => $guide->certificat_path ? asset('storage/' . $guide->certificat_path) : null,
+                    'certificat_url' => $guide->certificat_path ? storage_url($guide->certificat_path) : null,
                 ];
             }
 
@@ -852,7 +852,7 @@ class AdminUserController extends Controller
                     'document_legal_type'       => $centre->document_legal_type,
                     'document_legal_expiration' => $centre->document_legal_expiration,
                     'document_legal_url'        => $centre->legal_document
-                                                    ? asset('storage/' . $centre->legal_document)
+                                                    ? storage_url($centre->legal_document)
                                                     : null,
                 ];
             }
@@ -863,7 +863,7 @@ class AdminUserController extends Controller
                 $documents['groupe'] = [
                     'patente_path' => $groupe->patente_path,
                     'patente_url'  => $groupe->patente_path
-                                        ? asset('storage/' . $groupe->patente_path)
+                                        ? storage_url($groupe->patente_path)
                                         : null,
                 ];
             }
@@ -874,10 +874,10 @@ class AdminUserController extends Controller
                 $documents['fournisseur'] = [
                     'cin_commercant_path' => $fournisseur->cin_commercant_path,
                     'cin_commercant_filename' => $fournisseur->cin_commercant_filename,
-                    'cin_commercant_url' => $fournisseur->cin_commercant_path ? asset('storage/' . $fournisseur->cin_commercant_path) : null,
+                    'cin_commercant_url' => $fournisseur->cin_commercant_path ? storage_url($fournisseur->cin_commercant_path) : null,
                     'registre_commerce_path' => $fournisseur->registre_commerce_path,
                     'registre_commerce_filename' => $fournisseur->registre_commerce_filename,
-                    'registre_commerce_url' => $fournisseur->registre_commerce_path ? asset('storage/' . $fournisseur->registre_commerce_path) : null,
+                    'registre_commerce_url' => $fournisseur->registre_commerce_path ? storage_url($fournisseur->registre_commerce_path) : null,
                 ];
             }
         }
@@ -1108,7 +1108,7 @@ public function uploadPhotos(Request $request, $id)
 
                 $uploadedPhotos[] = [
                     'id' => $photoModel->id,
-                    'url' => asset('storage/' . $path),
+                    'url' => storage_url($path),
                     'path' => $path,
                     'name' => $photo->getClientOriginalName()
                 ];
@@ -1142,7 +1142,7 @@ public function uploadPhotos(Request $request, $id)
                 foreach ($album->photos as $photo) {
                     $photos[] = [
                         'id' => $photo->id,
-                        'url' => asset('storage/' . $photo->path_to_img),
+                        'url' => storage_url($photo->path_to_img),
                         'path' => $photo->path_to_img,
                         'album_id' => $album->id,
                         'order' => $photo->order,

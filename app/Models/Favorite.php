@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 namespace App\Models;
 
@@ -32,7 +32,7 @@ class Favorite extends Model
                     'name'       => $c->name ?? '',
                     'address'    => $c->profile?->city ?? $c->profile?->address ?? '',
                     'profilePic' => $c->profile?->cover_image
-                        ? asset('storage/' . $c->profile->cover_image)
+                        ? storage_url($c->profile->cover_image)
                         : null,
                 ];
 
@@ -54,7 +54,7 @@ class Favorite extends Model
                     'id'         => $m->id,
                     'name'       => $m->nom,
                     'address'    => $m->category?->nom ?? '',
-                    'profilePic' => $cover ? asset('storage/' . $cover->path_to_img) : null,
+                    'profilePic' => $cover ? storage_url($cover->path_to_img) : null,
                 ];
 
             case 'profile':
@@ -64,7 +64,7 @@ class Favorite extends Model
                     'id'         => $u->id,
                     'name'       => trim($u->first_name . ' ' . $u->last_name),
                     'address'    => '',
-                    'profilePic' => $u->avatar ? asset('storage/' . $u->avatar) : null,
+                    'profilePic' => $u->avatar ? storage_url($u->avatar) : null,
                 ];
 
             case 'annonce':
