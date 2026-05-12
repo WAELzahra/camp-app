@@ -9,6 +9,7 @@ use App\Http\Controllers\Controller;
 // Authentication Controllers
 use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
+use App\Http\Controllers\Auth\SocialAuthController;
 use App\Http\Controllers\Auth\NewPasswordController;
 use App\Http\Controllers\Auth\EmailVerificationNotificationController;
 use App\Http\Controllers\Auth\PasswordController;
@@ -94,6 +95,13 @@ Broadcast::routes(['middleware' => ['auth:sanctum']]);
 Route::get('/csrf-token', function () {
     return response()->json(['csrf_token' => csrf_token()]);
 });
+
+// -------------------- SOCIAL AUTH (Google / Facebook) --------------------
+Route::get('/auth/google/redirect',  [SocialAuthController::class, 'redirectToGoogle'])->name('google.redirect');
+Route::get('/auth/google/callback',  [SocialAuthController::class, 'handleGoogleCallback'])->name('google.callback');
+Route::get('/auth/facebook/redirect',[SocialAuthController::class, 'redirectToFacebook'])->name('facebook.redirect');
+Route::get('/auth/facebook/callback',[SocialAuthController::class, 'handleFacebookCallback'])->name('facebook.callback');
+Route::middleware('auth:sanctum')->post('/auth/social/complete-registration', [SocialAuthController::class, 'completeRegistration']);
 
 Route::post('/register', [RegisteredUserController::class, 'store']);
 Route::post('/login', [AuthenticatedSessionController::class, 'store'])->name('login');

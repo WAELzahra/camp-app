@@ -25,6 +25,7 @@ class DatabaseSeeder extends Seeder
             ReservationEventSeeder::class,
             ShopSeeder::class,
             CampingZonesSeeder::class,
+            TunisiaCampingSeeder::class,
             FeedbackSeeder::class,
             AnnonceSeeder::class,
 
