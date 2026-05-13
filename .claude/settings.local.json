@@ -20,7 +20,9 @@
       "Bash(composer require *)",
       "Bash(composer dump-autoload *)",
       "Bash(Get-ChildItem -Force -Recurse -Directory)",
-      "Bash(Select-Object -First 20 FullName)"
+      "Bash(Select-Object -First 20 FullName)",
+      "Bash(git commit -m 'fix: return full storage URLs for avatar in API responses *)",
+      "Bash(git commit -m 'debug: enable R2 throw and catch avatar upload errors to surface R2 issue *)"
     ]
   }
 }
