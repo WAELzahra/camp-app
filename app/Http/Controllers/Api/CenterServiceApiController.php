@@ -329,10 +329,34 @@ class CenterServiceApiController extends Controller
             'availableEquipment',
         ])->findOrFail($centerId);
 
-        return response()->json(array_merge(
-            $this->formatCenter($center, null, null, true),
-            ['is_partner' => true, '_source' => 'partner']
-        ));
+        return response()->json([
+            'center' => [
+                'id' => $center->id,
+                'name' => $center->name,
+                'price_per_night' => $center->price_per_night,
+                'category' => $center->category,
+                'capacity' => $center->capacite,
+                'location' => $center->coordinates,
+            ],
+            'services' => $center->availableServices->map(function ($service) {
+                return [
+                    'id'           => $service->pivot->id,
+                    'name'         => $service->name,
+                    'description'  => $service->pivot->description ?? $service->description,
+                    'price'        => $service->pivot->price,
+                    'unit'         => $service->pivot->unit,
+                    'is_standard'  => $service->pivot->is_standard,
+                    'is_available' => $service->pivot->is_available ?? true,
+                ];
+            }),
+            'equipment' => $center->availableEquipment->map(function ($eq) {
+                return [
+                    'type' => $eq->type,
+                    'name' => $eq->translated_type,
+                    'icon' => $eq->icon,
+                ];
+            }),
+        ]);
     }
 
     /* ──────────────────────────────────────────────────────────────────

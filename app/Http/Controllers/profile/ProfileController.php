@@ -1499,7 +1499,7 @@ class ProfileController extends Controller
 
             $validator = Validator::make($request->all(), [
                 'name' => 'required|string|max:255',
-                'description' => 'required|string',
+                'description' => 'nullable|string',
                 'price' => 'required|numeric|min:0',
                 'unit' => 'required|string|max:50',
                 'is_available' => 'boolean',
@@ -1717,9 +1717,10 @@ class ProfileController extends Controller
             $validator = Validator::make($request->all(), [
                 'service_category_id' => 'nullable|exists:service_categories,id',
                 'name' => 'nullable|string|max:255',
-                'description' => 'required|string',
+                'description' => 'nullable|string',
                 'price' => 'required|numeric|min:0',
                 'is_available' => 'boolean',
+                'is_standard' => 'boolean',
                 'unit' => 'required|string|max:50',
                 'nbr_place' => 'nullable|integer|min:1',
             ]);
@@ -1756,11 +1757,20 @@ class ProfileController extends Controller
             ];
 
             $isStandardCategory = false;
-            if (!$isCustomService) {
+            // Handle custom services
+            if ($isCustomService) {
+                $serviceData['service_category_id'] = null;
+                $serviceData['name'] = $request->name;
+                $serviceData['is_standard'] = false;
+            } else {
+                // For category-based services
+                $serviceData['service_category_id'] = $request->service_category_id;
+                $serviceData['is_standard'] = $request->boolean('is_standard', false);
+
                 $serviceCategory = ServiceCategory::find($request->service_category_id);
                 if ($serviceCategory) {
                     $isStandardCategory = $serviceCategory->is_standard;
-                    
+
                     if ($serviceCategory->is_standard && $request->price < $serviceCategory->min_price) {
                         return response()->json([
                             'success' => false,
@@ -1770,9 +1780,6 @@ class ProfileController extends Controller
                 }
                 $serviceData['service_category_id'] = $request->service_category_id;
                 $serviceData['is_standard'] = $isStandardCategory;
-            } else {
-                $serviceData['service_category_id'] = null;
-                $serviceData['is_standard'] = false;
             }
 
             if ($serviceId) {
