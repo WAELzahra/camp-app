@@ -41,7 +41,7 @@ class RegisteredUserController extends Controller
             'date_naissance' => ['nullable', 'date'],
             'sexe' => ['nullable', 'string', 'max:10'],
             'langue' => ['nullable', 'string', 'max:50'],
-            'password' => ['required', 'confirmed', Rules\Password::defaults()],
+            'password' => ['required', 'confirmed', Rules\Password::min(8)->mixedCase()->numbers()->symbols()],
             'role' => ['required', 'string', 'exists:roles,name'],
             
             // Champs spécifiques aux rôles
