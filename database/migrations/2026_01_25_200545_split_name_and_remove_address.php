@@ -11,19 +11,6 @@ return new class extends Migration
      */
     public function up(): void
     {
-        // Add address to specific profile tables
-        Schema::table('profile_centres', function (Blueprint $table) {
-            $table->string('adresse', 255)->nullable()->after('profile_id');
-        });
-
-        Schema::table('profile_fournisseurs', function (Blueprint $table) {
-            $table->string('adresse', 255)->nullable()->after('profile_id');
-        });
-
-        Schema::table('profile_guides', function (Blueprint $table) {
-            $table->string('adresse', 255)->nullable()->after('profile_id');
-        });
-
         // Split name into first_name and last_name in users table
         Schema::table('users', function (Blueprint $table) {
             // Add new columns

@@ -7,6 +7,8 @@ use App\Http\Controllers\Controller;
 use App\Models\CampingCentre;
 use App\Models\Camping_zones;
 use App\Models\Favoris;
+use App\Models\ProfileCentre;
+use App\Models\Photo;
 use Illuminate\Support\Facades\Auth;
 class CampingCentresController extends Controller
 {
@@ -24,51 +26,120 @@ class CampingCentresController extends Controller
     }
 
     /**
-     * Voir les détails d'un centre et ses zones associées
+     * Returns all registered ProfileCentre records with coordinates + photos
+     * for the interactive map overlay.
+     */
+    public function registeredCentresMap()
+    {
+        $centres = ProfileCentre::with(['profile.user'])
+            ->whereNotNull('latitude')
+            ->whereNotNull('longitude')
+            ->where('disponibilite', true)
+            ->get();
+
+        $data = $centres->map(function ($centre) {
+            $userId = $centre->profile?->user_id;
+            $photos = [];
+            if ($userId) {
+                // Always fetch by camping_centre_id — user_id is only metadata (who uploaded).
+                $campingCentreId = \App\Models\CampingCentre::where('user_id', $userId)->value('id');
+                if ($campingCentreId) {
+                    $photos = Photo::where('camping_centre_id', $campingCentreId)
+                        ->limit(5)
+                        ->pluck('path_to_img')
+                        ->map(fn($p) => storage_url($p))
+                        ->values()
+                        ->toArray();
+                }
+            }
+
+            return [
+                'id'          => $centre->id,
+                'name'        => $centre->name,
+                'description' => $centre->profile?->bio ?? '',
+                'latitude'    => (float) $centre->latitude,
+                'longitude'   => (float) $centre->longitude,
+                'photos'      => $photos,
+                'price'       => $centre->price_per_night,
+                'category'    => $centre->category,
+                'capacity'    => $centre->capacite,
+            ];
+        });
+
+        return response()->json(['status' => 'success', 'data' => $data]);
+    }
+
+    /**
+     * Public detail for a single CampingCentre (both partner and non-partner).
+     * Returns a frontend-compatible shape matching the detail-centre.tsx normalizer.
      */
     public function showCentre($id)
-{
-    // Charger le centre avec ses zones et les feedbacks de chaque zone
-    $centre = CampingCentre::with(['zones.feedbacks.user', 'profileCentre', 'user.profile'])->findOrFail($id);
+    {
+        $centre = CampingCentre::with(['zones', 'profileCentre', 'user.profile', 'photos'])->findOrFail($id);
 
-    // Préparer les données pour le front-end
-    $centreData = [
-        'id' => $centre->id,
-        'nom' => $centre->nom ?? 'Centre non inscrit',
-        'description' => $centre->description,
-        'adresse' => $centre->adresse,
-        'lat' => $centre->lat,
-        'lng' => $centre->lng,
-        'capacite' => $centre->profileCentre->capacite ?? null,
-        'services_offerts' => $centre->profileCentre->services_offerts ?? null,
-        'disponibilite' => $centre->profileCentre->disponibilite ?? null,
-        'document_legal' => $centre->profileCentre->document_legal ?? null,
-        'is_registered' => $centre->user_id ? true : false,
-        'zones' => $centre->zones->map(function($zone){
-            return [
-                'id' => $zone->id,
-                'nom' => $zone->nom,
-                'lat' => $zone->lat,
-                'lng' => $zone->lng,
-                'description' => $zone->description,
-                'status' => $zone->status,
-                'feedbacks' => $zone->feedbacks->map(function($f){
-                    return [
-                        'id' => $f->id,
-                        'user_name' => $f->user->name ?? 'Anonyme',
-                        'comment' => $f->comment,
-                        'rating' => $f->rating,
-                        'created_at' => $f->created_at,
-                    ];
-                }),
-            ];
-        }),
-    ];
+        $pc        = $centre->profileCentre;
+        $isPartner = (! is_null($centre->user_id) || ! is_null($centre->profile_centre_id))
+                     && ($centre->user?->is_active == 1);
 
-    return response()->json([
-        'status' => 'success',
-        'data' => $centreData
-    ]);
+        $buildUrl = fn(?string $path): ?string =>
+            $path ? (filter_var($path, FILTER_VALIDATE_URL) ? $path : storage_url($path)) : null;
+
+        $coverImage = $buildUrl($centre->image);
+
+        // Fallback: use cover photo from photos table if no image set
+        if (!$coverImage) {
+            $cover = $centre->photos->firstWhere('is_cover', true) ?? $centre->photos->first();
+            $coverImage = $buildUrl($cover?->path_to_img);
+        }
+
+        $photos = $centre->photos->sortByDesc('is_cover')->values()->map(fn($p) => [
+            'id'       => $p->id,
+            'url'      => $buildUrl($p->path_to_img),
+            'is_cover' => (bool) $p->is_cover,
+        ])->filter(fn($p) => $p['url'])->values();
+
+        return response()->json([
+            'status' => 'success',
+            'data'   => [
+                'id'               => $centre->id,
+                'name'             => $centre->nom,
+                'capacite'         => $pc?->capacite ?? 0,
+                'price_per_night'  => $pc ? (float) $pc->price_per_night : 0,
+                'category'         => $pc?->category ?? 'Camping',
+                'disponibilite'    => $pc ? (bool) $pc->disponibilite : true,
+                'latitude'         => $centre->lat  ? (string) $centre->lat  : null,
+                'longitude'        => $centre->lng  ? (string) $centre->lng  : null,
+                'contact_email'    => $pc?->contact_email,
+                'contact_phone'    => $pc?->contact_phone,
+                'manager_name'     => $pc?->manager_name,
+                'average_rating'   => null,
+                'review_count'     => 0,
+                'is_partner'       => $isPartner,
+                '_source'          => 'camping',
+                'profile' => [
+                    'bio'         => $centre->description,
+                    'city'        => $centre->user?->profile?->city ?? null,
+                    'address'     => $centre->adresse,
+                    'cover_image' => $coverImage,
+                    'user'        => $centre->user ? [
+                        'id'         => $centre->user->id,
+                        'first_name' => $centre->user->first_name,
+                        'last_name'  => $centre->user->last_name,
+                    ] : null,
+                ],
+                'available_services'  => [],
+                'available_equipment' => [],
+                'photos' => $photos,
+                'zones' => $centre->zones->map(fn($z) => [
+                    'id'          => $z->id,
+                    'nom'         => $z->nom,
+                    'lat'         => $z->lat,
+                    'lng'         => $z->lng,
+                    'description' => $z->description,
+                    'status'      => $z->status,
+                ])->values(),
+            ],
+        ]);
     }
 
 
@@ -188,6 +259,18 @@ class CampingCentresController extends Controller
 
 
 
+
+    /**
+     * Get a centre by its owner user_id — used by announcements "Visit Center" CTA.
+     */
+    public function getByUser($userId)
+    {
+        $centre = CampingCentre::where('user_id', $userId)->first();
+        if (!$centre) {
+            return response()->json(['message' => 'Centre not found'], 404);
+        }
+        return response()->json(['id' => $centre->id]);
+    }
 
         /**
      * Générer un lien de partage (Facebook, WhatsApp, etc.)

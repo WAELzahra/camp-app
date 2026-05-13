@@ -1,6 +1,5 @@
 <?php
 
-
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -12,6 +11,8 @@ return new class extends Migration {
             $table->foreignId('profile_id')->constrained('profiles')->onDelete('cascade');
             $table->string('intervale_prix')->nullable();
             $table->string('product_category')->nullable();
+            
+            
             $table->timestamps();
         });
     }

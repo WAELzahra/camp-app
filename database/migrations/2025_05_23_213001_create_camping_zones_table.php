@@ -6,69 +6,68 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
     public function up(): void
     {
         Schema::create('camping_zones', function (Blueprint $table) {
             $table->id();
+
             $table->string('nom');
-            $table->string('type_activitee');
-            $table->boolean('is_public')->default(true);
-            $table->text('description')->nullable();
-            $table->string('adresse');
-            $table->enum('danger_level', ['low', 'moderate', 'high', 'extreme'])->default('low');
-            $table->boolean('status')->default(false); // true = ouverte, false = fermée
-            
-            // Localisation GPS point
-            $table->decimal('lat', 10, 7)->nullable();
-            $table->decimal('lng', 10, 7)->nullable();
-
-            // Centre lié (inscrit ou non)
-            $table->foreignId('centre_id')->nullable()->constrained('camping_centres')->nullOnDelete();
-
-            // Champs supplémentaires
+            $table->string('city')->nullable();
             $table->string('region')->nullable();
             $table->string('commune')->nullable();
+            $table->text('description')->nullable();
+            $table->text('full_description')->nullable();
+
+            $table->string('terrain')->nullable();
+            $table->enum('difficulty', ['easy', 'medium', 'hard'])->default('easy');
+
+            $table->decimal('lat', 10, 7)->nullable();
+            $table->decimal('lng', 10, 7)->nullable();
+            $table->string('adresse')->nullable();
+            $table->string('distance')->nullable();
+            $table->string('altitude')->nullable();
             $table->enum('access_type', ['road', 'trail', 'boat', 'mixed'])->nullable();
+            $table->string('accessibility')->nullable();
 
-            $table->integer('max_capacity')->nullable();
-            $table->string('opening_season')->nullable();
+            $table->decimal('rating', 3, 1)->default(0);
+            $table->integer('reviews_count')->default(0);
 
-            $table->json('facilities')->nullable(); // équipements disponibles (toilettes, eau, etc.)
-            $table->json('activities')->nullable(); // activités possibles (randonnée, pêche...)
+            $table->json('best_season')->nullable();
+            $table->json('activities')->nullable();
 
-            $table->boolean('is_protected_area')->default(false); // zone protégée par l’état
+            $table->json('facilities')->nullable();
+            $table->json('rules')->nullable();
 
-            // Fermeture / interdiction
-            $table->boolean('is_closed')->default(false); // fermeture temporaire ou définitive
-            $table->string('closure_reason')->nullable(); // raison de fermeture (décision état, météo, etc.)
+            $table->string('contact_phone')->nullable();
+            $table->string('contact_email')->nullable();
+            $table->string('contact_website')->nullable();
+
+            $table->boolean('is_public')->default(true);
+            $table->boolean('status')->default(false);
+            $table->boolean('is_protected_area')->default(false);
+            $table->boolean('is_closed')->default(false);
+            $table->string('closure_reason')->nullable();
             $table->date('closure_start')->nullable();
             $table->date('closure_end')->nullable();
 
-            $table->json('emergency_contacts')->nullable(); // contacts d’urgence (police, pompiers, etc.)
+            $table->enum('danger_level', ['low', 'moderate', 'high', 'extreme'])->default('low');
+            $table->integer('max_capacity')->nullable();
 
-            $table->integer('map_zoom_level')->default(14); // zoom par défaut sur la carte
-            $table->json('polygon_coordinates')->nullable(); // coordonnées polygone GeoJSON ou similaire
+            $table->integer('map_zoom_level')->default(14);
+            $table->json('polygon_coordinates')->nullable();
 
-            $table->string('weather_station_id')->nullable(); // pour récupération météo externe
+            $table->json('emergency_contacts')->nullable();
+            $table->string('weather_station_id')->nullable();
             $table->timestamp('last_weather_update')->nullable();
 
-            // Image et source
-            $table->string('image')->nullable();
             $table->string('source')->default('interne');
-
-            // Utilisateur ayant ajouté la zone
+            $table->foreignId('centre_id')->nullable()->constrained('camping_centres')->nullOnDelete();
             $table->foreignId('added_by')->nullable()->constrained('users')->nullOnDelete();
 
             $table->timestamps();
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::dropIfExists('camping_zones');

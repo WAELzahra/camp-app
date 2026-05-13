@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Storage;
 
 class Photo extends Model
 {
@@ -15,11 +16,14 @@ class Photo extends Model
         'path_to_img',
         'user_id',
         'annonce_id',
+        'camping_zone_id',
+        'camping_centre_id',
         'materielle_id',
         'event_id',
+        'camping_zone_id',
         'album_id',
-        'is_cover', 
-        'order'     
+        'is_cover',
+        'order',
     ];
 
     protected $casts = [
@@ -125,10 +129,25 @@ class Photo extends Model
     }
 
     /**
-     * Get the URL of the photo.
+     * Get the full URL of the photo.
      */
     public function getUrlAttribute()
     {
-        return $this->path_to_img;
+        if (!$this->path_to_img) {
+            return null;
+        }
+        
+        // Check if it's already a full URL
+        if (filter_var($this->path_to_img, FILTER_VALIDATE_URL)) {
+            return $this->path_to_img;
+        }
+        
+        // Return the full URL with storage path
+        return Storage::disk('public')->url($this->path_to_img);
+    }
+    // Add this method to Photo model
+    public function campingZone()
+    {
+        return $this->belongsTo(CampingZone::class, 'camping_zone_id');
     }
 }

@@ -8,12 +8,26 @@ use Illuminate\Database\Eloquent\Model;
 class Materielles_categories extends Model
 {
     use HasFactory;
+
     protected $fillable = [
-        "nom",
-        "description",
-        "creation_date"
+        'nom',
+        'description',
+        'trip_contexts',
+        'icon',
+        'is_safety_critical',
     ];
-    public function materielle(){
-        return $this->hasMany(Materielles::class);
+
+    protected $casts = [
+        'trip_contexts'     => 'array',
+        'is_safety_critical'=> 'boolean',
+    ];
+
+    /**
+     * All materiels belonging to this category.
+     */
+    public function materielles()
+    {
+        // Fixed: was hasMany(Materielles::class) — correct, but method was named materielle (singular)
+        return $this->hasMany(Materielles::class, 'category_id');
     }
 }

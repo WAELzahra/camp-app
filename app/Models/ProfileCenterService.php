@@ -19,14 +19,15 @@ class ProfileCenterService extends Pivot
         'description',
         'is_available',
         'is_standard',
-        'min_quantity',
-        'max_quantity'
+        'nbr_place',
+        'is_refundable',
     ];
-    
+
     protected $casts = [
-        'price' => 'decimal:2',
-        'is_available' => 'boolean',
-        'is_standard' => 'boolean'
+        'price'         => 'decimal:2',
+        'is_available'  => 'boolean',
+        'is_standard'   => 'boolean',
+        'is_refundable' => 'boolean',
     ];
     /**
      * Get reservations through service items
@@ -120,19 +121,7 @@ class ProfileCenterService extends Pivot
             ];
         }
         
-        if ($quantity < $this->min_quantity) {
-            return [
-                'available' => false,
-                'message' => "Minimum quantity is {$this->min_quantity}"
-            ];
-        }
-        
-        if ($this->max_quantity && $quantity > $this->max_quantity) {
-            return [
-                'available' => false,
-                'message' => "Maximum quantity is {$this->max_quantity}"
-            ];
-        }
+
         
         // Check for overlapping reservations
         // You might want to add capacity logic here

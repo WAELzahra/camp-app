@@ -3,259 +3,239 @@
 namespace App\Http\Controllers\Comment;
 
 use App\Http\Controllers\Controller;
-use App\Models\Comment;
 use App\Models\Annonce;
+use App\Models\Comment;
+use App\Models\CommentLike;
+use App\Events\CommentCreated;
+use App\Events\CommentUpdated;
+use App\Events\CommentDeleted;
+use App\Events\CommentLiked;
+use App\Events\CommentPinned;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\DB;
 
 class CommentController extends Controller
 {
     /**
-     * Get comments for an annonce
+     * Get all visible top-level comments + replies for an annonce.
      */
-    public function index($annonceId)
+    public function index(int $annonceId)
     {
-        $user = Auth::user();
-        
-        $comments = Comment::with(['user', 'replies.user'])
-            ->where('annonce_id', $annonceId)
-            ->whereNull('parent_id') // Get only top-level comments
-            ->visible()
-            ->pinnedFirst()
-            ->get();
-
-        // Add liked_by_user field to each comment and its replies
-        $comments = $comments->map(function ($comment) use ($user) {
-            return $this->addLikedByUser($comment, $user);
-        });
-
-        // Count total comments including replies
-        $totalComments = Comment::where('annonce_id', $annonceId)->count();
-
-        return response()->json([
-            'success' => true,
-            'comments' => $comments,
-            'total' => $totalComments
-        ]);
-    }
-
-    /**
-     * Recursively add liked_by_user field to comment and its replies
-     */
-    private function addLikedByUser($comment, $user)
-    {
-        // Check if current user has liked this comment using CommentLike model
-        $comment->liked_by_user = $user ? 
-            \App\Models\CommentLike::where('user_id', $user->id)
-                                ->where('comment_id', $comment->id)
-                                ->exists() : false;
-        
-        // Process replies recursively
-        if ($comment->replies && $comment->replies->count() > 0) {
-            $comment->replies = $comment->replies->map(function ($reply) use ($user) {
-                return $this->addLikedByUser($reply, $user);
-            });
-        }
-        
-        return $comment;
-    }
-
-    /**
-     * Store a new comment
-     */
-    public function store(Request $request, $annonceId)
-    {
-        $validator = Validator::make($request->all(), [
-            'content' => 'required|string|max:1000',
-            'parent_id' => 'nullable|exists:comments,id'
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'errors' => $validator->errors()
-            ], 422);
-        }
-
-        // Check if annonce exists
         $annonce = Annonce::findOrFail($annonceId);
 
-        $comment = Comment::create([
-            'user_id' => Auth::id(),
-            'annonce_id' => $annonceId,
-            'parent_id' => $request->parent_id,
-            'content' => $request->content
-        ]);
-
-        // Update annonce comments count
-        $annonce->increment('comments_count');
-
-        // Load relationships
-        $comment->load('user');
-
-        // Add liked_by_user field to the newly created comment
-        $user = Auth::user();
-        $comment->liked_by_user = false; // New comment is not liked yet
+        $comments = Comment::with(['user', 'replies.user', 'replies.likes'])
+            ->where('annonce_id', $annonceId)
+            ->whereNull('parent_id')
+            ->where('is_hidden', false)
+            ->orderByDesc('is_pinned')
+            ->latest()
+            ->get()
+            ->map(fn($c) => $this->formatComment($c));
 
         return response()->json([
-            'success' => true,
-            'message' => 'Comment added successfully',
-            'comment' => $comment
+            'status'   => 'success',
+            'comments' => $comments,
+            'total'    => $comments->count(),
+        ]);
+    }
+
+    /**
+     * Post a new comment or reply.
+     */
+    public function store(Request $request, int $annonceId)
+    {
+        $request->validate([
+            'content'   => 'required|string|max:2000',
+            'parent_id' => 'nullable|integer|exists:comments,id',
+        ]);
+
+        $annonce = Annonce::findOrFail($annonceId);
+
+        DB::beginTransaction();
+        try {
+            $comment = Comment::create([
+                'user_id'    => Auth::id(),
+                'annonce_id' => $annonceId,
+                'parent_id'  => $request->parent_id,
+                'content'    => $request->content,
+                'likes_count' => 0,
+                'is_edited'  => false,
+                'is_pinned'  => false,
+                'is_hidden'  => false,
+            ]);
+
+            // Increment comment count on annonce (top-level only)
+            if (!$request->parent_id) {
+                $annonce->increment('comments_count');
+            }
+
+            DB::commit();
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
+        }
+
+        $comment->load(['user', 'replies']);
+        $formatted = $this->formatComment($comment);
+
+        // Broadcast to the annonce channel
+        broadcast(new CommentCreated($formatted, $annonceId))->toOthers();
+
+        return response()->json([
+            'status'  => 'success',
+            'comment' => $formatted,
         ], 201);
     }
 
     /**
-     * Update a comment
+     * Edit own comment.
      */
-    public function update(Request $request, $id)
+    public function update(Request $request, int $annonceId, int $commentId)
     {
-        $comment = Comment::findOrFail($id);
+        $request->validate(['content' => 'required|string|max:2000']);
 
-        // Check if user owns the comment
-        if ($comment->user_id !== Auth::id()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Unauthorized'
-            ], 403);
+        $comment = Comment::where('annonce_id', $annonceId)->findOrFail($commentId);
+
+        if (Auth::id() !== $comment->user_id) {
+            return response()->json(['message' => 'Unauthorized.'], 403);
         }
 
-        $validator = Validator::make($request->all(), [
-            'content' => 'required|string|max:1000'
-        ]);
+        $comment->update(['content' => $request->content, 'is_edited' => true]);
+        $comment->load(['user', 'replies']);
+        $formatted = $this->formatComment($comment);
 
-        if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'errors' => $validator->errors()
-            ], 422);
-        }
+        broadcast(new CommentUpdated($formatted, $annonceId))->toOthers();
 
-        $comment->update([
-            'content' => $request->content,
-            'is_edited' => true
-        ]);
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Comment updated successfully',
-            'comment' => $comment
-        ]);
+        return response()->json(['status' => 'success', 'comment' => $formatted]);
     }
 
     /**
-     * Delete a comment
+     * Delete a comment (own or admin).
      */
-    public function destroy($id)
+    public function destroy(int $annonceId, int $commentId)
     {
-        $comment = Comment::findOrFail($id);
+        $comment = Comment::where('annonce_id', $annonceId)->findOrFail($commentId);
+        $user    = Auth::user();
 
-        // Check if user owns the comment or is admin
-        if ($comment->user_id !== Auth::id() && Auth::user()->role_id !== 6) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Unauthorized'
-            ], 403);
+        if ($user->id !== $comment->user_id && $user->role_id !== 6) {
+            return response()->json(['message' => 'Unauthorized.'], 403);
         }
 
-        // Update annonce comments count (decrement by 1 + number of replies)
-        $totalDeleted = 1 + $comment->replies()->count();
-        $comment->annonce()->decrement('comments_count', $totalDeleted);
-
-        // Soft delete the comment (replies will be cascade deleted)
+        $parentId = $comment->parent_id;
         $comment->delete();
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Comment deleted successfully'
-        ]);
+        // Decrement count for top-level comments
+        if (!$parentId) {
+            Annonce::where('id', $annonceId)->decrement('comments_count');
+        }
+
+        broadcast(new CommentDeleted($commentId, $parentId, $annonceId))->toOthers();
+
+        return response()->json(['status' => 'success', 'message' => 'Comment deleted.']);
     }
 
     /**
-     * Toggle like on a comment
+     * Like a comment.
      */
-    public function toggleLike($id)
+    public function like(int $annonceId, int $commentId)
     {
-        $comment = Comment::findOrFail($id);
-        $user = Auth::user();
+        $comment = Comment::where('annonce_id', $annonceId)->findOrFail($commentId);
+        $userId  = Auth::id();
 
-        // Check if user is authenticated
-        if (!$user) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Unauthenticated'
-            ], 401);
+        if (CommentLike::where('comment_id', $commentId)->where('user_id', $userId)->exists()) {
+            return response()->json(['status' => 'error', 'message' => 'Already liked.'], 400);
         }
 
-        // Use the CommentLike model directly
-        $existingLike = \App\Models\CommentLike::where('user_id', $user->id)
-                                            ->where('comment_id', $comment->id)
-                                            ->first();
+        CommentLike::create(['comment_id' => $commentId, 'user_id' => $userId]);
+        $comment->increment('likes_count');
+        $count = $comment->fresh()->likes_count;
 
-        if ($existingLike) {
-            // Unlike
-            $existingLike->delete();
-            $comment->decrement('likes_count');
-            $liked = false;
-        } else {
-            // Like
-            \App\Models\CommentLike::create([
-                'user_id' => $user->id,
-                'comment_id' => $comment->id
-            ]);
-            $comment->increment('likes_count');
-            $liked = true;
-        }
+        broadcast(new CommentLiked($commentId, $comment->parent_id, $count, $annonceId))->toOthers();
 
-        return response()->json([
-            'success' => true,
-            'liked' => $liked,
-            'likes_count' => $comment->fresh()->likes_count
-        ]);
+        return response()->json(['status' => 'success', 'likes_count' => $count]);
     }
+
     /**
-     * Pin/unpin a comment (admin only)
+     * Unlike a comment.
      */
-    public function togglePin($id)
+    public function unlike(int $annonceId, int $commentId)
     {
-        // Check if user is admin
+        $comment = Comment::where('annonce_id', $annonceId)->findOrFail($commentId);
+        $userId  = Auth::id();
+
+        $deleted = CommentLike::where('comment_id', $commentId)->where('user_id', $userId)->delete();
+
+        if (!$deleted) {
+            return response()->json(['status' => 'error', 'message' => 'Like not found.'], 404);
+        }
+
+        $comment->decrement('likes_count');
+        $count = $comment->fresh()->likes_count;
+
+        broadcast(new CommentLiked($commentId, $comment->parent_id, $count, $annonceId))->toOthers();
+
+        return response()->json(['status' => 'success', 'likes_count' => $count]);
+    }
+
+    /**
+     * Pin a comment (admin only).
+     */
+    public function pin(int $annonceId, int $commentId)
+    {
         if (Auth::user()->role_id !== 6) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Unauthorized'
-            ], 403);
+            return response()->json(['message' => 'Unauthorized.'], 403);
         }
 
-        $comment = Comment::findOrFail($id);
-        $comment->update(['is_pinned' => !$comment->is_pinned]);
+        $comment = Comment::where('annonce_id', $annonceId)->findOrFail($commentId);
+        $comment->update(['is_pinned' => true]);
+        $comment->load('user');
+        $formatted = $this->formatComment($comment);
 
-        return response()->json([
-            'success' => true,
-            'message' => $comment->is_pinned ? 'Comment pinned' : 'Comment unpinned',
-            'is_pinned' => $comment->is_pinned
-        ]);
+        broadcast(new CommentPinned($formatted, $annonceId))->toOthers();
+
+        return response()->json(['status' => 'success', 'comment' => $formatted]);
     }
 
     /**
-     * Hide/unhide a comment (admin only)
+     * Unpin a comment (admin only).
      */
-    public function toggleHide($id)
+    public function unpin(int $annonceId, int $commentId)
     {
-        // Check if user is admin
         if (Auth::user()->role_id !== 6) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Unauthorized'
-            ], 403);
+            return response()->json(['message' => 'Unauthorized.'], 403);
         }
 
-        $comment = Comment::findOrFail($id);
-        $comment->update(['is_hidden' => !$comment->is_hidden]);
+        $comment = Comment::where('annonce_id', $annonceId)->findOrFail($commentId);
+        $comment->update(['is_pinned' => false]);
+        $comment->load('user');
+        $formatted = $this->formatComment($comment);
 
-        return response()->json([
-            'success' => true,
-            'message' => $comment->is_hidden ? 'Comment hidden' : 'Comment shown',
-            'is_hidden' => $comment->is_hidden
+        broadcast(new CommentPinned($formatted, $annonceId))->toOthers();
+
+        return response()->json(['status' => 'success', 'comment' => $formatted]);
+    }
+
+    /**
+     * Format a comment for JSON response, including liked_by_me flag.
+     */
+    private function formatComment(Comment $comment): array
+    {
+        $userId     = Auth::id();
+        $likedByMe  = $userId
+            ? CommentLike::where('comment_id', $comment->id)->where('user_id', $userId)->exists()
+            : false;
+
+        $replies = ($comment->replies ?? collect())->map(function ($reply) use ($userId) {
+            $replyLiked = $userId
+                ? CommentLike::where('comment_id', $reply->id)->where('user_id', $userId)->exists()
+                : false;
+            return array_merge($reply->toArray(), ['liked_by_me' => $replyLiked]);
+        })->values()->toArray();
+
+        return array_merge($comment->toArray(), [
+            'liked_by_me' => $likedByMe,
+            'replies'     => $replies,
         ]);
     }
 }

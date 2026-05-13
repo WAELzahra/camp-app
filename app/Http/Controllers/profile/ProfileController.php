@@ -18,14 +18,61 @@ use Illuminate\Support\Facades\Validator;
 use App\Models\Photo;
 use App\Models\User;
 use App\Http\Controllers\Controller;
+use App\Models\CentreClaim;
+use App\Models\ProfileCampeur;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 
 class ProfileController extends Controller
 {
     /**
-     * Update center general settings
+     * Returns all camping_centre IDs linked to a user.
+     * A user may legitimately have more than one (auto-sync + approved claim).
+     * Always prefer the approved-claim centre first.
      */
+    private function centreIdsForUser(\App\Models\User $user): \Illuminate\Support\Collection
+    {
+        return \App\Models\CampingCentre::where('user_id', $user->id)->pluck('id');
+    }
+
+    /**
+     * Returns the single "primary" camping_centre_id for new photo uploads.
+     * Priority: approved-claim centre → any linked centre → null.
+     */
+    private function primaryCentreIdForUser(\App\Models\User $user): ?int
+    {
+        // Prefer the centre linked via an approved claim
+        $claimCentreId = \App\Models\CentreClaim::where('user_id', $user->id)
+            ->where('status', 'approved')
+            ->value('centre_id');
+
+        if ($claimCentreId) {
+            return (int) $claimCentreId;
+        }
+
+        // Fallback: any centre linked to this user
+        return \App\Models\CampingCentre::where('user_id', $user->id)->value('id');
+    }
+
+    /**
+     * Returns a 403 response if the authenticated centre user has a pending claim.
+     * Call this at the top of any photo write method.
+     */
+    private function denyIfPendingClaim(): ?\Illuminate\Http\JsonResponse
+    {
+        $user = Auth::user();
+        if ($user && $user->role_id === 3) {
+            if (CentreClaim::where('user_id', $user->id)->where('status', 'pending')->exists()) {
+                return response()->json([
+                    'success'      => false,
+                    'claim_locked' => true,
+                    'message'      => 'Your claim is under review. Profile editing is locked until the admin approves or rejects your request.',
+                ], 403);
+            }
+        }
+        return null;
+    }
+
     public function updateCenter(Request $request, $centerId)
     {
         try {
@@ -40,20 +87,48 @@ class ProfileController extends Controller
                 ], 403);
             }
 
-            $data = $request->only(['show_standard_service']);
-            
-            // Convert to boolean if present
-            if (isset($data['show_standard_service'])) {
-                $data['show_standard_service'] = (bool) $data['show_standard_service'];
+            \Log::info('updateCenter request', [
+                'centerId' => $centerId,
+                'all' => $request->all(),
+            ]);
+
+            // Only update fields that are present in the request
+            $data = $request->only([
+                'name',
+                'capacite',
+                'price_per_night',  // ✅ This is the key field!
+                'category',
+                'disponibilite',
+                'latitude',
+                'longitude',
+                'contact_email',
+                'contact_phone',
+                'manager_name',
+                'established_date',
+            ]);
+
+            // Convert disponibilite if present
+            if ($request->has('disponibilite')) {
+                $data['disponibilite'] = $request->boolean('disponibilite');
             }
+
+            \Log::info('Updating center with data', ['data' => $data]);
 
             $center->update($data);
 
+            \Log::info('Center updated successfully', [
+                'centerId' => $centerId,
+                'new_price_per_night' => $center->fresh()->price_per_night
+            ]);
+
             return response()->json([
                 'success' => true,
-                'message' => 'Center updated successfully'
+                'message' => 'Center updated successfully',
+                'data' => $center->fresh()
             ]);
         } catch (\Exception $e) {
+            \Log::error('updateCenter error: ' . $e->getMessage());
+            
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to update center',
@@ -61,13 +136,14 @@ class ProfileController extends Controller
             ], 500);
         }
     }
+
     public function changePassword(Request $request)
     {
         try {
-            // Validate request - Note: using new_password_confirmation
+            // Validate request
             $validator = Validator::make($request->all(), [
                 'current_password' => 'required',
-                'new_password' => 'required|min:8|different:current_password|confirmed', // 'confirmed' rule
+                'new_password' => 'required|min:8|different:current_password|confirmed',
             ]);
 
             if ($validator->fails()) {
@@ -127,12 +203,11 @@ class ProfileController extends Controller
                 'last_name' => $user->last_name,
                 'email' => $user->email,
                 'phone_number' => $user->phone_number,
-                'adresse' => $user->adresse,
                 'ville' => $user->ville,
                 'date_naissance' => $user->date_naissance,
                 'sexe' => $user->sexe,
                 'langue' => $user->langue,
-                'avatar' => $user->avatar,
+                'avatar' => $user->avatar ? storage_url($user->avatar) : null,
                 'role_id' => $user->role_id,
             ],
             'profile' => $profile,
@@ -145,6 +220,10 @@ class ProfileController extends Controller
                 break;
             case 'centre':
                 $data['details'] = $profile->profileCentre ?? new ProfileCentre(['profile_id' => $profile->id]);
+                break;
+            case 'campeur':
+                $data['details'] = $profile->profileCampeur
+                    ?? ProfileCampeur::firstOrCreate(['profile_id' => $profile->id]);
                 break;
             case 'groupe':
                 $data['details'] = $profile->profileGroupe ?? new ProfileGroupe(['profile_id' => $profile->id]);
@@ -181,9 +260,93 @@ class ProfileController extends Controller
                 $data['details'] = null;
         }
 
+        // Cover image full URL
+        if ($profile->cover_image) {
+            $data['cover_image_url'] = storage_url(ltrim($profile->cover_image, '/'));
+        }
+
+        // Profile gallery photos
+        if ($user->role_id === 3) {
+            // Centre users: return all photos from ALL linked centres
+            $centreIds = $this->centreIdsForUser($user);
+            if ($centreIds->isNotEmpty()) {
+                $data['photos'] = \App\Models\Photo::whereIn('camping_centre_id', $centreIds)
+                    ->orderBy('order', 'asc')
+                    ->orderBy('created_at', 'desc')
+                    ->get()
+                    ->map(fn($p) => [
+                        'id'       => $p->id,
+                        'url'      => storage_url($p->path_to_img),
+                        'is_cover' => (bool) $p->is_cover,
+                        'order'    => $p->order,
+                    ])->values();
+            }
+        } else {
+            $galleryAlbum = \App\Models\Album::with(['photos' => function ($q) {
+                $q->orderBy('order', 'asc')->orderBy('created_at', 'desc');
+            }])
+                ->where('user_id', $user->id)
+                ->where('titre', 'Profile Gallery')
+                ->first();
+
+            if ($galleryAlbum) {
+                $data['photos'] = $galleryAlbum->photos->map(fn($p) => [
+                    'id'       => $p->id,
+                    'url'      => storage_url($p->path_to_img),
+                    'is_cover' => (bool) $p->is_cover,
+                    'order'    => $p->order,
+                ])->values();
+            }
+        }
+
+        // Past events (confirmed/attended)
+        $data['past_events'] = \App\Models\Reservations_events::where('user_id', $user->id)
+            ->whereIn('status', ['confirmed', 'completed', 'attended'])
+            ->with('event')
+            ->get()
+            ->filter(fn($r) => $r->event && $r->event->start_date)
+            ->sortByDesc(fn($r) => $r->event->start_date)
+            ->take(8)
+            ->map(fn($r) => [
+                'id'       => $r->event->id,
+                'title'    => $r->event->title,
+                'date'     => $r->event->start_date,
+                'location' => $r->event->address ?? null,
+            ])->values();
+
+        // Visited camping centers (unique, most recent first)
+        $data['visited_centres'] = \App\Models\Reservations_centre::where('user_id', $user->id)
+            ->whereIn('status', ['confirmed', 'completed'])
+            ->with('centre')
+            ->get()
+            ->filter(fn($r) => $r->centre)
+            ->sortByDesc('date_debut')
+            ->unique('centre_id')
+            ->take(8)
+            ->map(fn($r) => [
+                'id'       => $r->centre->id,
+                'name'     => $r->centre->name,
+                'location' => $r->centre->ville ?? null,
+                'date'     => $r->date_debut,
+            ])->values();
+
         return response()->json($data);
     }
 
+    public function searchUsers(Request $request)
+    {
+        $query = $request->get('q', '');
+        $users = \App\Models\User::where('is_active', 1)
+            ->where(function($q) use ($query) {
+                $q->where('first_name', 'LIKE', "%{$query}%")
+                ->orWhere('last_name', 'LIKE', "%{$query}%")
+                ->orWhere('email', 'LIKE', "%{$query}%");
+            })
+            ->select('id', 'first_name', 'last_name', 'email', 'avatar', 'phone_number')
+            ->limit(20)
+            ->get();
+        return response()->json(['success' => true, 'data' => $users]);
+    }
     public function update(Request $request)
     {
         $user = Auth::user();
@@ -191,12 +354,12 @@ class ProfileController extends Controller
         DB::beginTransaction();
         
         try {
-            \Log::info('Profile update request:', $request->all());
+            \Log::info('=== PROFILE UPDATE START ===');
+            \Log::info('User ID: ' . $user->id);
+            \Log::info('Request data:', $request->all());
             
-            // 1. Update basic user data (ONLY fields in users table)
+            // 1. Update basic user data
             $userData = [];
-            
-            // Fields that exist in users table
             $userFields = ['first_name', 'last_name', 'email', 'phone_number', 'ville', 'date_naissance', 'sexe', 'langue'];
             
             foreach ($userFields as $field) {
@@ -205,10 +368,9 @@ class ProfileController extends Controller
                 }
             }
             
-            // DO NOT include 'adresse' here - it's not in users table
-            
             if (!empty($userData)) {
                 $user->update($userData);
+                \Log::info('User data updated:', $userData);
             }
 
             // 2. Get or create profile
@@ -219,53 +381,61 @@ class ProfileController extends Controller
                     'type' => $this->determineUserType($user->role_id),
                 ];
                 
-                if ($request->has('bio')) {
-                    $profileData['bio'] = $request->bio;
+                $profileFields = ['bio', 'cover_image', 'activities', 'city', 'address', 'is_public'];
+                foreach ($profileFields as $field) {
+                    if ($request->has($field)) {
+                        $profileData[$field] = $request->$field;
+                    }
                 }
-                if ($request->has('cover_image')) {
-                    $profileData['cover_image'] = $request->cover_image;
-                }
-                // Activities will be added after migration
-                if ($request->has('activities')) {
-                    $profileData['activities'] = $request->activities;
-                }
-                
+
                 $profile = Profile::create($profileData);
+                \Log::info('Profile created:', ['profile_id' => $profile->id]);
             } else {
                 $profileUpdateData = [];
+                $profileFields = ['bio', 'cover_image', 'activities', 'city', 'address', 'is_public'];
                 
-                if ($request->has('bio')) {
-                    $profileUpdateData['bio'] = $request->bio;
-                }
-                if ($request->has('cover_image')) {
-                    $profileUpdateData['cover_image'] = $request->cover_image;
-                }
-                // Activities will be added after migration
-                if ($request->has('activities')) {
-                    $profileUpdateData['activities'] = $request->activities;
+                foreach ($profileFields as $field) {
+                    if ($request->has($field)) {
+                        $profileUpdateData[$field] = $request->$field;
+                    }
                 }
                 
                 if (!empty($profileUpdateData)) {
                     $profile->update($profileUpdateData);
+                    \Log::info('Profile updated:', $profileUpdateData);
                 }
             }
 
             // 3. Update specific profile details based on user type
             $userType = $profile->type;
+            \Log::info('User type:', ['type' => $userType]);
             
             switch ($userType) {
                 case 'campeur':
-                    // Activities already handled above
-                    // No additional profile detail table for campers
+                    $campeurData = $request->only([
+                        'skill_level',
+                        'comfort_level',
+                        'budget_range',
+                        'preferred_trip_styles',
+                        'preferred_activities',
+                        'gear_preferences',
+                    ]);
+
+                    if (!empty($campeurData)) {
+                        ProfileCampeur::updateOrCreate(
+                            ['profile_id' => $profile->id],
+                            $campeurData
+                        );
+                    }
                     break;
                     
                 case 'guide':
                     $guideData = $request->only([
-                        'adresse',  // Goes to profile_guide table
-                        'cin',
                         'experience',
                         'tarif',
                         'zone_travail',
+                        'certificat_type',
+                        'certificat_expiration',
                     ]);
                     
                     // Convert numeric fields
@@ -276,28 +446,87 @@ class ProfileController extends Controller
                         $guideData['tarif'] = (float) $guideData['tarif'];
                     }
                     
+                    // Handle certificat upload
+                    if ($request->hasFile('certificat_file')) {
+                        $file = $request->file('certificat_file');
+                        
+                        $validator = Validator::make($request->all(), [
+                            'certificat_file' => 'file|mimes:jpeg,png,jpg,pdf|max:5120',
+                        ]);
+                        
+                        if ($validator->fails()) {
+                            throw new \Exception('Certificat validation failed: ' . json_encode($validator->errors()));
+                        }
+                        
+                        // Get or create guide
+                        $guide = $profile->profileGuide;
+                        if (!$guide) {
+                            $guide = ProfileGuide::create(['profile_id' => $profile->id]);
+                        }
+                        
+                        // Delete old certificat if exists
+                        if ($guide->certificat_path && Storage::disk('public')->exists($guide->certificat_path)) {
+                            Storage::disk('public')->delete($guide->certificat_path);
+                        }
+                        
+                        // Store new certificat
+                        $directory = 'documents/guides';
+                        $filename = 'certificat_' . $user->id . '_' . time() . '.' . $file->getClientOriginalExtension();
+                        $path = $file->storeAs($directory, $filename, 'public');
+                        $guideData['certificat_path'] = $path;
+                        
+                        \Log::info('Certificat uploaded:', ['path' => $path]);
+                    }
+                    
+                    // Handle certificat deletion
+                    if ($request->has('delete_certificat') && $request->delete_certificat == '1') {
+                        $guide = $profile->profileGuide;
+                        if ($guide && $guide->certificat_path) {
+                            if (Storage::disk('public')->exists($guide->certificat_path)) {
+                                Storage::disk('public')->delete($guide->certificat_path);
+                            }
+                            $guideData['certificat_path'] = null;
+                        }
+                    }
+                    
                     if ($profile->profileGuide) {
                         $profile->profileGuide->update($guideData);
+                        \Log::info('Guide updated:', $guideData);
                     } else {
                         $guideData['profile_id'] = $profile->id;
                         ProfileGuide::create($guideData);
+                        \Log::info('Guide created:', $guideData);
                     }
                     break;
 
                 case 'centre':
+                    // Block profile centre edits while a claim is pending approval
+                    $hasPendingClaim = \App\Models\CentreClaim::where('user_id', $user->id)
+                        ->where('status', 'pending')
+                        ->exists();
+
+                    if ($hasPendingClaim) {
+                        DB::rollBack();
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'Your centre profile is locked while your claim request is pending admin approval.',
+                        ], 403);
+                    }
+
                     $centreData = $request->only([
                         'name',
-                        'adresse',  // Goes to profile_centres table
                         'contact_email',
                         'contact_phone',
                         'manager_name',
                         'capacite',
                         'price_per_night',
                         'category',
-                        'services_offerts',
-                        'additional_services_description',
-                        'legal_document',
                         'disponibilite',
+                        'document_legal_type',
+                        'document_legal_expiration',
+                        'latitude',
+                        'longitude',
+                        'established_date',
                     ]);
                     
                     // Handle numeric conversions
@@ -311,56 +540,173 @@ class ProfileController extends Controller
                         $centreData['disponibilite'] = (bool) $centreData['disponibilite'] ? 1 : 0;
                     }
                     
-                    // Handle latitude/longitude
-                    if ($request->has('latitude')) {
-                        $centreData['latitude'] = (float) $request->latitude;
-                    }
-                    if ($request->has('longitude')) {
-                        $centreData['longitude'] = (float) $request->longitude;
+                    // Handle document legal upload - USE legal_document NOT document_legal_path
+                    if ($request->hasFile('document_legal_file')) {
+                        $file = $request->file('document_legal_file');
+                        
+                        $validator = Validator::make($request->all(), [
+                            'document_legal_file' => 'file|mimes:jpeg,png,jpg,pdf|max:5120',
+                        ]);
+                        
+                        if ($validator->fails()) {
+                            throw new \Exception('Legal document validation failed: ' . json_encode($validator->errors()));
+                        }
+                        
+                        // Get or create centre
+                        $centre = $profile->profileCentre;
+                        if (!$centre) {
+                            $centre = ProfileCentre::create(['profile_id' => $profile->id]);
+                        }
+                        
+                        // Delete old document if exists (check both fields for backward compatibility)
+                        if ($centre->legal_document && Storage::disk('public')->exists($centre->legal_document)) {
+                            Storage::disk('public')->delete($centre->legal_document);
+                        }
+                        
+                        // Store new document - USE legal_document field
+                        $directory = 'documents/centres';
+                        $filename = 'legal_doc_' . $user->id . '_' . time() . '.' . $file->getClientOriginalExtension();
+                        $path = $file->storeAs($directory, $filename, 'public');
+                        $centreData['legal_document'] = $path; // Changed from document_legal_path
+                        
+                        \Log::info('Legal document uploaded:', ['path' => $path]);
                     }
                     
-                    // Handle established_date
-                    if ($request->has('established_date')) {
-                        $centreData['established_date'] = $request->established_date;
+                    // Handle delete document flag - USE legal_document
+                    if ($request->has('delete_document') && $request->delete_document == '1') {
+                        $centre = $profile->profileCentre;
+                        if ($centre) {
+                            if ($centre->legal_document && Storage::disk('public')->exists($centre->legal_document)) {
+                                Storage::disk('public')->delete($centre->legal_document);
+                            }
+                            $centreData['legal_document'] = null; // Changed from document_legal_path
+                            $centreData['document_legal_type'] = null;
+                            $centreData['document_legal_expiration'] = null;
+                        }
                     }
                     
                     if ($profile->profileCentre) {
                         $profile->profileCentre->update($centreData);
+                        \Log::info('Centre updated:', $centreData);
                     } else {
                         $centreData['profile_id'] = $profile->id;
                         ProfileCentre::create($centreData);
+                        \Log::info('Centre created:', $centreData);
                     }
                     break;
 
                 case 'groupe':
                     $groupeData = $request->only([
                         'nom_groupe',
-                        'cin_responsable',
+                        'id_album_photo', // Added missing field
+                        'id_annonce',      // Added missing field
                     ]);
+                    
+                    // Handle patente upload
+                    if ($request->hasFile('patente_file')) {
+                        $file = $request->file('patente_file');
+                        
+                        $validator = Validator::make($request->all(), [
+                            'patente_file' => 'file|mimes:jpeg,png,jpg,pdf|max:5120',
+                        ]);
+                        
+                        if ($validator->fails()) {
+                            throw new \Exception('Patente validation failed: ' . json_encode($validator->errors()));
+                        }
+                        
+                        // Get or create groupe
+                        $groupe = $profile->profileGroupe;
+                        if (!$groupe) {
+                            $groupe = ProfileGroupe::create(['profile_id' => $profile->id]);
+                        }
+                        
+                        // Delete old patente if exists
+                        if ($groupe->patente_path && Storage::disk('public')->exists($groupe->patente_path)) {
+                            Storage::disk('public')->delete($groupe->patente_path);
+                        }
+                        
+                        // Store new patente
+                        $directory = 'documents/groupes';
+                        $filename = 'patente_' . $user->id . '_' . time() . '.' . $file->getClientOriginalExtension();
+                        $path = $file->storeAs($directory, $filename, 'public');
+                        $groupeData['patente_path'] = $path;
+                        
+                        \Log::info('Patente uploaded:', ['path' => $path]);
+                    }
+                    
+                    // Handle patente deletion
+                    if ($request->has('delete_patente') && $request->delete_patente == '1') {
+                        $groupe = $profile->profileGroupe;
+                        if ($groupe && $groupe->patente_path) {
+                            if (Storage::disk('public')->exists($groupe->patente_path)) {
+                                Storage::disk('public')->delete($groupe->patente_path);
+                            }
+                            $groupeData['patente_path'] = null;
+                        }
+                    }
                     
                     if ($profile->profileGroupe) {
                         $profile->profileGroupe->update($groupeData);
+                        \Log::info('Groupe updated:', $groupeData);
                     } else {
                         $groupeData['profile_id'] = $profile->id;
                         ProfileGroupe::create($groupeData);
+                        \Log::info('Groupe created:', $groupeData);
                     }
                     break;
 
                 case 'fournisseur':
                     $fournisseurData = $request->only([
-                        'adresse',  // Goes to profile_fournisseur table
-                        'cin',
                         'intervale_prix',
                         'product_category',
                     ]);
                     
                     if ($profile->profileFournisseur) {
                         $profile->profileFournisseur->update($fournisseurData);
+                        \Log::info('Fournisseur updated:', $fournisseurData);
                     } else {
                         $fournisseurData['profile_id'] = $profile->id;
                         ProfileFournisseur::create($fournisseurData);
+                        \Log::info('Fournisseur created:', $fournisseurData);
                     }
                     break;
+            }
+
+            // Handle CIN document upload (common for all profiles)
+            if ($request->hasFile('cin_file')) {
+                $file = $request->file('cin_file');
+                
+                $validator = Validator::make($request->all(), [
+                    'cin_file' => 'file|mimes:jpeg,png,jpg,pdf|max:5120',
+                ]);
+                
+                if ($validator->fails()) {
+                    throw new \Exception('CIN validation failed: ' . json_encode($validator->errors()));
+                }
+                
+                // Delete old CIN if exists
+                if ($profile->cin_path && Storage::disk('public')->exists($profile->cin_path)) {
+                    Storage::disk('public')->delete($profile->cin_path);
+                }
+                
+                // Store new CIN
+                $directory = 'documents/cin';
+                $filename = 'cin_' . $user->id . '_' . time() . '.' . $file->getClientOriginalExtension();
+                $path = $file->storeAs($directory, $filename, 'public');
+                $profile->update(['cin_path' => $path]);
+                
+                \Log::info('CIN uploaded:', ['path' => $path]);
+            }
+            
+            // Handle CIN deletion
+            if ($request->has('delete_cin') && $request->delete_cin == '1') {
+                if ($profile->cin_path) {
+                    if (Storage::disk('public')->exists($profile->cin_path)) {
+                        Storage::disk('public')->delete($profile->cin_path);
+                    }
+                    $profile->update(['cin_path' => null]);
+                    \Log::info('CIN deleted');
+                }
             }
             
             DB::commit();
@@ -368,7 +714,7 @@ class ProfileController extends Controller
             \Log::info('Profile updated successfully for user: ' . $user->id);
             
             return response()->json([
-                'message' => 'Profil mis à jour avec succès',
+                'message' => 'Profile updated successfully',
                 'user' => $user->fresh(),
                 'profile' => $profile->fresh(),
             ]);
@@ -380,12 +726,14 @@ class ProfileController extends Controller
             \Log::error('Stack trace: ' . $e->getTraceAsString());
             
             return response()->json([
-                'message' => 'Erreur lors de la mise à jour du profil',
+                'message' => 'Failed to update profile',
                 'error' => $e->getMessage(),
-                'trace' => config('app.debug') ? $e->getTraceAsString() : null
             ], 500);
+        } finally {
+            \Log::info('=== PROFILE UPDATE END ===');
         }
     }
+
 
     public function updateAvatar(Request $request)
     {
@@ -395,54 +743,38 @@ class ProfileController extends Controller
 
         $user = Auth::user();
 
-        // Delete old avatar if exists
-        if ($user->avatar && Storage::disk('public')->exists($user->avatar)) {
-            Storage::disk('public')->delete($user->avatar);
+        try {
+            // Delete old avatar if exists
+            if ($user->avatar && !filter_var($user->avatar, FILTER_VALIDATE_URL)) {
+                Storage::disk('public')->delete($user->avatar);
+            }
+
+            $avatarPath = $request->file('avatar')->store('avatars', 'public');
+
+            $user->update(['avatar' => $avatarPath]);
+
+            return response()->json([
+                'message' => 'Avatar updated successfully.',
+                'avatar_url' => storage_url($avatarPath),
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Avatar upload failed.',
+                'error' => $e->getMessage(),
+            ], 500);
         }
-
-        // Store new file
-        $avatarPath = $request->file('avatar')->store('avatars', 'public');
-        
-        // Update avatar field
-        $user->update(['avatar' => $avatarPath]);
-
-        // DEBUG: Check file actually exists
-        $fullPath = storage_path('app/public/' . $avatarPath);
-        $fileExists = file_exists($fullPath);
-        
-        // DEBUG: Get file info
-        $fileInfo = $fileExists ? [
-            'size' => filesize($fullPath),
-            'mime' => mime_content_type($fullPath),
-        ] : null;
-
-        return response()->json([
-            'message' => 'Avatar updated successfully.',
-            'avatar_url' => asset('storage/' . $avatarPath),
-            'debug' => [
-                'path' => $avatarPath,
-                'full_path' => $fullPath,
-                'file_exists' => $fileExists,
-                'file_info' => $fileInfo,
-                'storage_url' => Storage::disk('public')->url($avatarPath),
-                'asset_url' => asset('storage/' . $avatarPath),
-                'url_function' => url('storage/' . $avatarPath),
-            ]
-        ]);
     }
 
     public function updateInfo(Request $request)
     {
         $user = Auth::user();
         
-        // Validate the request
         $request->validate([
             'album_title' => 'required|string|max:255',
             'album_description' => 'nullable|string',
         ]);
 
         try {
-            // Get the user's profile album (create if doesn't exist)
             $albumTitle = $request->input('album_title');
             $albumDescription = $request->input('album_description', null);
             
@@ -454,8 +786,6 @@ class ProfileController extends Controller
                 ]
             );
 
-
-            // If the album already exists, update its info
             $updateData = [
                 'titre' => $albumTitle,
                 'updated_at' => now(),
@@ -474,7 +804,7 @@ class ProfileController extends Controller
                     'id' => $album->id,
                     'title' => $album->titre,
                     'description' => $album->description,
-                    'cover_image' => $album->path_to_img ? asset('storage/' . $album->path_to_img) : null,
+                    'cover_image' => $album->path_to_img ? storage_url($album->path_to_img) : null,
                     'photo_count' => $album->photos()->count(),
                     'created_at' => $album->created_at ? $album->created_at->format('Y-m-d H:i:s') : null,
                 ],
@@ -482,7 +812,6 @@ class ProfileController extends Controller
 
         } catch (\Exception $e) {
             \Log::error('Album info update error: ' . $e->getMessage());
-            \Log::error('Stack trace: ' . $e->getTraceAsString());
 
             return response()->json([
                 'success' => false,
@@ -495,9 +824,10 @@ class ProfileController extends Controller
 
     public function storeOrUpdateProfilePhotos(Request $request)
     {
+        if ($deny = $this->denyIfPendingClaim()) return $deny;
+
         $user = Auth::user();
-        
-        // Validate the request
+
         $request->validate([
             'photos' => 'required|array|min:1',
             'photos.*' => 'required|image|mimes:jpeg,png,jpg,gif,webp|max:25600',
@@ -505,72 +835,81 @@ class ProfileController extends Controller
             'album_description' => 'nullable|string',
         ]);
 
+        // For centre users, stamp the primary (approved-claim) centre on every photo.
+        $campingCentreId = null;
+        if ($user->role_id === 3) {
+            $campingCentreId = $this->primaryCentreIdForUser($user);
+        }
+
         DB::beginTransaction();
-        
+
         try {
-            // Get or create album for the user
             $albumTitle = $request->input('album_title', 'Profile Gallery');
             $albumDescription = $request->input('album_description', null);
-            
+
             $album = Album::firstOrCreate(
                 [
                     'user_id' => $user->id,
-                    'titre' => 'Profile Gallery', // Search for profile album
+                    'titre' => 'Profile Gallery',
                 ],
                 [
-                    'titre' => $albumTitle, // Create with provided or default title
+                    'titre' => $albumTitle,
                     'description' => $albumDescription,
-                    'created_at' => now(),
-                    'updated_at' => now(),
                 ]
             );
 
-            // Always update album info when photos are uploaded
             $updateData = [
                 'titre' => $albumTitle,
                 'updated_at' => now(),
             ];
-            
+
             if ($request->has('album_description')) {
                 $updateData['description'] = $albumDescription;
             }
-            
+
             $album->update($updateData);
 
-            // Rest of your existing photo upload code...
+            // For centre users: migrate any camping_centre photos that are not yet
+            // in this album into it now, preserving their existing is_cover flags.
+            // This must happen BEFORE the new-upload cover check so we don't
+            // accidentally make a fresh upload the cover when one already exists.
+            if ($campingCentreId) {
+                Photo::where('camping_centre_id', $campingCentreId)
+                    ->where('user_id', $user->id)
+                    ->whereNull('album_id')
+                    ->update(['album_id' => $album->id]);
+            }
+
             $uploadedPhotos = [];
             $order = $album->photos()->max('order') ?? 0;
 
             foreach ($request->file('photos') as $index => $photo) {
-                // Generate unique filename
                 $originalName = pathinfo($photo->getClientOriginalName(), PATHINFO_FILENAME);
                 $extension = $photo->getClientOriginalExtension();
                 $filename = $originalName . '_' . time() . '_' . uniqid() . '.' . $extension;
-                
-                // Store the image
+
                 $path = $photo->storeAs('profile_photos', $filename, 'public');
-                
-                // Create photo record
+
                 $photoRecord = Photo::create([
-                    'path_to_img' => $path,
-                    'user_id' => $user->id,
-                    'album_id' => $album->id,
-                    'is_cover' => ($index === 0 && $album->photos()->where('is_cover', 1)->count() === 0) ? 1 : 0,
-                    'order' => ++$order,
-                    'created_at' => now(),
-                    'updated_at' => now(),
+                    'path_to_img'       => $path,
+                    'user_id'           => $user->id,
+                    'album_id'          => $album->id,
+                    'camping_centre_id' => $campingCentreId,
+                    'is_cover'          => ($index === 0 && $album->photos()->where('is_cover', 1)->count() === 0) ? 1 : 0,
+                    'order'             => ++$order,
+                    'created_at'        => now(),
+                    'updated_at'        => now(),
                 ]);
 
                 $uploadedPhotos[] = [
                     'id' => $photoRecord->id,
                     'path' => $path,
-                    'url' => asset('storage/' . $path),
+                    'url' => storage_url($path),
                     'is_cover' => $photoRecord->is_cover,
                     'order' => $photoRecord->order,
                 ];
             }
 
-            // Update album cover image path if this is the first photo
             if ($album->path_to_img === null && count($uploadedPhotos) > 0) {
                 $album->update([
                     'path_to_img' => $uploadedPhotos[0]['path'],
@@ -587,7 +926,7 @@ class ProfileController extends Controller
                     'id' => $album->id,
                     'title' => $album->titre,
                     'description' => $album->description,
-                    'cover_image' => $album->path_to_img ? asset('storage/' . $album->path_to_img) : null,
+                    'cover_image' => $album->path_to_img ? storage_url($album->path_to_img) : null,
                     'photo_count' => $album->photos()->count(),
                 ],
                 'photos' => $uploadedPhotos,
@@ -597,123 +936,193 @@ class ProfileController extends Controller
             DB::rollBack();
             
             \Log::error('Profile photos upload error: ' . $e->getMessage());
-            \Log::error('Stack trace: ' . $e->getTraceAsString());
 
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to upload photos',
                 'error' => $e->getMessage(),
-                'trace' => config('app.debug') ? $e->getTraceAsString() : null
             ], 500);
         }
     }
 
-    // Additional method to get user's profile photos
     public function getProfilePhotos()
     {
         try {
             $user = Auth::user();
-            
-            \Log::info('Fetching profile photos for user: ' . $user->id);
-            
-            // Get or create profile album with a default title
+
+            // ── Centre users: fetch ALL photos linked to their camping centre ──────
+            // This includes admin-uploaded photos (user_id=NULL) and partner-uploaded
+            // photos (user_id=owner). The authoritative key is camping_centre_id.
+            if ($user->role_id === 3) {
+                $centreIds = $this->centreIdsForUser($user);
+
+                $photos = $centreIds->isNotEmpty()
+                    ? Photo::whereIn('camping_centre_id', $centreIds)
+                        ->orderBy('order', 'asc')
+                        ->orderBy('created_at', 'desc')
+                        ->get()
+                    : collect();
+
+                $formattedPhotos = $photos->map(fn($p) => [
+                    'id'          => $p->id,
+                    'url'         => storage_url($p->path_to_img),
+                    'path'        => $p->path_to_img,
+                    'is_cover'    => (bool) $p->is_cover,
+                    'order'       => $p->order,
+                    'created_at'  => $p->created_at?->format('Y-m-d H:i:s'),
+                    'uploaded_by' => $p->user_id ? 'partner' : 'admin',
+                ]);
+
+                // Load existing album for metadata (title/description) if present
+                $album = Album::where('user_id', $user->id)
+                    ->where('titre', 'Profile Gallery')
+                    ->first();
+
+                return response()->json([
+                    'success' => true,
+                    'album'   => $album ? [
+                        'id'          => $album->id,
+                        'title'       => $album->titre,
+                        'description' => $album->description,
+                        'cover_image' => $album->path_to_img ? storage_url($album->path_to_img) : null,
+                        'photo_count' => $photos->count(),
+                        'created_at'  => $album->created_at?->format('Y-m-d H:i:s'),
+                    ] : null,
+                    'photos' => $formattedPhotos->values()->all(),
+                ]);
+            }
+
+            // ── All other roles: original album-based logic ───────────────────────
             $album = Album::firstOrCreate(
-                [
-                    'user_id' => $user->id,
-                    'titre' => 'Profile Gallery',
-                ],
-                [
-                    'titre' => 'Profile Gallery',
-                    'description' => 'User profile gallery images',
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]
+                ['user_id' => $user->id, 'titre' => 'Profile Gallery'],
+                ['titre' => 'Profile Gallery', 'description' => 'User profile gallery images']
             );
 
-            // Get photos from this album
             $photos = Photo::where('user_id', $user->id)
                 ->where('album_id', $album->id)
                 ->orderBy('order', 'asc')
                 ->orderBy('created_at', 'desc')
                 ->get();
 
-            \Log::info('Album found/created: ' . $album->id . ', photos count: ' . $photos->count());
-
-            $formattedPhotos = $photos->map(function($photo) {
-                return [
-                    'id' => $photo->id,
-                    'url' => asset('storage/' . $photo->path_to_img),
-                    'path' => $photo->path_to_img,
-                    'is_cover' => (bool)$photo->is_cover,
-                    'order' => $photo->order,
-                    'created_at' => $photo->created_at ? $photo->created_at->format('Y-m-d H:i:s') : null,
-                ];
-            });
+            $formattedPhotos = $photos->map(fn($p) => [
+                'id'         => $p->id,
+                'url'        => storage_url($p->path_to_img),
+                'path'       => $p->path_to_img,
+                'is_cover'   => (bool) $p->is_cover,
+                'order'      => $p->order,
+                'created_at' => $p->created_at?->format('Y-m-d H:i:s'),
+            ]);
 
             return response()->json([
                 'success' => true,
-                'album' => [
-                    'id' => $album->id,
-                    'title' => $album->titre,
+                'album'   => [
+                    'id'          => $album->id,
+                    'title'       => $album->titre,
                     'description' => $album->description,
-                    'cover_image' => $album->path_to_img ? asset('storage/' . $album->path_to_img) : null,
+                    'cover_image' => $album->path_to_img ? storage_url($album->path_to_img) : null,
                     'photo_count' => $photos->count(),
-                    'created_at' => $album->created_at ? $album->created_at->format('Y-m-d H:i:s') : null,
+                    'created_at'  => $album->created_at?->format('Y-m-d H:i:s'),
                 ],
                 'photos' => $formattedPhotos->values()->all(),
             ]);
-            
+
         } catch (\Exception $e) {
             \Log::error('Error in getProfilePhotos: ' . $e->getMessage());
-            \Log::error('Stack trace: ' . $e->getTraceAsString());
-            
+
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch profile photos',
-                'error' => config('app.debug') ? $e->getMessage() : null,
+                'error'   => config('app.debug') ? $e->getMessage() : null,
             ], 500);
         }
     }
 
-    // Method to delete a photo
     public function deletePhoto($photoId)
     {
+        if ($deny = $this->denyIfPendingClaim()) return $deny;
+
         $user = Auth::user();
-        
-        // Get the user's profile album
+
+        // ── Centre users: scope deletion by camping_centre_id ─────────────────
+        if ($user->role_id === 3) {
+            $centreIds = $this->centreIdsForUser($user);
+
+            if ($centreIds->isEmpty()) {
+                return response()->json(['success' => false, 'message' => 'No linked centre found'], 404);
+            }
+
+            $photo = Photo::where('id', $photoId)
+                ->whereIn('camping_centre_id', $centreIds)
+                ->firstOrFail();
+
+            // Use the photo's own centre for any cascading updates
+            $campingCentreId = $photo->camping_centre_id;
+
+            DB::beginTransaction();
+            try {
+                if (Storage::disk('public')->exists($photo->path_to_img)) {
+                    Storage::disk('public')->delete($photo->path_to_img);
+                }
+
+                if ($photo->is_cover) {
+                    $nextCover = Photo::where('camping_centre_id', $campingCentreId)
+                        ->where('id', '!=', $photo->id)
+                        ->orderBy('order', 'asc')
+                        ->first();
+
+                    \App\Models\CampingCentre::where('id', $campingCentreId)
+                        ->update(['image' => $nextCover?->path_to_img]);
+
+                    if ($nextCover) {
+                        $nextCover->update(['is_cover' => 1]);
+                    }
+
+                    // Sync the album cover thumbnail if the user has a profile album
+                    $album = Album::where('user_id', $user->id)->where('titre', 'Profile Gallery')->first();
+                    if ($album && $album->path_to_img === $photo->path_to_img) {
+                        $album->update(['path_to_img' => $nextCover?->path_to_img]);
+                    }
+                }
+
+                $photo->delete();
+                DB::commit();
+
+                return response()->json(['success' => true, 'message' => 'Photo deleted successfully']);
+
+            } catch (\Exception $e) {
+                DB::rollBack();
+                \Log::error('Photo deletion error (centre): ' . $e->getMessage());
+                return response()->json(['success' => false, 'message' => 'Failed to delete photo', 'error' => $e->getMessage()], 500);
+            }
+        }
+
+        // ── All other roles: original album-based logic ───────────────────────
         $album = Album::where('user_id', $user->id)
             ->where('titre', 'Profile Gallery')
             ->first();
-        
+
         if (!$album) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Profile album not found',
-            ], 404);
+            return response()->json(['success' => false, 'message' => 'Profile album not found'], 404);
         }
-        
-        // Only delete photos from the profile album
+
         $photo = Photo::where('id', $photoId)
             ->where('user_id', $user->id)
             ->where('album_id', $album->id)
             ->firstOrFail();
 
         DB::beginTransaction();
-        
         try {
-            // Delete the physical file
             if (Storage::disk('public')->exists($photo->path_to_img)) {
                 Storage::disk('public')->delete($photo->path_to_img);
             }
 
-            // If this was the cover photo, update the album cover
             if ($photo->is_cover) {
                 $nextCover = Photo::where('album_id', $album->id)
                     ->where('user_id', $user->id)
                     ->where('id', '!=', $photo->id)
                     ->orderBy('order', 'asc')
                     ->first();
-                
+
                 if ($nextCover) {
                     $nextCover->update(['is_cover' => 1]);
                     $album->update(['path_to_img' => $nextCover->path_to_img]);
@@ -722,95 +1131,104 @@ class ProfileController extends Controller
                 }
             }
 
-            // Delete the photo record
             $photo->delete();
-
             DB::commit();
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Photo deleted successfully',
-            ]);
+            return response()->json(['success' => true, 'message' => 'Photo deleted successfully']);
 
         } catch (\Exception $e) {
             DB::rollBack();
-            
             \Log::error('Photo deletion error: ' . $e->getMessage());
-
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to delete photo',
-                'error' => $e->getMessage(),
-            ], 500);
+            return response()->json(['success' => false, 'message' => 'Failed to delete photo', 'error' => $e->getMessage()], 500);
         }
     }
 
-    // Method to set cover photo
     public function setCoverPhoto($photoId)
     {
+        if ($deny = $this->denyIfPendingClaim()) return $deny;
+
         $user = Auth::user();
-        
-        // Get the user's profile album
+
+        // ── Centre users: scope cover change by camping_centre_id ─────────────
+        if ($user->role_id === 3) {
+            $centreIds = $this->centreIdsForUser($user);
+
+            if ($centreIds->isEmpty()) {
+                return response()->json(['success' => false, 'message' => 'No linked centre found'], 404);
+            }
+
+            $photo = Photo::where('id', $photoId)
+                ->whereIn('camping_centre_id', $centreIds)
+                ->firstOrFail();
+
+            // Operate on the specific centre that owns this photo
+            $campingCentreId = $photo->camping_centre_id;
+
+            DB::beginTransaction();
+            try {
+                // Unset all covers for this centre
+                Photo::where('camping_centre_id', $campingCentreId)->update(['is_cover' => 0]);
+
+                $photo->update(['is_cover' => 1]);
+
+                // Keep camping_centre.image in sync
+                \App\Models\CampingCentre::where('id', $campingCentreId)
+                    ->update(['image' => $photo->path_to_img]);
+
+                // Sync profile album thumbnail if present
+                $album = Album::where('user_id', $user->id)->where('titre', 'Profile Gallery')->first();
+                if ($album) {
+                    $album->update(['path_to_img' => $photo->path_to_img]);
+                }
+
+                DB::commit();
+                return response()->json(['success' => true, 'message' => 'Cover photo updated successfully']);
+
+            } catch (\Exception $e) {
+                DB::rollBack();
+                \Log::error('Cover photo update error (centre): ' . $e->getMessage());
+                return response()->json(['success' => false, 'message' => 'Failed to update cover photo', 'error' => $e->getMessage()], 500);
+            }
+        }
+
+        // ── All other roles: original album-based logic ───────────────────────
         $album = Album::where('user_id', $user->id)
             ->where('titre', 'Profile Gallery')
             ->first();
-        
+
         if (!$album) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Profile album not found',
-            ], 404);
+            return response()->json(['success' => false, 'message' => 'Profile album not found'], 404);
         }
-        
-        // Only set cover for photos from the profile album
+
         $photo = Photo::where('id', $photoId)
             ->where('user_id', $user->id)
             ->where('album_id', $album->id)
             ->firstOrFail();
 
         DB::beginTransaction();
-        
         try {
-            // Reset all other cover photos in THIS album
             Photo::where('album_id', $album->id)
                 ->where('user_id', $user->id)
                 ->update(['is_cover' => 0]);
 
-            // Set this photo as cover
             $photo->update(['is_cover' => 1]);
 
-            // Update album cover image
-            $album->update([
-                'path_to_img' => $photo->path_to_img,
-                'updated_at' => now(),
-            ]);
+            $album->update(['path_to_img' => $photo->path_to_img, 'updated_at' => now()]);
 
             DB::commit();
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Cover photo updated successfully',
-            ]);
+            return response()->json(['success' => true, 'message' => 'Cover photo updated successfully']);
 
         } catch (\Exception $e) {
             DB::rollBack();
-            
             \Log::error('Cover photo update error: ' . $e->getMessage());
-
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to update cover photo',
-                'error' => $e->getMessage(),
-            ], 500);
+            return response()->json(['success' => false, 'message' => 'Failed to update cover photo', 'error' => $e->getMessage()], 500);
         }
     }
 
-    // Method to reorder photos
     public function reorderPhotos(Request $request)
     {
         $user = Auth::user();
         
-        // Get the user's profile album
         $album = Album::where('user_id', $user->id)
             ->where('titre', 'Profile Gallery')
             ->first();
@@ -858,59 +1276,220 @@ class ProfileController extends Controller
         }
     }
 
-    /**
-     * Get profile by user ID (for admin or specific needs)
-     */
-    public function showById($userId)
+    public function showById($id)
     {
-        $user = User::findOrFail($userId);
-        $profile = $user->profile;
+        $user = User::findOrFail($id);
 
-        if (!$profile) {
-            return response()->json(['message' => 'Profile not found'], 404);
+        // Enforce visibility — if profile is private and the requester is not the owner, block it
+        $profile = $user->profile;
+        $requesterId = Auth::id();
+
+        if ($profile && !$profile->is_public && $requesterId !== $user->id) {
+            return response()->json([
+                'success' => false,
+                'message'  => 'This profile is private.',
+                'is_private' => true,
+                'user' => [
+                    'id'         => $user->id,
+                    'first_name' => $user->first_name,
+                    'last_name'  => $user->last_name,
+                    'avatar'     => $user->avatar ? storage_url($user->avatar) : null,
+                    'role_id'    => $user->role_id,
+                ],
+            ], 403);
         }
 
-        $data = [
-            'user' => [
-                'id' => $user->id,
-                'first_name' => $user->first_name,
-                'last_name' => $user->last_name,
-                'email' => $user->email,
-                'phone_number' => $user->phone_number,
-                'ville' => $user->ville,
-                'role_id' => $user->role_id,
-            ],
-            'profile' => $profile,
-            'details' => null,
+        $userData = [
+            'id' => $user->id,
+            'first_name' => $user->first_name,
+            'last_name' => $user->last_name,
+            'email' => $user->email,
+            'phone_number' => $user->phone_number,
+            'ville' => $user->ville,
+            'avatar' => $user->avatar ? storage_url($user->avatar) : null,
+            'role_id' => $user->role_id,
+            'created_at' => $user->created_at,
         ];
 
-        switch ($profile->type) {
-            case 'guide':
-                $data['details'] = $profile->profileGuide;
-                break;
-            case 'centre':
-                $data['details'] = $profile->profileCentre;
-                break;
-            case 'groupe':
-                $data['details'] = $profile->profileGroupe;
-                break;
-            case 'fournisseur':
-                $data['details'] = $profile->profileFournisseur;
-                break;
+        if ($user->profile) {
+            $profile = $user->profile;
+            
+            $data = [
+                'user' => $userData,
+                'profile' => $profile,
+                'details' => null,
+            ];
+
+            switch ($profile->type) {
+                case 'guide':
+                    $data['details'] = $profile->profileGuide;
+                    break;
+                case 'centre':
+                    $data['details'] = $profile->profileCentre;
+                    break;
+                case 'groupe':
+                    $profileGroupe = $profile->profileGroupe;
+                    $data['details'] = $profileGroupe;
+
+                    // Album + photos (cover photo used as banner)
+                    $album = \App\Models\Album::with('photos')
+                        ->where('user_id', $user->id)
+                        ->latest()
+                        ->first();
+
+                    $data['album'] = $album ? [
+                        'id'     => $album->id,
+                        'photos' => $album->photos->map(fn($p) => [
+                            'id'       => $p->id,
+                            'url'      => $p->url,
+                            'is_cover' => (bool) $p->is_cover,
+                        ])->values(),
+                    ] : null;
+
+                    // Co-owners
+                    $data['co_owners'] = $profileGroupe
+                        ? $profileGroupe->coOwners()
+                            ->select('users.id', 'users.first_name', 'users.last_name', 'users.email', 'users.avatar')
+                            ->get()
+                            ->map(fn($u) => [
+                                'id'         => $u->id,
+                                'first_name' => $u->first_name,
+                                'last_name'  => $u->last_name,
+                                'email'      => $u->email,
+                                'avatar'     => $u->avatar ? storage_url($u->avatar) : null,
+                            ])
+                        : [];
+
+                    $feedbacks = \App\Models\Feedbacks::with('user')
+                        ->where('target_id', $user->id)
+                        ->where('type', 'groupe')
+                        ->where('status', 'approved')
+                        ->latest()
+                        ->take(5)
+                        ->get();
+
+                    $average = \App\Models\Feedbacks::where('target_id', $user->id)
+                        ->where('type', 'groupe')
+                        ->where('status', 'approved')
+                        ->avg('note');
+
+                    $data['feedback_summary'] = [
+                        'average_note' => round($average, 2),
+                        'feedback_count' => \App\Models\Feedbacks::where('target_id', $user->id)
+                            ->where('type', 'groupe')
+                            ->where('status', 'approved')
+                            ->count(),
+                        'latest_feedbacks' => $feedbacks,
+                    ];
+                    break;
+                case 'fournisseur':
+                    $data['details'] = $profile->profileFournisseur;
+                    break;
+            }
+
+            // Cover image URL (full URL for frontend)
+            if ($profile->cover_image) {
+                $data['cover_image_url'] = storage_url(ltrim($profile->cover_image, '/'));
+            }
+
+            // Profile gallery photos (visible to everyone when profile is public)
+            if ($user->role_id === 3) {
+                // Centre users: serve all photos from all linked centres
+                $centreIds = $this->centreIdsForUser($user);
+                if ($centreIds->isNotEmpty()) {
+                    $data['photos'] = \App\Models\Photo::whereIn('camping_centre_id', $centreIds)
+                        ->orderBy('order', 'asc')
+                        ->orderBy('created_at', 'desc')
+                        ->get()
+                        ->map(fn($p) => [
+                            'id'       => $p->id,
+                            'url'      => storage_url($p->path_to_img),
+                            'is_cover' => (bool) $p->is_cover,
+                            'order'    => $p->order,
+                        ])->values();
+                }
+            } else {
+                $album = \App\Models\Album::with(['photos' => function ($q) {
+                        $q->orderBy('order', 'asc')->orderBy('created_at', 'desc');
+                    }])
+                    ->where('user_id', $user->id)
+                    ->where('titre', 'Profile Gallery')
+                    ->first();
+
+                if ($album) {
+                    $data['photos'] = $album->photos->map(fn($p) => [
+                        'id'       => $p->id,
+                        'url'      => storage_url($p->path_to_img),
+                        'is_cover' => (bool) $p->is_cover,
+                        'order'    => $p->order,
+                    ])->values();
+                }
+            }
+
+            // Feedback summary for all types (if not already set for groupe)
+            if (!isset($data['feedback_summary'])) {
+                $feedbackType = $profile->type;
+                $average = \App\Models\Feedbacks::where('target_id', $user->id)
+                    ->where('type', $feedbackType)
+                    ->where('status', 'approved')
+                    ->avg('note');
+
+                $count = \App\Models\Feedbacks::where('target_id', $user->id)
+                    ->where('type', $feedbackType)
+                    ->where('status', 'approved')
+                    ->count();
+
+                if ($count > 0) {
+                    $data['feedback_summary'] = [
+                        'average_note'    => round($average, 2),
+                        'feedback_count'  => $count,
+                    ];
+                }
+            }
+
+            // Past events (public, non-sensitive)
+            $data['past_events'] = \App\Models\Reservations_events::where('user_id', $user->id)
+                ->whereIn('status', ['confirmed', 'completed', 'attended'])
+                ->with('event')
+                ->get()
+                ->filter(fn($r) => $r->event && $r->event->start_date)
+                ->sortByDesc(fn($r) => $r->event->start_date)
+                ->take(8)
+                ->map(fn($r) => [
+                    'id'       => $r->event->id,
+                    'title'    => $r->event->title,
+                    'date'     => $r->event->start_date,
+                    'location' => $r->event->address ?? null,
+                ])->values();
+
+            // Visited camping centers (unique, most recent first)
+            $data['visited_centres'] = \App\Models\Reservations_centre::where('user_id', $user->id)
+                ->whereIn('status', ['confirmed', 'completed'])
+                ->with('centre')
+                ->get()
+                ->filter(fn($r) => $r->centre)
+                ->sortByDesc('date_debut')
+                ->unique('centre_id')
+                ->take(8)
+                ->map(fn($r) => [
+                    'id'       => $r->centre->id,
+                    'name'     => $r->centre->name,
+                    'location' => $r->centre->ville ?? null,
+                    'date'     => $r->date_debut,
+                ])->values();
+
+            return response()->json($data);
         }
 
-        return response()->json($data);
+        return response()->json(['user' => $userData]);
     }
-    /**
-     * Add custom service
-     */
+
     public function addCustomService(Request $request, $centerId)
     {
         try {
             $user = Auth::user();
             $center = ProfileCentre::findOrFail($centerId);
 
-            // Verify ownership
             if ($center->profile->user_id !== $user->id) {
                 return response()->json([
                     'success' => false,
@@ -924,8 +1503,8 @@ class ProfileController extends Controller
                 'price' => 'required|numeric|min:0',
                 'unit' => 'required|string|max:50',
                 'is_available' => 'boolean',
-                'min_quantity' => 'integer|min:1',
-                'max_quantity' => 'nullable|integer|min:1',
+                'nbr_place' => 'nullable|integer|min:1'
+                
             ]);
 
             if ($validator->fails()) {
@@ -936,7 +1515,6 @@ class ProfileController extends Controller
                 ], 422);
             }
 
-            // Check if custom service with same name already exists for this center
             $existingService = ProfileCenterService::where('profile_center_id', $centerId)
                 ->whereNull('service_category_id')
                 ->where('name', $request->name)
@@ -951,15 +1529,14 @@ class ProfileController extends Controller
 
             $serviceData = [
                 'profile_center_id' => $centerId,
-                'service_category_id' => null, // NULL for custom services
+                'service_category_id' => null,
                 'name' => $request->name,
                 'description' => $request->description,
                 'price' => $request->price,
                 'is_available' => $request->is_available ?? true,
                 'is_standard' => false,
                 'unit' => $request->unit,
-                'min_quantity' => $request->min_quantity ?? 1,
-                'max_quantity' => $request->max_quantity,
+                'nbr_place' => $request->nbr_place,
             ];
 
             $service = ProfileCenterService::create($serviceData);
@@ -978,9 +1555,6 @@ class ProfileController extends Controller
         }
     }
 
-    /**
-     * Determine user type based on role_id
-     */
     private function determineUserType($roleId)
     {
         switch ($roleId) {
@@ -994,9 +1568,6 @@ class ProfileController extends Controller
         }
     }
 
-    /**
-     * Get specific profile details
-     */
     public function getProfileDetails($type, $userId)
     {
         $user = User::findOrFail($userId);
@@ -1029,41 +1600,6 @@ class ProfileController extends Controller
         ]);
     }
 
-    // Helper methods (keeping your existing ones)
-    private function getCurrentSeason()
-    {
-        $month = date('n');
-        if (in_array($month, [12, 1, 2])) return 'hiver';
-        if (in_array($month, [3, 4, 5])) return 'printemps';
-        if (in_array($month, [6, 7, 8])) return 'été';
-        return 'automne';
-    }
-
-    private function getUserPreferences($userId)
-    {
-        $user = User::findOrFail($userId);
-        return $user->preferences ? json_decode($user->preferences, true) : [];
-    }
-
-    private function getUserRegion($userId)
-    {
-        $user = User::findOrFail($userId);
-        $preferences = $this->getUserPreferences($userId);
-        
-        if (!empty($preferences['region'])) {
-            return $preferences['region'];
-        }
-
-        if (!empty($user->ville)) {
-            return $user->ville;
-        }
-
-        return 'Tunisie';
-    }
-
-        /**
-     * Get service categories
-     */
     public function getServiceCategories()
     {
         try {
@@ -1083,14 +1619,9 @@ class ProfileController extends Controller
             ], 500);
         }
     }
-
-    /**
-     * Get center services
-     */
     public function getCenterServices($centerId)
     {
         try {
-            // Check if center exists (no authentication required)
             $center = ProfileCentre::find($centerId);
             
             if (!$center) {
@@ -1100,50 +1631,69 @@ class ProfileController extends Controller
                 ], 404);
             }
 
-            // Only get available services for public access
-            $services = ProfileCenterService::with('serviceCategory')
-                ->where('profile_center_id', $centerId)
-                ->where('is_available', true) // Only return available services for public
+            $services = ProfileCenterService::where('profile_center_id', $centerId)
                 ->orderBy('is_standard', 'desc')
                 ->orderBy('created_at', 'asc')
                 ->get();
 
             $formattedServices = $services->map(function($service) {
-                // For custom services (service_category_id is NULL)
+                // Custom service (no category)
                 if (is_null($service->service_category_id)) {
                     return [
                         'id' => $service->id,
                         'service_category_id' => null,
-                        'name' => $service->name,
-                        'description' => $service->description,
+                        'name' => $service->name ?? 'Custom Service',
+                        'description' => $service->description ?? '',
                         'price' => (float) $service->price,
-                        'unit' => $service->unit,
+                        'unit' => $service->unit ?? 'unit',
                         'is_standard' => (bool) $service->is_standard,
                         'is_available' => (bool) $service->is_available,
-                        'min_quantity' => $service->min_quantity,
-                        'max_quantity' => $service->max_quantity,
+                        'nbr_place' => $service->nbr_place,
                         'is_custom' => true,
                     ];
                 }
-                
-                // For predefined category services
+
+                // Category-based service
+                $category = ServiceCategory::find($service->service_category_id);
+
                 return [
                     'id' => $service->id,
                     'service_category_id' => $service->service_category_id,
-                    'name' => $service->serviceCategory ? $service->serviceCategory->name : 'Service',
-                    'description' => $service->description ?? ($service->serviceCategory ? $service->serviceCategory->description : ''),
+                    'name' => $service->name ?? ($category ? $category->name : 'Service'),
+                    'description' => $service->description ?? ($category ? $category->description : ''),
                     'price' => (float) $service->price,
-                    'unit' => $service->unit,
+                    'unit' => $service->unit ?? ($category ? $category->unit : 'unit'),
                     'is_standard' => (bool) $service->is_standard,
                     'is_available' => (bool) $service->is_available,
-                    'min_quantity' => $service->min_quantity,
-                    'max_quantity' => $service->max_quantity,
+                    'nbr_place' => $service->nbr_place,
                     'is_custom' => false,
                 ];
             });
 
-            return response()->json($formattedServices);
+            // ✅ Ensure standard service exists
+            $hasStandardService = $formattedServices->contains('is_standard', true);
+            
+            if (!$hasStandardService) {
+                $defaultStandard = [
+                    'id' => null,
+                    'service_category_id' => 1,
+                    'name' => 'Basic Camping',
+                    'description' => 'Sleep with your own tent - access to basic facilities',
+                    'price' => (float) ($center->price_per_night ?? 15),
+                    'unit' => 'person/night',
+                    'is_standard' => true,
+                    'is_available' => true,
+                    'nbr_place' => null,
+                    'is_custom' => false,
+                ];
+                
+                $formattedServices->prepend($defaultStandard);
+            }
+
+            return response()->json($formattedServices->values());
         } catch (\Exception $e) {
+            \Log::error('getCenterServices error: ' . $e->getMessage());
+            
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch center services',
@@ -1151,14 +1701,12 @@ class ProfileController extends Controller
             ], 500);
         }
     }
-
     public function updateCenterService(Request $request, $centerId, $serviceId = null)
     {
         try {
             $user = Auth::user();
             $center = ProfileCentre::findOrFail($centerId);
 
-            // Verify ownership
             if ($center->profile->user_id !== $user->id) {
                 return response()->json([
                     'success' => false,
@@ -1173,8 +1721,7 @@ class ProfileController extends Controller
                 'price' => 'required|numeric|min:0',
                 'is_available' => 'boolean',
                 'unit' => 'required|string|max:50',
-                'min_quantity' => 'integer|min:1',
-                'max_quantity' => 'nullable|integer|min:1',
+                'nbr_place' => 'nullable|integer|min:1',
             ]);
 
             if ($validator->fails()) {
@@ -1185,39 +1732,35 @@ class ProfileController extends Controller
                 ], 422);
             }
 
-            // Determine if this is a custom service (service_category_id is null or empty)
             $isCustomService = empty($request->service_category_id);
             
-            // For new custom services, use the addCustomService method
             if (!$serviceId && $isCustomService) {
                 return $this->addCustomService($request, $centerId);
             }
 
+            $resolvedName = $request->name;
+            if (!$resolvedName && !$isCustomService) {
+                $cat = ServiceCategory::find($request->service_category_id);
+                $resolvedName = $cat?->name ?? 'Service';
+            }
+
             $serviceData = [
                 'profile_center_id' => $centerId,
-                'price' => $request->price,
-                'description' => $request->description,
-                'is_available' => $request->is_available ?? true,
-                'unit' => $request->unit,
-                'min_quantity' => $request->min_quantity ?? 1,
-                'max_quantity' => $request->max_quantity,
+                'name'              => $resolvedName,
+                'price'             => $request->price,
+                'description'       => $request->description,
+                'is_available'      => $request->is_available ?? true,
+                'unit'              => $request->unit,
+                'nbr_place'         => $request->nbr_place,
+                'is_refundable'     => $request->has('is_refundable') ? (bool) $request->is_refundable : true,
             ];
 
-            // Handle custom services
-            if ($isCustomService) {
-                $serviceData['service_category_id'] = null;
-                $serviceData['name'] = $request->name;
-                $serviceData['is_standard'] = false;
-            } else {
-                // For category-based services
-                $serviceData['service_category_id'] = $request->service_category_id;
-                $serviceData['is_standard'] = false;
-                
+            $isStandardCategory = false;
+            if (!$isCustomService) {
                 $serviceCategory = ServiceCategory::find($request->service_category_id);
                 if ($serviceCategory) {
-                    $serviceData['name'] = $serviceCategory->name;
+                    $isStandardCategory = $serviceCategory->is_standard;
                     
-                    // Check if price meets minimum requirement for standard categories
                     if ($serviceCategory->is_standard && $request->price < $serviceCategory->min_price) {
                         return response()->json([
                             'success' => false,
@@ -1225,6 +1768,11 @@ class ProfileController extends Controller
                         ], 422);
                     }
                 }
+                $serviceData['service_category_id'] = $request->service_category_id;
+                $serviceData['is_standard'] = $isStandardCategory;
+            } else {
+                $serviceData['service_category_id'] = null;
+                $serviceData['is_standard'] = false;
             }
 
             if ($serviceId) {
@@ -1232,30 +1780,22 @@ class ProfileController extends Controller
                 $service = ProfileCenterService::where('id', $serviceId)
                     ->where('profile_center_id', $centerId)
                     ->firstOrFail();
-                    
                 $service->update($serviceData);
+            } elseif ($isStandardCategory) {
+                // Upsert standard service to prevent duplicates
+                $service = ProfileCenterService::updateOrCreate(
+                    ['profile_center_id' => $centerId, 'is_standard' => true],
+                    $serviceData
+                );
             } else {
-                // Create new service
-                // Check if service already exists
-                $existingService = ProfileCenterService::where('profile_center_id', $centerId);
-                
-                if ($isCustomService) {
-                    $existingService = $existingService->where('name', $request->name)
-                        ->whereNull('service_category_id');
-                } else {
-                    $existingService = $existingService->where('service_category_id', $request->service_category_id);
-                }
-                
-                $existingService = $existingService->first();
-
-                if ($existingService) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Service already exists for this center'
-                    ], 409);
-                }
-
+                // Create new non-standard service
                 $service = ProfileCenterService::create($serviceData);
+            }
+
+            // Update price_per_night if this is the standard service
+            if ($isStandardCategory) {                
+                $center->price_per_night = $request->price;
+                $center->save();
             }
 
             return response()->json([
@@ -1265,8 +1805,6 @@ class ProfileController extends Controller
             ]);
         } catch (\Exception $e) {
             \Log::error('updateCenterService error: ' . $e->getMessage());
-            \Log::error('Stack trace: ' . $e->getTraceAsString());
-            \Log::error('Request data: ' . json_encode($request->all()));
             
             return response()->json([
                 'success' => false,
@@ -1276,18 +1814,12 @@ class ProfileController extends Controller
             ], 500);
         }
     }
-
-
-    /**
-     * Delete center service
-     */
     public function deleteCenterService($centerId, $serviceId)
     {
         try {
             $user = Auth::user();
             $center = ProfileCentre::findOrFail($centerId);
 
-            // Verify ownership
             if ($center->profile->user_id !== $user->id) {
                 return response()->json([
                     'success' => false,
@@ -1299,7 +1831,6 @@ class ProfileController extends Controller
                 ->where('profile_center_id', $centerId)
                 ->firstOrFail();
 
-            // Don't allow deletion of standard service
             if ($service->is_standard) {
                 return response()->json([
                     'success' => false,
@@ -1322,16 +1853,12 @@ class ProfileController extends Controller
         }
     }
 
-    /**
-     * Get center equipment
-     */
     public function getCenterEquipment($centerId)
     {
         try {
             $user = Auth::user();
             $center = ProfileCentre::findOrFail($centerId);
 
-            // Verify ownership
             if ($center->profile->user_id !== $user->id) {
                 return response()->json([
                     'success' => false,
@@ -1351,16 +1878,12 @@ class ProfileController extends Controller
         }
     }
 
-    /**
-     * Update center equipment
-     */
     public function updateCenterEquipment(Request $request, $centerId)
     {
         try {
             $user = Auth::user();
             $center = ProfileCentre::findOrFail($centerId);
 
-            // Verify ownership
             if ($center->profile->user_id !== $user->id) {
                 return response()->json([
                     'success' => false,
@@ -1407,4 +1930,84 @@ class ProfileController extends Controller
         }
     }
 
+    /**
+     * GET /profile/completion
+     * Returns a role-specific profile completion score and checklist.
+     */
+    public function completion()
+    {
+        $user    = Auth::user();
+        $profile = $user->profile;
+        $type    = $profile?->type ?? 'campeur';
+
+        $steps  = [];
+        $earned = 0;
+        $total  = 0;
+
+        // ── Shared fields (all roles) ──────────────────────────────────────────
+        $sharedSteps = [
+            ['key' => 'avatar',        'label' => 'Profile photo',      'done' => (bool) $user->avatar,        'link' => '/settings/images',   'weight' => 15],
+            ['key' => 'phone',         'label' => 'Phone number',        'done' => (bool) $user->phone_number,  'link' => '/settings',          'weight' => 10],
+            ['key' => 'city',          'label' => 'City',                'done' => (bool) $user->ville,         'link' => '/settings',          'weight' => 10],
+            ['key' => 'bio',           'label' => 'Bio / description',   'done' => (bool) $profile?->bio,       'link' => '/settings',          'weight' => 10],
+            ['key' => 'email_verified','label' => 'Email verified',      'done' => (bool) $user->email_verified_at, 'link' => '/emailverification', 'weight' => 15],
+        ];
+
+        // ── Role-specific fields ───────────────────────────────────────────────
+        $roleSteps = match ($type) {
+            'centre' => [
+                ['key' => 'centre_name',    'label' => 'Center name',        'done' => (bool) $profile?->profileCentre?->name,          'link' => '/settings',          'weight' => 10],
+                ['key' => 'centre_cap',     'label' => 'Capacity',           'done' => (bool) $profile?->profileCentre?->capacite,       'link' => '/settings',          'weight' => 5],
+                ['key' => 'centre_price',   'label' => 'Price per night',     'done' => (bool) $profile?->profileCentre?->price_per_night,'link' => '/settings',          'weight' => 5],
+                ['key' => 'centre_contact', 'label' => 'Contact email',       'done' => (bool) $profile?->profileCentre?->contact_email,  'link' => '/settings',          'weight' => 5],
+                ['key' => 'centre_photos',  'label' => 'Center photos',       'done' => (function() use ($user) {
+                    $cids = \App\Models\CampingCentre::where('user_id', $user->id)->pluck('id');
+                    return $cids->isNotEmpty()
+                        ? \App\Models\Photo::whereIn('camping_centre_id', $cids)->exists()
+                        : \App\Models\Photo::where('user_id', $user->id)->exists();
+                })(), 'link' => '/settings/images', 'weight' => 10],
+                ['key' => 'centre_service', 'label' => 'At least 1 service',  'done' => \App\Models\ProfileCenterService::where('profile_center_id', $profile?->profileCentre?->id ?? 0)->exists(), 'link' => '/settings/services', 'weight' => 5],
+                ['key' => 'legal_doc',      'label' => 'Legal document',      'done' => (bool) $profile?->profileCentre?->legal_document, 'link' => '/settings',          'weight' => 15],
+            ],
+            'guide' => [
+                ['key' => 'guide_zone',    'label' => 'Working zone',         'done' => (bool) $profile?->profileGuide?->zone_travail,      'link' => '/settings',        'weight' => 10],
+                ['key' => 'guide_cert',    'label' => 'Certificate uploaded', 'done' => (bool) $profile?->profileGuide?->certificat_path,   'link' => '/settings',        'weight' => 20],
+                ['key' => 'guide_tarif',   'label' => 'Daily rate',           'done' => (bool) $profile?->profileGuide?->tarif,             'link' => '/settings',        'weight' => 10],
+                ['key' => 'guide_exp',     'label' => 'Experience level',     'done' => (bool) $profile?->profileGuide?->experience,        'link' => '/settings',        'weight' => 5],
+            ],
+            'fournisseur' => [
+                ['key' => 'sup_category', 'label' => 'Product category',      'done' => (bool) $profile?->profileFournisseur?->product_category, 'link' => '/settings', 'weight' => 15],
+                ['key' => 'sup_price',    'label' => 'Price range',           'done' => (bool) $profile?->profileFournisseur?->intervale_prix,    'link' => '/settings', 'weight' => 10],
+                ['key' => 'sup_item',     'label' => 'At least 1 product',    'done' => \App\Models\Materielle::where('user_id', $user->id)->exists(), 'link' => '/settings/add-material', 'weight' => 15],
+            ],
+            'groupe' => [
+                ['key' => 'group_name',  'label' => 'Group name',             'done' => (bool) $profile?->profileGroupe?->nom_groupe,      'link' => '/settings',          'weight' => 15],
+                ['key' => 'group_cover', 'label' => 'Cover photo',            'done' => (bool) $profile?->cover_image,                     'link' => '/settings/images',   'weight' => 10],
+                ['key' => 'group_event', 'label' => 'At least 1 event',       'done' => \App\Models\Event::where('user_id', $user->id)->exists(), 'link' => '/settings/events', 'weight' => 15],
+            ],
+            default => [ // campeur
+                ['key' => 'activities',  'label' => 'Favorite activities',    'done' => (bool) $profile?->activities,                     'link' => '/settings',          'weight' => 15],
+                ['key' => 'cover',       'label' => 'Cover image',            'done' => (bool) $profile?->cover_image,                    'link' => '/settings/images',   'weight' => 10],
+            ],
+        };
+
+        $steps = array_merge($sharedSteps, $roleSteps);
+
+        foreach ($steps as $step) {
+            $total  += $step['weight'];
+            if ($step['done']) $earned += $step['weight'];
+        }
+
+        $percentage = $total > 0 ? (int) round(($earned / $total) * 100) : 0;
+
+        return response()->json([
+            'success'    => true,
+            'percentage' => $percentage,
+            'earned'     => $earned,
+            'total'      => $total,
+            'steps'      => $steps,
+            'role'       => $type,
+            'is_active'  => $user->is_active,
+        ]);
+    }
 }

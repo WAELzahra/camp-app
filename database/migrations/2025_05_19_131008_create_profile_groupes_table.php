@@ -1,6 +1,5 @@
 <?php
 
-
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -13,7 +12,11 @@ return new class extends Migration {
             $table->string('nom_groupe')->nullable();
             $table->unsignedBigInteger('id_album_photo')->nullable();
             $table->unsignedBigInteger('id_annonce')->nullable();
-            $table->string('cin_responsable')->nullable();
+            
+            // Documents du groupe
+            $table->string('patente_path')->nullable();
+            
+            
             $table->timestamps();
         });
     }

@@ -6,31 +6,29 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\HasOneThrough;
+use Illuminate\Support\Collection;
 
 class ProfileCentre extends Model
 {
     protected $table = 'profile_centres';
-    
+
     protected $fillable = [
         'profile_id',
         'name',
-        'adresse',
         'capacite',
         'price_per_night',
         'category',
-        'services_offerts',
-        'additional_services_description',
         'legal_document',
+        'document_legal_type',
+        'document_legal_expiration',
         'disponibilite',
-        'ad_id',
-        'photo_album_id',
         'latitude',
         'longitude',
         'contact_email',
         'contact_phone',
         'manager_name',
-        'established_date'
+        'established_date',
     ];
 
     protected $casts = [
@@ -40,6 +38,7 @@ class ProfileCentre extends Model
         'longitude' => 'decimal:8',
         'established_date' => 'date',
         'capacite' => 'integer',
+        'document_legal_expiration' => 'date',
     ];
 
     /**
@@ -51,30 +50,88 @@ class ProfileCentre extends Model
     }
 
     /**
-     * Get the user through profile
+     * Get the user through profile (proper Eloquent relationship)
      */
-    public function user()
+    public function user(): HasOneThrough
     {
-        return $this->profile->user();
+        return $this->hasOneThrough(
+            User::class,
+            Profile::class,
+            'id',
+            'id',
+            'profile_id',
+            'user_id'
+        );
     }
 
     /**
-     * Get services offered by this center
+     * Get services offered by this center (category-based only)
      */
     public function services(): BelongsToMany
     {
-        return $this->belongsToMany(ServiceCategory::class, 'profile_center_services')
+        return $this->belongsToMany(ServiceCategory::class, 'profile_center_services', 'profile_center_id', 'service_category_id')
                     ->using(ProfileCenterService::class)
-                    ->withPivot('price', 'unit', 'description', 'is_available', 'min_quantity', 'max_quantity', 'is_standard')
+                    ->withPivot('price', 'unit', 'description', 'is_available', 'nbr_place', 'is_standard')
                     ->withTimestamps();
     }
 
     /**
-     * Get center services pivot records
+     * Get center services pivot records (ALL services including custom)
      */
     public function centerServices(): HasMany
     {
         return $this->hasMany(ProfileCenterService::class, 'profile_center_id');
+    }
+
+    /**
+     * Get ALL available services (category-based + custom)
+     * Returns a collection with both types merged
+     */
+    public function availableServices(): BelongsToMany
+    {
+        return $this->belongsToMany(ServiceCategory::class, 'profile_center_services', 'profile_center_id', 'service_category_id')
+                    ->using(ProfileCenterService::class)
+                    ->withPivot('price', 'unit', 'description', 'is_available','nbr_place', 'is_standard')
+                    ->withTimestamps()
+                    ->wherePivot('is_available', true);
+    }
+
+    /**
+     * Get ALL available services including custom services (COLLECTION)
+     */
+    public function getAllAvailableServices(): Collection
+    {
+        // Get category-based available services
+        $categoryServices = $this->availableServices()
+            ->get()
+            ->map(function($service) {
+                $service->is_custom = false;
+                return $service;
+            });
+
+        // Get custom services (service_category_id = null)
+        $customServices = $this->centerServices()
+            ->whereNull('service_category_id')
+            ->where('is_available', true)
+            ->get()
+            ->map(function($service) {
+                $service->is_custom = true;
+                return $service;
+            });
+
+        // Merge both collections
+        return $categoryServices->concat($customServices);
+    }
+    /**
+     * Get category-based available services (original relationship - kept for compatibility)
+     */
+    public function availableCategoryServices(): BelongsToMany
+    {
+        return $this->belongsToMany(ServiceCategory::class, 'profile_center_services', 'profile_center_id', 'service_category_id')
+                    ->using(ProfileCenterService::class)
+                    ->withPivot('price', 'unit', 'description', 'is_available', 'nbr_place', 'is_standard')
+                    ->withTimestamps()
+                    ->wherePivot('is_available', true);
     }
 
     /**
@@ -90,29 +147,19 @@ class ProfileCentre extends Model
      */
     public function standardService()
     {
-        return $this->services()
-                    ->wherePivot('is_standard', true)
-                    ->wherePivot('is_available', true)
+        return $this->centerServices()
+                    ->where('is_standard', true)
+                    ->where('is_available', true)
                     ->first();
-    }
-
-    /**
-     * Get available services (excluding unavailable ones)
-     */
-    public function availableServices()
-    {
-        return $this->services()
-                    ->wherePivot('is_available', true);
     }
 
     /**
      * Get additional (paid) services
      */
-    public function additionalServices()
+    public function additionalServices(): Collection
     {
-        return $this->services()
-                    ->wherePivot('is_available', true)
-                    ->wherePivot('is_standard', false);
+        return $this->availableServices()
+                    ->filter(fn($service) => !($service->is_standard ?? false));
     }
 
     /**
@@ -131,7 +178,7 @@ class ProfileCentre extends Model
      */
     public function availableEquipment()
     {
-        return $this->equipment()->available();
+        return $this->equipment()->where('is_available', true);
     }
 
     /**
@@ -170,84 +217,109 @@ class ProfileCentre extends Model
     }
 
     /**
-     * Sync services for this center
+     * Get the legal document URL
      */
-    public function syncServices(array $services): void
+    public function getLegalDocumentUrlAttribute(): ?string
     {
-        $syncData = [];
-        foreach ($services as $service) {
-            $syncData[$service['service_category_id']] = [
-                'price' => $service['price'],
-                'unit' => $service['unit'] ?? null,
-                'description' => $service['description'] ?? null,
-                'is_available' => $service['is_available'] ?? true,
-                'is_standard' => $service['is_standard'] ?? false,
-                'min_quantity' => $service['min_quantity'] ?? 1,
-                'max_quantity' => $service['max_quantity'] ?? null,
-            ];
+        return $this->legal_document ? storage_url($this->legal_document) : null;
+    }
+
+    /**
+     * Get the legal document type label
+     */
+    public function getDocumentLegalTypeLabelAttribute(): ?string
+    {
+        $types = [
+            'registre_commerce' => 'Registre de Commerce',
+            'licence' => "Licence d'exploitation",
+            'agrement' => 'Agrément',
+            'carte_identite_fiscale' => "Carte d'Identité Fiscale",
+            'patente' => 'Patente',
+            'autre' => 'Autre document'
+        ];
+
+        return $types[$this->document_legal_type] ?? $this->document_legal_type ?? 'Document légal';
+    }
+
+    /**
+     * Check if document is valid (not expired)
+     */
+    public function isDocumentLegalValid(): bool
+    {
+        if (!$this->document_legal_expiration) {
+            return true;
         }
         
-        $this->services()->sync($syncData);
+        return $this->document_legal_expiration->isFuture();
+    }
+
+    /**
+     * Check if document is expiring soon (within 30 days)
+     */
+    public function isDocumentLegalExpiringSoon(): bool
+    {
+        if (!$this->document_legal_expiration) {
+            return false;
+        }
         
-        // Update services_offerts for backward compatibility
-        $this->updateServicesOfferts();
+        return $this->document_legal_expiration->isFuture() && 
+               $this->document_legal_expiration->diffInDays(now()) <= 30;
     }
 
     /**
-     * Update services_offerts field from services and equipment
+     * Check if document is expired
      */
-    public function updateServicesOfferts(): void
+    public function isDocumentLegalExpired(): bool
     {
-        $equipmentList = $this->availableEquipment()
-            ->pluck('type')
-            ->map(function ($type) {
-                return ProfileCenterEquipment::TYPE_TRANSLATIONS[$type] ?? $type;
-            })
-            ->toArray();
-
-        $servicesList = $this->availableServices()
-            ->get()
-            ->map(function ($service) {
-                return "{$service->name} ({$service->pivot->price} TND/{$service->pivot->unit})";
-            })
-            ->toArray();
-
-        $additional = $this->additional_services_description ? [$this->additional_services_description] : [];
-
-        $this->update([
-            'services_offerts' => implode(', ', array_merge($equipmentList, $servicesList, $additional))
-        ]);
+        if (!$this->document_legal_expiration) {
+            return false;
+        }
+        
+        return $this->document_legal_expiration->isPast();
     }
 
     /**
-     * Add equipment to center
+     * Check if profile has legal document
      */
-    public function addEquipment(string $type, bool $isAvailable = true, string $notes = null): ProfileCenterEquipment
+    public function hasLegalDocument(): bool
     {
-        return ProfileCenterEquipment::create([
-            'profile_center_id' => $this->id,
-            'type' => $type,
-            'is_available' => $isAvailable,
-            'notes' => $notes,
-        ]);
+        return !is_null($this->legal_document);
     }
 
     /**
-     * Add service to center
+     * Get document status with color for UI
      */
-    public function addService(ServiceCategory $service, float $price, array $options = []): ProfileCenterService
+    public function getDocumentLegalStatusAttribute(): array
     {
-        return ProfileCenterService::create([
-            'profile_center_id' => $this->id,
-            'service_category_id' => $service->id,
-            'price' => $price,
-            'unit' => $options['unit'] ?? $service->unit,
-            'description' => $options['description'] ?? $service->description,
-            'is_available' => $options['is_available'] ?? true,
-            'is_standard' => $options['is_standard'] ?? $service->is_standard,
-            'min_quantity' => $options['min_quantity'] ?? 1,
-            'max_quantity' => $options['max_quantity'] ?? null,
-        ]);
+        if (!$this->hasLegalDocument()) {
+            return [
+                'label' => 'Document manquant',
+                'color' => 'red',
+                'icon' => 'fa-times-circle'
+            ];
+        }
+
+        if ($this->isDocumentLegalExpired()) {
+            return [
+                'label' => 'Document expiré',
+                'color' => 'red',
+                'icon' => 'fa-exclamation-circle'
+            ];
+        }
+
+        if ($this->isDocumentLegalExpiringSoon()) {
+            return [
+                'label' => 'Expire bientôt',
+                'color' => 'orange',
+                'icon' => 'fa-exclamation-triangle'
+            ];
+        }
+
+        return [
+            'label' => 'Document valide',
+            'color' => 'green',
+            'icon' => 'fa-check-circle'
+        ];
     }
 
     /**
@@ -285,5 +357,44 @@ class ProfileCentre extends Model
             $q->where('name', $serviceName)
               ->where('profile_center_services.is_available', true);
         });
+    }
+
+    /**
+     * Scope centers with valid documents
+     */
+    public function scopeWithValidDocuments($query)
+    {
+        return $query->whereNotNull('legal_document')
+                     ->where(function($q) {
+                         $q->whereNull('document_legal_expiration')
+                           ->orWhere('document_legal_expiration', '>', now());
+                     });
+    }
+
+    /**
+     * Scope centers with expiring documents
+     */
+    public function scopeWithExpiringDocuments($query, int $days = 30)
+    {
+        return $query->whereNotNull('document_legal_expiration')
+                     ->where('document_legal_expiration', '<=', now()->addDays($days))
+                     ->where('document_legal_expiration', '>', now());
+    }
+
+    /**
+     * Scope centers with expired documents
+     */
+    public function scopeWithExpiredDocuments($query)
+    {
+        return $query->whereNotNull('document_legal_expiration')
+                     ->where('document_legal_expiration', '<', now());
+    }
+
+    /**
+     * Scope centers without documents
+     */
+    public function scopeWithoutDocuments($query)
+    {
+        return $query->whereNull('legal_document');
     }
 }

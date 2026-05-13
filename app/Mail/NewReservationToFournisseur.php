@@ -3,26 +3,25 @@
 namespace App\Mail;
 
 use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
-use Illuminate\Mail\Mailables\Content;
-use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
 
 class NewReservationToFournisseur extends Mailable
 {
+    use Queueable, SerializesModels;
+
     public $reservation;
-    public $user;
-    
-    public function __construct($reservation, $user)
+    public $camper;
+
+    public function __construct($reservation, $camper)
     {
         $this->reservation = $reservation;
-        $this->user = $user;
+        $this->camper      = $camper;
     }
-    
+
     public function build()
     {
-        return $this->subject('📩 Nouvelle réservation reçue')
-                    ->view('emails.new_reservation_materielle');
+        return $this->subject('New Reservation Request Received')
+                    ->markdown('emails.new_to_fournisseur');
     }
 }

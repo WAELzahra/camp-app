@@ -4,186 +4,442 @@ namespace App\Http\Controllers\feedback;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Validator;
 use App\Models\Feedbacks;
 use App\Models\User;
+use App\Models\Events;
+use App\Models\CampingZones;
 use App\Http\Controllers\Controller;
 
 class FeedbackController extends Controller
 {
+    // ── Allowed types (single source of truth) ────────────────────────────────
+    private const ALLOWED_TYPES = ['guide', 'groupe', 'fournisseur', 'centre', 'zone', 'event', 'materielle'];
 
- /**
-     * Créer ou mettre à jour un feedback
+    /**
+     * Get all feedbacks with filters (admin / camper dashboard).
      */
-    public function storeOrUpdateFeedback(Request $request, $type, $targetId)
+    public function index(Request $request)
     {
-        $user = Auth::user()->load('role');
+        $user     = Auth::user();
+        $userRole = $user->role_id ?? null;
 
-        // Vérification du rôle
-        if (!$user->role || $user->role->name !== 'campeur') {
-            return response()->json(['message' => 'Seuls les campeurs peuvent laisser un feedback.'], 403);
+        $query = Feedbacks::with(['user', 'user_target', 'event', 'zone', 'materielle']);
+
+        if ($userRole == 1) {
+            $query->where('user_id', $user->id);
+        } elseif ($userRole == 4) {
+            // Fournisseur: only feedbacks about their own profile or their materiels
+            $query->where(function ($q) use ($user) {
+                $q->where(function ($sub) use ($user) {
+                    $sub->where('type', 'fournisseur')
+                        ->where('target_id', $user->id);
+                })->orWhere(function ($sub) use ($user) {
+                    $sub->where('type', 'materielle')
+                        ->whereHas('materielle', fn ($m) => $m->where('fournisseur_id', $user->id));
+                });
+            });
         }
 
-        // Types autorisés
-        $allowedTypes = ['groupe', 'guide', 'fournisseur', 'centre_user', 'centre_camping'];
-        $type = strtolower($type);
+        if ($request->filled('status'))    $query->where('status', $request->status);
+        if ($request->filled('type'))      $query->where('type', $request->type);
+        if ($request->filled('target_id')) $query->where('target_id', $request->target_id);
 
-        if (!in_array($type, $allowedTypes)) {
-            return response()->json(['message' => 'Type de cible non valide.'], 400);
+        if ($request->filled('search')) {
+            $s = $request->search;
+            $query->where(function ($q) use ($s) {
+                $q->where('contenu', 'like', "%{$s}%")
+                  ->orWhereHas('user', fn ($u) =>
+                      $u->where('first_name', 'like', "%{$s}%")
+                        ->orWhere('last_name',  'like', "%{$s}%")
+                  );
+            });
         }
 
-        // Récupération de la cible selon le type
-        try {
-            switch ($type) {
-                case 'centre_user':
-                    $target = User::with('role')
-                        ->where('id', $targetId)
-                        ->whereHas('role', fn($q) => $q->where('name', 'centre'))
-                        ->firstOrFail();
-                    break;
+        if ($request->filled('date_from')) $query->whereDate('created_at', '>=', $request->date_from);
+        if ($request->filled('date_to'))   $query->whereDate('created_at', '<=', $request->date_to);
 
-                case 'centre_camping':
-                    $target = CampingCentre::findOrFail($targetId);
-                    break;
+        $query->orderBy($request->get('sort_by', 'created_at'), $request->get('sort_order', 'desc'));
 
-                default:
-                    $target = User::with('role')
-                        ->where('id', $targetId)
-                        ->whereHas('role', fn($q) => $q->where('name', $type))
-                        ->firstOrFail();
-                    break;
-            }
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            return response()->json(['message' => 'Cible introuvable.'], 404);
+        // Fournisseurs get all their feedbacks at once (already tightly scoped to their data).
+        // Everyone else gets paginated results.
+        if ($userRole == 4) {
+            $items     = $query->get()->map(fn ($f) => $this->formatFeedback($f));
+            return response()->json([
+                'success'   => true,
+                'feedbacks' => ['data' => $items],
+            ]);
         }
 
-        // Validation des données
-        $validated = $request->validate([
-            'contenu' => 'nullable|string|max:1000',
-            'note'    => 'required|integer|min:1|max:5',
-        ]);
-
-        // Création ou mise à jour du feedback
-        $feedback = Feedbacks::firstOrNew([
-            'user_id'   => $user->id,
-            'target_id' => $targetId,
-            'type'      => $type,
-        ]);
-
-        $feedback->contenu = $validated['contenu'] ?? $feedback->contenu;
-        $feedback->note    = $validated['note'];
-        $feedback->status  = 'pending';
-        $feedback->save();
-
-        $message = $feedback->wasRecentlyCreated
-            ? 'Votre avis a été soumis. Il sera publié après validation.'
-            : 'Votre avis a été mis à jour. Il sera publié après validation.';
+        $feedbacks = $query->paginate($request->get('per_page', 15));
+        $feedbacks->getCollection()->transform(fn ($f) => $this->formatFeedback($f));
 
         return response()->json([
-            'message'  => $message,
-            'feedback' => $feedback,
-            'target'   => $target, // Optionnel : pour afficher les infos du guide/groupe
-        ], $feedback->wasRecentlyCreated ? 201 : 200);
+            'success'   => true,
+            'feedbacks' => $feedbacks,
+            'filters'   => [
+                'statuses' => $this->getStatusCounts(),
+                'types'    => $this->getTypeCounts(),
+            ],
+        ]);
     }
 
     /**
-     * Lister les feedbacks validés d’un profil (groupe / guide / fournisseur / centre)
+     * Get feedbacks for a specific target.
      */
-    public function getFeedbacks($type, $targetId)
-{
-    $allowedTypes = ['groupe','guide','fournisseur','centre_user','centre_camping'];
-    if (!in_array($type, $allowedTypes)) {
-        return response()->json(['message' => 'Type de cible non valide.'], 400);
-    }
+    public function getTargetFeedbacks($type, $targetId)
+    {
+        if (!in_array($type, self::ALLOWED_TYPES)) {
+            return response()->json(['success' => false, 'message' => 'Type de cible non valide.'], 400);
+        }
 
-    $feedbacks = Feedbacks::with('user')
-        ->where('target_id', $targetId)
-        ->where('type', $type)
-        ->where('status', 'approved')
-        ->latest()
-        ->get();
+        $query = Feedbacks::with(['user', 'user_target', 'zone', 'event', 'materielle'])
+            ->where('type', $type)
+            ->where('status', 'approved')
+            ->latest();
 
-    $avg = Feedbacks::where('target_id', $targetId)
-        ->where('type', $type)
-        ->where('status', 'approved')
-        ->avg('note');
+        $query = $this->applyTargetFilter($query, $type, $targetId);
 
-    return response()->json([
-        'average_note' => is_null($avg) ? null : round($avg, 1),
-        'count'        => $feedbacks->count(),
-        'feedbacks'    => $feedbacks,
-    ]);
-}
+        $feedbacks    = $query->get();
+        $averageNote  = $this->applyTargetFilter(
+            Feedbacks::where('type', $type)->where('status', 'approved'),
+            $type, $targetId
+        )->avg('note');
 
-
-
-// Ajouter un feedback sur une zone
-    public function storeZone(Request $request, $zoneId)
-{
-    $data = $request->validate([
-        'note' => 'required|integer|min:1|max:5',
-        'contenu' => 'nullable|string',
-    ]);
-
-    // Vérifie si un feedback existe déjà pour cet utilisateur et cette zone
-    $existing = Feedbacks::where('user_id', auth()->id())
-        ->where('zone_id', $zoneId)
-        ->where('type', 'zone')
-        ->first();
-
-    if ($existing) {
         return response()->json([
-            'message' => 'Vous avez déjà soumis un avis pour cette zone.',
-            'feedback' => $existing
-        ], 200);
+            'success'      => true,
+            'average_note' => $averageNote ? round($averageNote, 1) : null,
+            'count'        => $feedbacks->count(),
+            'feedbacks'    => $feedbacks->map(fn ($f) => $this->formatFeedback($f)),
+        ]);
     }
 
-    // Création du feedback
-    $feedback = Feedbacks::create([
-        'user_id' => auth()->id(),
-        'zone_id' => $zoneId,
-        'target_id' => null,
-        'event_id' => null,
-        'contenu' => $data['contenu'],
-        'note' => $data['note'],
-        'type' => 'zone',
-        'status' => 'pending',
-    ]);
+    /**
+     * Store a new feedback.
+     */
+    public function store(Request $request)
+    {
+        $user = Auth::user();
 
-    return response()->json([
-        'message' => 'Votre avis sur la zone a été enregistré avec succès. Il sera publié après validation.',
-        'feedback' => $feedback
-    ], 201);
+        $rules = [
+            'type'    => 'required|in:' . implode(',', self::ALLOWED_TYPES),
+            'note'    => 'required|integer|min:1|max:5',
+            'contenu' => 'nullable|string|max:1000',
+        ];
+
+        // Target ID validation per type
+        switch ($request->type) {
+            case 'zone':        $rules['zone_id']        = 'required|exists:camping_zones,id'; break;
+            case 'event':       $rules['event_id']       = 'required|exists:events,id';        break;
+            case 'materielle':  $rules['materielle_id']  = 'required|exists:materielles,id';   break;
+            default:            $rules['target_id']      = 'required|exists:users,id';         break;
+        }
+
+        $validator = Validator::make($request->all(), $rules);
+        if ($validator->fails()) {
+            return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
+        }
+
+        // Duplicate check
+        $existing = $this->applyTargetFilter(
+            Feedbacks::where('user_id', $user->id)->where('type', $request->type),
+            $request->type,
+            $this->getTargetIdFromRequest($request)
+        )->first();
+
+        if ($existing) {
+            return response()->json([
+                'success'  => false,
+                'message'  => 'Vous avez déjà soumis un avis pour cette cible.',
+                'feedback' => $this->formatFeedback($existing),
+            ], 400);
+        }
+
+        $feedbackData = [
+            'user_id' => $user->id,
+            'type'    => $request->type,
+            'note'    => $request->note,
+            'contenu' => $request->contenu,
+            'status'  => 'pending',
+        ];
+
+        switch ($request->type) {
+            case 'zone':       $feedbackData['zone_id']       = $request->zone_id;       break;
+            case 'event':      $feedbackData['event_id']      = $request->event_id;      break;
+            case 'materielle': $feedbackData['materielle_id'] = $request->materielle_id; break;
+            default:           $feedbackData['target_id']     = $request->target_id;     break;
+        }
+
+        $feedback = Feedbacks::create($feedbackData);
+
+        return response()->json([
+            'success'  => true,
+            'message'  => 'Votre avis a été soumis avec succès. Il sera publié après validation.',
+            'feedback' => $this->formatFeedback($feedback->load('user')),
+        ], 201);
     }
 
+    /**
+     * Update a feedback.
+     */
+    public function update(Request $request, $id)
+    {
+        $feedback = Feedbacks::findOrFail($id);
+        $user     = Auth::user();
 
-// Lister tous les feedbacks d'une zone
+        if ($feedback->user_id !== $user->id && $user->role_id !== 6) {
+            return response()->json(['success' => false, 'message' => 'Non autorisé.'], 403);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'note'    => 'sometimes|integer|min:1|max:5',
+            'contenu' => 'nullable|string|max:1000',
+        ]);
+        if ($validator->fails()) {
+            return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
+        }
+
+        if ($request->has('note'))    $feedback->note    = $request->note;
+        if ($request->has('contenu')) $feedback->contenu = $request->contenu;
+
+        if ($user->role_id === 6) {
+            if ($request->has('response')) $feedback->response = $request->response;
+            if ($request->has('status'))   $feedback->status   = $request->status;
+        } else {
+            $feedback->status = 'pending';
+        }
+
+        $feedback->save();
+
+        return response()->json([
+            'success'  => true,
+            'message'  => 'Feedback updated successfully!',
+            'feedback' => $this->formatFeedback($feedback->load('user')),
+        ]);
+    }
+
+    /**
+     * Delete a feedback.
+     */
+    public function destroy($id)
+    {
+        $feedback = Feedbacks::findOrFail($id);
+        $user     = Auth::user();
+
+        if ($feedback->user_id !== $user->id && $user->role_id !== 6) {
+            return response()->json(['success' => false, 'message' => 'Non autorisé.'], 403);
+        }
+
+        $feedback->delete();
+        return response()->json(['success' => true, 'message' => 'Feedback deleted successfully!']);
+    }
+
+    /**
+     * Moderate feedback (admin only).
+     */
+    public function moderate(Request $request, $id)
+    {
+        $user = Auth::user();
+        if ($user->role_id !== 6) {
+            return response()->json(['success' => false, 'message' => 'Non autorisé.'], 403);
+        }
+
+        $feedback  = Feedbacks::findOrFail($id);
+        $validator = Validator::make($request->all(), [
+            'status'           => 'required|in:approved,rejected',
+            'response'         => 'nullable|string|max:1000',
+            'rejection_reason' => 'required_if:status,rejected|string|max:500',
+        ]);
+        if ($validator->fails()) {
+            return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
+        }
+
+        $feedback->status = $request->status;
+        if ($request->has('response'))         $feedback->response         = $request->response;
+        if ($request->status === 'rejected' && $request->has('rejection_reason'))
+            $feedback->rejection_reason = $request->rejection_reason;
+
+        $feedback->save();
+
+        return response()->json([
+            'success'  => true,
+            'message'  => 'Feedback ' . ($request->status === 'approved' ? 'approuvé' : 'rejeté') . ' avec succès.',
+            'feedback' => $this->formatFeedback($feedback),
+        ]);
+    }
+
+    /**
+     * Get feedback statistics.
+     */
+    public function statistics()
+    {
+        $user  = Auth::user();
+        $stats = [
+            'total'    => Feedbacks::count(),
+            'pending'  => Feedbacks::where('status', 'pending')->count(),
+            'approved' => Feedbacks::where('status', 'approved')->count(),
+            'rejected' => Feedbacks::where('status', 'rejected')->count(),
+            'by_type'  => [
+                'guide'       => Feedbacks::where('type', 'guide')->count(),
+                'groupe'      => Feedbacks::where('type', 'groupe')->count(),
+                'fournisseur' => Feedbacks::where('type', 'fournisseur')->count(),
+                'centre'      => Feedbacks::where('type', 'centre')->count(),
+                'zone'        => Feedbacks::where('type', 'zone')->count(),
+                'event'       => Feedbacks::where('type', 'event')->count(),
+                'materielle'  => Feedbacks::where('type', 'materielle')->count(),
+            ],
+            'average_rating' => round(Feedbacks::where('status', 'approved')->avg('note'), 1),
+        ];
+
+        if ($user->role_id === 1) {
+            $stats['my_feedbacks'] = Feedbacks::where('user_id', $user->id)->count();
+            $stats['my_average']   = round(
+                Feedbacks::where('user_id', $user->id)->where('status', 'approved')->avg('note'), 1
+            );
+        }
+
+        return response()->json(['success' => true, 'statistics' => $stats]);
+    }
+
+    // ── Backward-compat wrappers ──────────────────────────────────────────────
+
+    public function storeOrUpdateFeedback(Request $request, $type, $targetId)
+    {
+        $request->merge(['type' => $type, 'target_id' => $targetId]);
+        return $this->store($request);
+    }
+
+    public function getFeedbacks($type, $targetId)
+    {
+        return $this->getTargetFeedbacks($type, $targetId);
+    }
+
+    public function storeZone(Request $request, $zoneId)
+    {
+        $request->merge(['type' => 'zone', 'zone_id' => $zoneId]);
+        return $this->store($request);
+    }
+
     public function listZone($zoneId)
     {
-        $feedbacks = Feedbacks::with('user')
-            ->where('zone_id', $zoneId)
-            ->where('type', 'zone')
-            ->where('status', 'approved')
-            ->latest()
-            ->get();
-
-        return response()->json($feedbacks);
+        return $this->getTargetFeedbacks('zone', $zoneId);
     }
 
-// Méthode auxiliaire pour retourner les infos liées au feedback
-// Dans FeedbackController
-public function getFeedbackRelatedPublic($id)
-{
-    $feedback = Feedbacks::with(['zone', 'event', 'user_target'])->findOrFail($id);
-    return response()->json([
-        'feedback_id' => $feedback->id,
-        'related' => $this->getFeedbackRelated($feedback),
-    ]);
-}
+    // ── Private helpers ───────────────────────────────────────────────────────
 
+    /** Apply the correct WHERE clause for each feedback type. */
+    private function applyTargetFilter($query, string $type, $targetId)
+    {
+        return match ($type) {
+            'zone'       => $query->where('zone_id',       $targetId),
+            'event'      => $query->where('event_id',      $targetId),
+            'materielle' => $query->where('materielle_id', $targetId),
+            default      => $query->where('target_id',     $targetId),
+        };
+    }
 
+    /** Extract the target ID from the request based on the feedback type. */
+    private function getTargetIdFromRequest(Request $request): mixed
+    {
+        return match ($request->type) {
+            'zone'       => $request->zone_id,
+            'event'      => $request->event_id,
+            'materielle' => $request->materielle_id,
+            default      => $request->target_id,
+        };
+    }
 
+    private function getStatusCounts(): array
+    {
+        return [
+            'pending'  => Feedbacks::where('status', 'pending')->count(),
+            'approved' => Feedbacks::where('status', 'approved')->count(),
+            'rejected' => Feedbacks::where('status', 'rejected')->count(),
+        ];
+    }
 
+    private function getTypeCounts(): array
+    {
+        return [
+            'guide'       => Feedbacks::where('type', 'guide')->count(),
+            'groupe'      => Feedbacks::where('type', 'groupe')->count(),
+            'fournisseur' => Feedbacks::where('type', 'fournisseur')->count(),
+            'centre'      => Feedbacks::where('type', 'centre')->count(),
+            'zone'        => Feedbacks::where('type', 'zone')->count(),
+            'event'       => Feedbacks::where('type', 'event')->count(),
+            'materielle'  => Feedbacks::where('type', 'materielle')->count(),
+        ];
+    }
+    private function formatFeedback($feedback): array
+    {
+        $formatted = [
+            'id'           => $feedback->id,
+            'user_id'      => $feedback->user_id,
+            'user'         => $feedback->user ? [
+                'id'         => $feedback->user->id,
+                'first_name' => $feedback->user->first_name,
+                'last_name'  => $feedback->user->last_name,
+                'email'      => $feedback->user->email,
+                'avatar'     => $feedback->user->avatar ? storage_url($feedback->user->avatar) : null,                'role_id'    => $feedback->user->role_id,
+                'ville'      => $feedback->user->ville,
+                'is_active'  => $feedback->user->is_active,
+            ] : null,
+            'target_id'    => $feedback->target_id,
+            'event_id'     => $feedback->event_id,
+            'zone_id'      => $feedback->zone_id,
+            'materielle_id'=> $feedback->materielle_id,
+            'contenu'      => $feedback->contenu,
+            'response'     => $feedback->response,
+            'note'         => $feedback->note,
+            'type'         => $feedback->type,
+            'status'       => $feedback->status,
+            'created_at'   => $feedback->created_at,
+            'updated_at'   => $feedback->updated_at,
+        ];
 
+        // Add target info for clickable profiles
+        if ($feedback->target_id) {
+            $targetUser = $feedback->user_target;
+            if ($targetUser) {
+                $formatted['target'] = [
+                    'id'         => $targetUser->id,
+                    'first_name' => $targetUser->first_name,
+                    'last_name'  => $targetUser->last_name,
+                    'avatar'     => $targetUser->avatar ? storage_url($targetUser->avatar) : null,
+                    'role_id'    => $targetUser->role_id,
+                ];
+            }
+        }
 
+        // Add target name for display (backward compatibility)
+        switch ($feedback->type) {
+            case 'zone':
+                if ($feedback->zone) {
+                    $formatted['target_name']   = $feedback->zone->nom;
+                    $formatted['target_detail'] = 'Zone: ' . $feedback->zone->nom;
+                }
+                break;
+            case 'event':
+                if ($feedback->event) {
+                    $formatted['target_name']   = $feedback->event->titre;
+                    $formatted['target_detail'] = 'Event: ' . $feedback->event->titre;
+                }
+                break;
+            case 'materielle':
+                if ($feedback->materielle) {
+                    $formatted['target_name']   = $feedback->materielle->nom;
+                    $formatted['target_detail'] = 'Materielle: ' . $feedback->materielle->nom;
+                }
+                break;
+            default:
+                if ($feedback->user_target) {
+                    $name = $feedback->user_target->first_name . ' ' . $feedback->user_target->last_name;
+                    $formatted['target_name']   = $name;
+                    $formatted['target_detail'] = ucfirst($feedback->type) . ': ' . $name;
+                }
+                break;
+        }
 
+        return $formatted;
+    }
 }

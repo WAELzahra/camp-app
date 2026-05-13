@@ -2,17 +2,36 @@
 
 use Illuminate\Support\Facades\Broadcast;
 
-/*
-|--------------------------------------------------------------------------
-| Broadcast Channels
-|--------------------------------------------------------------------------
-|
-| Here you may register all of the event broadcasting channels that your
-| application supports. The given channel authorization callbacks are
-| used to check if an authenticated user can listen to the channel.
-|
-*/
+Broadcast::channel('conversation.{conversationId}', function ($user, $conversationId) {
+    $conversation = \App\Models\Conversation::find($conversationId);
 
-Broadcast::channel('App.Models.User.{id}', function ($user, $id) {
-    return (int) $user->id === (int) $id;
+    if (!$conversation || !$conversation->hasParticipant($user->id)) {
+        return false;
+    }
+
+    return [
+        'id'         => $user->id,
+        'first_name' => $user->first_name,
+        'last_name'  => $user->last_name,
+        'avatar'     => $user->avatar,
+        'is_online'  => $user->isOnline(),
+        'last_seen'  => $user->last_login_at,
+    ];
+});
+
+// ✅ NEW: each user has their own private channel for global real-time events
+// (new messages from any conversation, system alerts, etc.)
+Broadcast::channel('user.{userId}', function ($user, $userId) {
+    // Only the authenticated user can join their own channel
+    return (int) $user->id === (int) $userId;
+});
+
+Broadcast::channel('group.{groupId}', function ($user, $groupId) {
+    if (!$user) return false;
+    return true;
+});
+
+// Admin-only alerts channel (new reports, system alerts)
+Broadcast::channel('admin-alerts', function ($user) {
+    return $user && $user->role_id === 6;
 });

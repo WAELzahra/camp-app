@@ -11,20 +11,20 @@ class VerifyCsrfToken extends Middleware
      *
      * @var array<int, string>
      */
-    // protected $except = [
-    //     //
-    // ];
-
     protected $except = [
         'register',
-        'login',
+        // 'login',
         'api/forgot-password',
         'api/verify-password',
         'api/reset-password',
         'api/send-verification',
         'resend-verification',
-
-
+        'broadcasting/auth',
+        // AJOUTEZ CES LIGNES POUR VOS ROUTES ADMIN
+        'api/admin/*',           // Exclure toutes les routes admin API
+        'api/admin/users/*',      // Exclure toutes les routes users
+        'api/admin/users/*/photos', // Exclure spécifiquement l'upload de photos
+        'api/*/photos',           // Exclure toutes les routes photos
+        'sanctum/csrf-cookie',    // Route pour rafraîchir le cookie CSRF
     ];
-    
 }

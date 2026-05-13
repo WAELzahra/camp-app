@@ -13,6 +13,8 @@ class Kernel extends ConsoleKernel
     protected function schedule(Schedule $schedule)
 {
     $schedule->command('events:send-reminders')->dailyAt('08:00'); // ex: chaque jour à 8h
+    $schedule->command('users:clean-status')->everyFiveMinutes();
+
 }
 
 

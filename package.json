@@ -3,7 +3,7 @@
     "type": "module",
     "scripts": {
         "dev": "vite",
-        "build": "vite build"
+        "build": "echo 'Frontend deployed on Cloudflare Pages'"
     },
     "devDependencies": {
         "@tailwindcss/forms": "^0.5.2",
@@ -16,6 +16,7 @@
     },
     "dependencies": {
         "laravel-echo": "^1.19.0",
-        "socket.io-client": "^4.8.1"
+        "socket.io-client": "^4.8.1",
+        "use-debounce": "^10.1.0"
     }
 }

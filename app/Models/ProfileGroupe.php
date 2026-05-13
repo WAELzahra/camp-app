@@ -1,12 +1,6 @@
 <?php
 
-// app/Models/ProfileGroupe.php
-
 namespace App\Models;
-use App\Models\Profile;
-use App\Models\Album;
-use App\Models\User;
-use App\Models\Photos; 
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -15,28 +9,51 @@ class ProfileGroupe extends Model
 {
     use HasFactory;
 
+    protected $table = 'profile_groupes';
+
     protected $fillable = [
         'profile_id',
         'nom_groupe',
         'id_album_photo',
         'id_annonce',
-        'cin_responsable',
+        'patente_path',
     ];
 
+    // Relations
     public function profile()
     {
         return $this->belongsTo(Profile::class);
     }
 
     public function followers()
-{
-    return $this->belongsToMany(User::class, 'follows')->withTimestamps();
-}
+    {
+        return $this->belongsToMany(User::class, 'follows')->withTimestamps();
+    }
 
-public function album()
-{
-    return $this->hasOne(Album::class, 'id_album_photo', 'id');
-}
+    public function coOwners()
+    {
+        return $this->belongsToMany(User::class, 'groupe_co_owners', 'profile_groupe_id', 'user_id')
+            ->withTimestamps();
+    }
 
+    public function album()
+    {
+        return $this->hasOne(Album::class, 'id', 'id_album_photo');
+    }
 
+    /**
+     * Get the patente URL
+     */
+    public function getPatenteUrlAttribute(): ?string
+    {
+        return $this->patente_path ? storage_url($this->patente_path) : null;
+    }
+
+    /**
+     * Check if profile has patente
+     */
+    public function hasPatente(): bool
+    {
+        return !is_null($this->patente_path);
+    }
 }

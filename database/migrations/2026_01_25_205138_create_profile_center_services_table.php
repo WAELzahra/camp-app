@@ -18,12 +18,10 @@ return new class extends Migration
             $table->text('description')->nullable();
             $table->boolean('is_available')->default(true);
             $table->boolean('is_standard')->default(false);
-            $table->integer('min_quantity')->default(1);
-            $table->integer('max_quantity')->nullable();
+            $table->integer('nbr_place')->nullable()->default(1);
             $table->timestamps();
             
             // Specify a shorter unique constraint name
-            $table->unique(['profile_center_id', 'service_category_id'], 'pcs_pc_id_sc_id_unique');
             
             $table->index(['is_available', 'is_standard'], 'pcs_available_standard_idx');
         });

@@ -1,0 +1,92 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class WalletTransaction extends Model
+{
+    protected $fillable = [
+        'user_id',
+        'related_user_id',
+        'type',
+        'category',
+        'amount_gross',
+        'commission_rate',
+        'commission_amount',
+        'net_amount',
+        'reference_type',
+        'reference_id',
+        'description',
+    ];
+
+    protected $casts = [
+        'amount_gross'      => 'float',
+        'commission_rate'   => 'float',
+        'commission_amount' => 'float',
+        'net_amount'        => 'float',
+    ];
+
+    public function user()
+    {
+        return $this->belongsTo(User::class);
+    }
+
+    public function relatedUser()
+    {
+        return $this->belongsTo(User::class, 'related_user_id');
+    }
+
+    public static function logCredit(
+        int $userId,
+        string $category,
+        float $amountGross,
+        float $commissionRate,
+        float $commissionAmount,
+        float $netAmount,
+        string $referenceType,
+        ?int $referenceId = null,
+        string $description = '',
+        ?int $relatedUserId = null
+    ): self {
+        return self::create([
+            'user_id'           => $userId,
+            'related_user_id'   => $relatedUserId,
+            'type'              => 'credit',
+            'category'          => $category,
+            'amount_gross'      => $amountGross,
+            'commission_rate'   => $commissionRate,
+            'commission_amount' => $commissionAmount,
+            'net_amount'        => $netAmount,
+            'reference_type'    => $referenceType,
+            'reference_id'      => $referenceId,
+            'description'       => $description,
+        ]);
+    }
+
+    public static function logDebit(
+        int $userId,
+        string $category,
+        float $amount,
+        string $referenceType,
+        ?int $referenceId = null,
+        string $description = '',
+        ?int $relatedUserId = null,
+        float $commissionRate = 0,
+        float $commissionAmount = 0
+    ): self {
+        return self::create([
+            'user_id'           => $userId,
+            'related_user_id'   => $relatedUserId,
+            'type'              => 'debit',
+            'category'          => $category,
+            'amount_gross'      => $amount,
+            'commission_rate'   => $commissionRate,
+            'commission_amount' => $commissionAmount,
+            'net_amount'        => round($amount - $commissionAmount, 2),
+            'reference_type'    => $referenceType,
+            'reference_id'      => $referenceId,
+            'description'       => $description,
+        ]);
+    }
+}

@@ -24,10 +24,10 @@ class Kernel extends HttpKernel
     ];
 
     protected $routeMiddleware = [
-    // autres middlewares
-    'active' => \App\Http\Middleware\CheckIfUserIsActive::class,
-    'admin' => \App\Http\Middleware\AdminMiddleware::class,
-    'role' => \App\Http\Middleware\RoleMiddleware::class,
+    'active'          => \App\Http\Middleware\CheckIfUserIsActive::class,
+    'require.active'  => \App\Http\Middleware\RequireActiveAccount::class,
+    'admin'           => \App\Http\Middleware\AdminMiddleware::class,
+    'role'            => \App\Http\Middleware\RoleMiddleware::class,
 ];
 
 
@@ -44,7 +44,8 @@ class Kernel extends HttpKernel
             \Illuminate\View\Middleware\ShareErrorsFromSession::class,
             \App\Http\Middleware\VerifyCsrfToken::class,
             \Illuminate\Routing\Middleware\SubstituteBindings::class,
-            
+            \App\Http\Middleware\TrackUserActivity::class, // Add this
+
         ],
         
         
@@ -52,6 +53,8 @@ class Kernel extends HttpKernel
             \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,
             \Illuminate\Routing\Middleware\ThrottleRequests::class.':api',
             \Illuminate\Routing\Middleware\SubstituteBindings::class,
+            \App\Http\Middleware\TrackUserActivity::class, 
+
         ],
     ];
 
@@ -79,7 +82,9 @@ class Kernel extends HttpKernel
         'centre' => \App\Http\Middleware\UserIsCentre::class,
         'fournisseur' => \App\Http\Middleware\UserIsFournisseur::class,
         'campeur_or_centre' => \App\Http\Middleware\CheckCampeurOrCentreRole::class,
-
+        'group' => \App\Http\Middleware\UserIsGroup::class,
+        'supplier_or_camper'        => \App\Http\Middleware\SupplierOrCamper::class,
+        'centre.not.pending'        => \App\Http\Middleware\EnsureCentreNotPendingClaim::class,
 
     ];
 }

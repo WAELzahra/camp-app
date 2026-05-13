@@ -3,51 +3,228 @@
 namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
-use App\Models\Events;
-use App\Models\User;
-use App\Models\Circuit;
-use Illuminate\Support\Str;
+use Illuminate\Support\Facades\DB;
 
 class EventSeeder extends Seeder
 {
-    public function run(): void
+    public function run()
     {
-        $groupeUsers = User::whereHas('role', function ($q) {
-            $q->where('name', 'groupe');
-        })->get();
+        $events = [
+            // Camping events (group_id = 4 - Nejikh Group)
+            [
+                'id' => 1,
+                'group_id' => 4,
+                'title' => 'Camping Saharien - Douz',
+                'description' => 'Une expérience unique dans le désert tunisien. Profitez des nuits étoilées et des paysages à couper le souffle.',
+                'event_type' => 'camping',
+                'start_date' => now()->addDays(10)->format('Y-m-d'),
+                'end_date' => now()->addDays(13)->format('Y-m-d'),
+                'capacity' => 20,
+                'price' => 250.00,
+                'remaining_spots' => 8,
+                'camping_duration' => 3,
+                'camping_gear' => 'tente, sac de couchage, matelas',
+                'is_group_travel' => 1,
+                'departure_city' => 'Tunis',
+                'arrival_city' => 'Douz',
+                'departure_time' => '07:00:00',
+                'estimated_arrival_time' => '14:00:00',
+                'bus_company' => null,
+                'bus_number' => null,
+                'city_stops' => null,
+                'difficulty' => 'moderate', // Changed from 'modérée'
+                'hiking_duration' => null,
+                'elevation_gain' => null,
+                'latitude' => 33.4597,
+                'longitude' => 9.0205,
+                'address' => 'Douz, Kébili, Tunisie',
+                'tags' => json_encode(['désert', 'camping', 'étoiles', 'aventure']),
+                'is_active' => 1,
+                'status' => 'scheduled', // Changed from 'open' to match enum
+                'views_count' => 45,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 2,
+                'group_id' => 5, // Forest Rangers group
+                'title' => 'Randonnée à Ain Draham',
+                'description' => 'Découvrez les forêts luxuriantes du nord-ouest de la Tunisie. Randonnée à travers les chênes-lièges et vues panoramiques.',
+                'event_type' => 'hiking',
+                'start_date' => now()->addDays(5)->format('Y-m-d'),
+                'end_date' => now()->addDays(6)->format('Y-m-d'),
+                'capacity' => 15,
+                'price' => 120.00,
+                'remaining_spots' => 3,
+                'camping_duration' => 1,
+                'camping_gear' => 'chaussures de randonnée, eau, casquette',
+                'is_group_travel' => 0,
+                'departure_city' => 'Jendouba',
+                'arrival_city' => 'Ain Draham',
+                'departure_time' => '08:30:00',
+                'estimated_arrival_time' => '10:00:00',
+                'bus_company' => null,
+                'bus_number' => null,
+                'city_stops' => null,
+                'difficulty' => 'easy', // Changed from 'facile'
+                'hiking_duration' => 4.00,
+                'elevation_gain' => 300,
+                'latitude' => 36.7749,
+                'longitude' => 8.6833,
+                'address' => 'Ain Draham, Jendouba, Tunisie',
+                'tags' => json_encode(['forêt', 'randonnée', 'nature', 'montagne']),
+                'is_active' => 1,
+                'status' => 'scheduled', // Changed from 'open'
+                'views_count' => 32,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 3,
+                'group_id' => 6, // Coastal Adventures group
+                'title' => 'Voyage aux Îles Kerkennah',
+                'description' => 'Explorez les magnifiques îles Kerkennah avec leurs plages de sable fin et leur ambiance paisible. Transport inclus.',
+                'event_type' => 'voyage',
+                'start_date' => now()->addDays(15)->format('Y-m-d'),
+                'end_date' => now()->addDays(18)->format('Y-m-d'),
+                'capacity' => 30,
+                'price' => 350.00,
+                'remaining_spots' => 12,
+                'camping_duration' => 3,
+                'camping_gear' => null,
+                'is_group_travel' => 1,
+                'departure_city' => 'Sfax',
+                'arrival_city' => 'Kerkennah',
+                'departure_time' => '09:00:00',
+                'estimated_arrival_time' => '10:30:00',
+                'bus_company' => 'Sfax Transport',
+                'bus_number' => 'ST-456',
+                'city_stops' => json_encode([
+                    ['city' => 'Sfax Port', 'arrival_time' => '09:00:00', 'departure_time' => '09:30:00'],
+                    ['city' => 'Kerkennah (Sidi Youssef)', 'arrival_time' => '10:30:00', 'departure_time' => null]
+                ]),
+                'difficulty' => null, // null is allowed
+                'hiking_duration' => null,
+                'elevation_gain' => null,
+                'latitude' => 34.7054,
+                'longitude' => 11.2346,
+                'address' => 'Îles Kerkennah, Sfax, Tunisie',
+                'tags' => json_encode(['îles', 'plage', 'mer', 'détente']),
+                'is_active' => 1,
+                'status' => 'scheduled', // Changed from 'open'
+                'views_count' => 67,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 4,
+                'group_id' => 4,
+                'title' => 'Camping à Tabarka',
+                'description' => 'Camping au bord de la mer avec activités nautiques et randonnées dans les environs.',
+                'event_type' => 'camping',
+                'start_date' => now()->addDays(3)->format('Y-m-d'),
+                'end_date' => now()->addDays(6)->format('Y-m-d'),
+                'capacity' => 25,
+                'price' => 280.00,
+                'remaining_spots' => 0,
+                'camping_duration' => 3,
+                'camping_gear' => 'tente, sac de couchage, lampe frontale',
+                'is_group_travel' => 1,
+                'departure_city' => 'Tunis',
+                'arrival_city' => 'Tabarka',
+                'departure_time' => '06:30:00',
+                'estimated_arrival_time' => '11:30:00',
+                'bus_company' => 'Tabarka Tours',
+                'bus_number' => 'TT-789',
+                'city_stops' => null,
+                'difficulty' => 'moderate', // Changed from 'modérée'
+                'hiking_duration' => null,
+                'elevation_gain' => null,
+                'latitude' => 36.9544,
+                'longitude' => 8.7583,
+                'address' => 'Tabarka, Jendouba, Tunisie',
+                'tags' => json_encode(['plage', 'camping', 'mer', 'activités nautiques']),
+                'is_active' => 1,
+                'status' => 'finished', // Changed from 'closed' to match enum
+                'views_count' => 89,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 5,
+                'group_id' => 5,
+                'title' => 'Randonnée à Zaghouan',
+                'description' => 'Randonnée au Djebel Zaghouan avec vue panoramique et découverte des sources romaines.',
+                'event_type' => 'hiking',
+                'start_date' => now()->addDays(20)->format('Y-m-d'),
+                'end_date' => now()->addDays(20)->format('Y-m-d'),
+                'capacity' => 20,
+                'price' => 80.00,
+                'remaining_spots' => 7,
+                'camping_duration' => 0,
+                'camping_gear' => 'chaussures de randonnée, bâtons, eau',
+                'is_group_travel' => 0,
+                'departure_city' => 'Tunis',
+                'arrival_city' => 'Zaghouan',
+                'departure_time' => '07:30:00',
+                'estimated_arrival_time' => '09:00:00',
+                'bus_company' => null,
+                'bus_number' => null,
+                'city_stops' => null,
+                'difficulty' => 'difficult', // Changed from 'difficile'
+                'hiking_duration' => 6.00,
+                'elevation_gain' => 800,
+                'latitude' => 36.4086,
+                'longitude' => 10.1433,
+                'address' => 'Zaghouan, Tunisie',
+                'tags' => json_encode(['montagne', 'randonnée', 'historique', 'panorama']),
+                'is_active' => 1,
+                'status' => 'scheduled', // Changed from 'upcoming'
+                'views_count' => 23,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 6,
+                'group_id' => 4,
+                'title' => 'Voyage à Djerba',
+                'description' => 'Séjour tout inclus à Djerba avec hébergement en hôtel et excursions organisées.',
+                'event_type' => 'voyage',
+                'start_date' => now()->addDays(45)->format('Y-m-d'),
+                'end_date' => now()->addDays(49)->format('Y-m-d'),
+                'capacity' => 40,
+                'price' => 550.00,
+                'remaining_spots' => 22,
+                'camping_duration' => 4,
+                'camping_gear' => null,
+                'is_group_travel' => 1,
+                'departure_city' => 'Tunis',
+                'arrival_city' => 'Djerba',
+                'departure_time' => '05:00:00',
+                'estimated_arrival_time' => '12:00:00',
+                'bus_company' => 'Djerba Express',
+                'bus_number' => 'DE-101',
+                'city_stops' => json_encode([
+                    ['city' => 'Tunis', 'arrival_time' => '05:00:00', 'departure_time' => '05:30:00'],
+                    ['city' => 'Sousse', 'arrival_time' => '08:00:00', 'departure_time' => '08:15:00'],
+                    ['city' => 'Sfax', 'arrival_time' => '10:00:00', 'departure_time' => '10:30:00'],
+                    ['city' => 'Djerba', 'arrival_time' => '12:00:00', 'departure_time' => null]
+                ]),
+                'difficulty' => null,
+                'hiking_duration' => null,
+                'elevation_gain' => null,
+                'latitude' => 33.8076,
+                'longitude' => 10.8451,
+                'address' => 'Djerba, Médenine, Tunisie',
+                'tags' => json_encode(['île', 'plage', 'luxe', 'excursions']),
+                'is_active' => 0,
+                'status' => 'pending', // Changed from 'draft'
+                'views_count' => 12,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ];
 
-        $circuits = Circuit::all();
-
-        if ($groupeUsers->isEmpty() || $circuits->isEmpty()) {
-            $this->command->warn('Aucun groupe ou circuit disponible pour créer des événements.');
-            return;
-        }
-
-        $statuses = ['scheduled', 'finished', 'canceled', 'postponed', 'full'];
-
-        foreach ($groupeUsers as $user) {
-            for ($i = 0; $i < 3; $i++) {
-                $dateSortie = now()->addDays(rand(5, 30));
-                $dateRetoure = (clone $dateSortie)->addDays(rand(1, 3));
-                $circuit = $circuits->random();
-
-                Events::create([
-                    'title' => 'Événement ' . Str::random(5),
-                    'group_id' => $user->id,
-                    'description' => 'Un événement exceptionnel à vivre avec le groupe.',
-                    'category' => 'Aventure',
-                    'date_sortie' => $dateSortie->toDateString(),
-                    'date_retoure' => $dateRetoure->toDateString(),
-                    'ville_passente' => [$circuit->adresse_debut_circuit, $circuit->adresse_fin_circuit],
-                    'tags' => 'désert,nature,exploration',
-                    'nbr_place_total' => $total = rand(15, 50),
-                    'nbr_place_restante' => rand(0, $total),
-                    'prix_place' => rand(50, 200) + rand(0, 99) / 100,
-                    'circuit_id' => $circuit->id,
-                    'is_active' => true,
-                    'status' => $statuses[array_rand($statuses)],
-                ]);
-            }
-        }
+        DB::table('events')->insert($events);
     }
 }

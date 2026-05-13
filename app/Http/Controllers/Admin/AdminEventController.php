@@ -4,368 +4,448 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Events;
-use Illuminate\Http\Request;
+use App\Models\User;
 use App\Models\Reservations_events;
 use App\Mail\EventActivated;
+use App\Mail\EventDeactivated;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Response;
-use App\Models\Users; 
-use App\Models\Circuit; 
-use App\Mail\EventDeactivated;
-
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\DB;
 
 class AdminEventController extends Controller
 {
-
-// Affiche la liste des événements avec pagination    
-    public function index()
+    /**
+     * Liste tous les événements (avec filtres et pagination)
+     */
+    public function index(Request $request)
     {
-        return response()->json(Events::latest()->paginate(10));
+        $query = Events::with(['group', 'photos']);
+
+        if ($request->filled('status') && $request->status !== 'all') {
+            $query->where('status', $request->status);
+        }
+        if ($request->filled('event_type') && $request->event_type !== 'all') {
+            $query->where('event_type', $request->event_type);
+        }
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('title', 'like', "%{$search}%")
+                  ->orWhere('description', 'like', "%{$search}%");
+            });
+        }
+        if ($request->filled('date_from')) {
+            $query->whereDate('start_date', '>=', $request->date_from);
+        }
+        if ($request->filled('date_to')) {
+            $query->whereDate('end_date', '<=', $request->date_to);
+        }
+
+        $sortBy  = $request->get('sort_by', 'created_at');
+        $sortDir = $request->get('sort_dir', 'desc');
+        $query->orderBy($sortBy, $sortDir);
+
+        $events = $query->paginate($request->get('per_page', 20));
+
+        return response()->json([
+            'success' => true,
+            'data'    => $events->items(),
+            'meta'    => [
+                'current_page' => $events->currentPage(),
+                'per_page'     => $events->perPage(),
+                'total'        => $events->total(),
+                'last_page'    => $events->lastPage(),
+            ],
+        ]);
     }
 
-    // Affiche les événements d'un groupe spécifique
+    /**
+     * Afficher un événement
+     */
     public function show($id)
     {
-        $event = Events::with('group')->find($id);
-        return $event ? response()->json($event) : response()->json(['message' => 'Événement introuvable'], 404);
-    }
-//// Permet à un administrateur de créer un nouvel événement
-//    public function store(Request $request)
-// {
-//     // Optionnel : vérifier que l'utilisateur est admin
-//     if (auth()->user()->role->name !== 'admin') {
-//         return response()->json(['message' => 'Accès refusé : seuls les admins peuvent créer des événements.'], 403);
-//     }
+        $event = Events::with(['group', 'photos', 'reservation'])->find($id);
 
-//     // Validation des données, ici on demande group_id car admin peut créer pour un groupe spécifique
-//     $validated = $request->validate([
-//         'title' => 'required|string|max:255',
-//         'description' => 'nullable|string',
-//         'category' => 'required|string',
-//         'date_sortie' => 'required|date',
-//         'date_retoure' => 'required|date|after_or_equal:date_sortie',
-//         'ville_passente' => 'nullable|array',
-//         'nbr_place_total' => 'required|integer|min:1',
-//         'prix_place' => 'required|numeric|min:0',
-//         'circuit_id' => 'required|exists:circuits,id',
-//         'group_id' => 'required|exists:users,id', // vérifie que le groupe existe
-//         'status' => 'nullable|string|in:pending,active,canceled', // statuts possibles, à adapter
-//         'is_active' => 'nullable|boolean',
-//     ]);
+        if (!$event) {
+            return response()->json(['success' => false, 'message' => 'Événement non trouvé'], 404);
+        }
 
-//     $event = Events::create([
-//         'title' => $validated['title'],
-//         'description' => $validated['description'] ?? null,
-//         'category' => $validated['category'],
-//         'date_sortie' => $validated['date_sortie'],
-//         'date_retoure' => $validated['date_retoure'],
-//         'ville_passente' => $validated['ville_passente'] ? json_encode($validated['ville_passente']) : null,
-//         'nbr_place_total' => $validated['nbr_place_total'],
-//         'nbr_place_restante' => $validated['nbr_place_total'],
-//         'prix_place' => $validated['prix_place'],
-//         'circuit_id' => $validated['circuit_id'],
-//         'group_id' => $validated['group_id'],
-//         'status' => $validated['status'] ?? 'pending',
-//         'is_active' => $validated['is_active'] ?? false,
-//     ]);
-
-//     return response()->json([
-//         'message' => 'Événement créé avec succès par l\'admin.',
-//         'event' => $event
-//     ], 201);
-// }
-
-public function store(Request $request)
-{
-    if (auth()->user()->role->name !== 'admin') {
-        return response()->json(['message' => 'Accès refusé : seuls les admins peuvent créer des événements.'], 403);
+        return response()->json(['success' => true, 'data' => $event]);
     }
 
-    $validated = $request->validate([
-        'title' => 'required|string|max:255',
-        'description' => 'nullable|string',
-        'category' => 'required|string',
-        'date_sortie' => 'required|date',
-        'date_retoure' => 'required|date|after_or_equal:date_sortie',
-        'ville_passente' => 'nullable|array',
-        'nbr_place_total' => 'required|integer|min:1',
-        'prix_place' => 'required|numeric|min:0',
-        'group_id' => 'required|exists:users,id',
-        'status' => 'nullable|string|in:pending,active,canceled',
-        'is_active' => 'nullable|boolean',
-
-        // Soit circuit_id, soit création du circuit avec ces champs
-        'circuit_id' => 'nullable|exists:circuits,id',
-        'adresse_debut_circuit' => 'required_without:circuit_id|string',
-        'adresse_fin_circuit' => 'required_without:circuit_id|string',
-        'description_circuit' => 'nullable|string',
-        'difficulty' => 'nullable|in:facile,moyenne,difficile',
-        'distance_km' => 'nullable|numeric|min:0',
-        'estimation_temps' => 'nullable|string',
-        'danger_level' => 'nullable|in:low,moderate,high,extreme',
-    ]);
-
-    // Si circuit_id n’est pas fourni, on crée un circuit
-    if (empty($validated['circuit_id'])) {
-        $circuit = Circuit::create([
-            'adresse_debut_circuit' => $validated['adresse_debut_circuit'],
-            'adresse_fin_circuit' => $validated['adresse_fin_circuit'],
-            'description' => $validated['description_circuit'] ?? null,
-            'difficulty' => $validated['difficulty'] ?? null,
-            'distance_km' => $validated['distance_km'] ?? null,
-            'estimation_temps' => $validated['estimation_temps'] ?? null,
-            'danger_level' => $validated['danger_level'] ?? null,
+    /**
+     * Créer un événement
+     */
+    public function store(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'group_id'               => 'required|exists:users,id',
+            'title'                  => 'required|string|max:255',
+            'description'            => 'nullable|string',
+            'event_type'             => 'required|in:camping,hiking,voyage',
+            'start_date'             => 'required|date',
+            'end_date'               => 'required|date|after_or_equal:start_date',
+            'capacity'               => 'required|integer|min:1',
+            'price'                  => 'required|numeric|min:0',
+            'status'                 => 'sometimes|in:pending,scheduled,ongoing,finished,canceled,postponed,full',
+            'address'                => 'nullable|string',
+            'tags'                   => 'nullable|array',
+            'camping_duration'       => 'nullable|integer|min:1',
+            'camping_gear'           => 'nullable|string',
+            'is_group_travel'        => 'boolean',
+            'difficulty'             => 'nullable|in:easy,moderate,difficult,expert',
+            'hiking_duration'        => 'nullable|numeric|min:0',
+            'elevation_gain'         => 'nullable|integer|min:0',
+            'departure_city'         => 'nullable|string',
+            'arrival_city'           => 'nullable|string',
+            'departure_time'         => 'nullable|date_format:H:i',
+            'estimated_arrival_time' => 'nullable|date_format:H:i',
+            'bus_company'            => 'nullable|string',
+            'bus_number'             => 'nullable|string',
+            'city_stops'             => 'nullable|array',
         ]);
 
-        $circuitId = $circuit->id;
-    } else {
-        $circuitId = $validated['circuit_id'];
+        if ($validator->fails()) {
+            return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
+        }
+
+        DB::beginTransaction();
+        try {
+            $data                    = $validator->validated();
+            $data['status']          = $data['status'] ?? 'pending';
+            $data['remaining_spots'] = $data['capacity'];
+            $data['is_active']       = false;
+
+            $event = Events::create($data);
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Événement créé avec succès',
+                'data'    => $event->load(['group', 'photos']),
+            ], 201);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['success' => false, 'message' => 'Erreur: ' . $e->getMessage()], 500);
+        }
     }
 
-    $event = Events::create([
-        'title' => $validated['title'],
-        'description' => $validated['description'] ?? null,
-        'category' => $validated['category'],
-        'date_sortie' => $validated['date_sortie'],
-        'date_retoure' => $validated['date_retoure'],
-        'ville_passente' => isset($validated['ville_passente']) ? json_encode($validated['ville_passente']) : null,
-        'nbr_place_total' => $validated['nbr_place_total'],
-        'nbr_place_restante' => $validated['nbr_place_total'],
-        'prix_place' => $validated['prix_place'],
-        'circuit_id' => $circuitId,
-        'group_id' => $validated['group_id'],
-        'status' => $validated['status'] ?? 'pending',
-        'is_active' => $validated['is_active'] ?? false,
-    ]);
+    /**
+     * Mettre à jour un événement
+     */
+    public function update(Request $request, $id)
+    {
+        $event = Events::find($id);
 
-    return response()->json([
-        'message' => 'Événement créé avec succès par l\'admin.',
-        'event' => $event,
-    ], 201);
-}
+        if (!$event) {
+            return response()->json(['success' => false, 'message' => 'Événement non trouvé'], 404);
+        }
 
+        $validator = Validator::make($request->all(), [
+            'title'                  => 'sometimes|string|max:255',
+            'description'            => 'nullable|string',
+            'event_type'             => 'sometimes|in:camping,hiking,voyage',
+            'start_date'             => 'sometimes|date',
+            'end_date'               => 'sometimes|date|after_or_equal:start_date',
+            'capacity'               => 'sometimes|integer|min:1',
+            'price'                  => 'sometimes|numeric|min:0',
+            'status'                 => 'sometimes|in:pending,scheduled,ongoing,finished,canceled,postponed,full',
+            'address'                => 'nullable|string',
+            'tags'                   => 'nullable|array',
+            'camping_duration'       => 'nullable|integer|min:1',
+            'camping_gear'           => 'nullable|string',
+            'is_group_travel'        => 'boolean',
+            'difficulty'             => 'nullable|in:easy,moderate,difficult,expert',
+            'hiking_duration'        => 'nullable|numeric|min:0',
+            'elevation_gain'         => 'nullable|integer|min:0',
+            'departure_city'         => 'nullable|string',
+            'arrival_city'           => 'nullable|string',
+            'departure_time'         => 'nullable|date_format:H:i',
+            'estimated_arrival_time' => 'nullable|date_format:H:i',
+            'bus_company'            => 'nullable|string',
+            'bus_number'             => 'nullable|string',
+            'city_stops'             => 'nullable|array',
+        ]);
 
-// Met à jour un événement existant
-   public function update(Request $request, $id)
-{
-    $event = Events::findOrFail($id);
+        if ($validator->fails()) {
+            return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
+        }
 
-    $validated = $request->validate([
-        'title' => 'required|string|max:255',
-        'description' => 'nullable|string',
-        'category' => 'required|string',
-        'date_sortie' => 'required|date',
-        'date_retoure' => 'required|date|after_or_equal:date_sortie',
-        'ville_passente' => 'nullable|array',
-        'nbr_place_total' => 'required|integer|min:1',
-        'prix_place' => 'required|numeric|min:0',
-        'circuit_id' => 'required|exists:circuits,id',
-        'status' => 'required|string',
-        'is_active' => 'required|boolean',
-    ]);
+        // Adjust remaining_spots if capacity changed
+        $data = $validator->validated();
+        if (isset($data['capacity'])) {
+            $reserved = $event->capacity - $event->remaining_spots;
+            if ($data['capacity'] < $reserved) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Impossible de réduire la capacité en dessous des places réservées ({$reserved}).",
+                ], 422);
+            }
+            $data['remaining_spots'] = $data['capacity'] - $reserved;
+        }
 
-    $old_total = $event->nbr_place_total;
-    $new_total = $validated['nbr_place_total'];
+        DB::beginTransaction();
+        try {
+            $event->update($data);
+            DB::commit();
 
-    // Calcul du nombre de places déjà réservées
-    $places_reservees = $old_total - $event->nbr_place_restante;
+            return response()->json([
+                'success' => true,
+                'message' => 'Événement mis à jour avec succès',
+                'data'    => $event->fresh(['group', 'photos']),
+            ]);
 
-    // Si nouvelle capacité inférieure aux places déjà réservées, refuse la mise à jour
-    if ($new_total < $places_reservees) {
-        return response()->json([
-            'message' => "Impossible de réduire le nombre total de places en dessous des places déjà réservées ($places_reservees)."
-        ], 422);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['success' => false, 'message' => 'Erreur: ' . $e->getMessage()], 500);
+        }
     }
 
-    $event->title = $validated['title'];
-    $event->description = $validated['description'] ?? null;
-    $event->category = $validated['category'];
-    $event->date_sortie = $validated['date_sortie'];
-    $event->date_retoure = $validated['date_retoure'];
-    $event->ville_passente = json_encode($validated['ville_passente']);
-    $event->nbr_place_total = $new_total;
-    // Ajuste nbr_place_restante pour correspondre à la nouvelle capacité moins les réservations
-    $event->nbr_place_restante = $new_total - $places_reservees;
-    $event->prix_place = $validated['prix_place'];
-    $event->circuit_id = $validated['circuit_id'];
-    $event->status = $validated['status'];
-    $event->is_active = $validated['is_active'];
+    /**
+     * Activer un événement (envoie un email au groupe)
+     */
+    public function activate($id)
+    {
+        $event = Events::with('group')->find($id);
 
-    $event->save();
+        if (!$event) {
+            return response()->json(['success' => false, 'message' => 'Événement non trouvé'], 404);
+        }
+        if ($event->is_active) {
+            return response()->json(['success' => false, 'message' => 'Événement déjà activé'], 422);
+        }
 
-    return response()->json([
-        'message' => 'Événement mis à jour.',
-        'event' => $event
-    ]);
-}
+        $event->is_active = true;
+        $event->status    = 'scheduled';
+        $event->save();
 
-// Supprime un événement
+        if ($event->group && $event->group->email) {
+            try { Mail::to($event->group->email)->send(new EventActivated($event)); } catch (\Exception $e) {}
+        }
+
+        return response()->json(['success' => true, 'message' => 'Événement activé avec succès']);
+    }
+
+    /**
+     * Désactiver un événement
+     */
+    public function deactivate($id)
+    {
+        $event = Events::with('group')->find($id);
+
+        if (!$event) {
+            return response()->json(['success' => false, 'message' => 'Événement non trouvé'], 404);
+        }
+        if (!$event->is_active) {
+            return response()->json(['success' => false, 'message' => 'Événement déjà désactivé'], 422);
+        }
+
+        $event->is_active = false;
+        $event->status    = 'pending';
+        $event->save();
+
+        if ($event->group && $event->group->email) {
+            try { Mail::to($event->group->email)->send(new EventDeactivated($event)); } catch (\Exception $e) {}
+        }
+
+        return response()->json(['success' => true, 'message' => 'Événement désactivé avec succès']);
+    }
+
+    /**
+     * Annuler un événement et marquer les réservations confirmées
+     */
+    public function cancelEvent($id)
+    {
+        $event = Events::find($id);
+
+        if (!$event) {
+            return response()->json(['success' => false, 'message' => 'Événement non trouvé'], 404);
+        }
+
+        DB::beginTransaction();
+        try {
+            $event->status    = 'canceled';
+            $event->is_active = false;
+            $event->save();
+
+            Reservations_events::where('event_id', $id)
+                ->whereIn('status', ['confirmée', 'en_attente_validation'])
+                ->update(['status' => 'annulée_par_organisateur']);
+
+            DB::commit();
+
+            return response()->json(['success' => true, 'message' => 'Événement annulé avec succès']);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['success' => false, 'message' => 'Erreur: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Supprimer un événement
+     */
     public function destroy($id)
     {
         $event = Events::find($id);
 
         if (!$event) {
-            return response()->json(['message' => 'Événement introuvable.'], 404);
+            return response()->json(['success' => false, 'message' => 'Événement non trouvé'], 404);
         }
 
-        $event->delete();
+        DB::beginTransaction();
+        try {
+            $event->reservation()->delete();
+            $event->photos()->delete();
+            $event->delete();
+            DB::commit();
 
-        return response()->json(['message' => 'Événement supprimé avec succès.']);
+            return response()->json(['success' => true, 'message' => 'Événement supprimé avec succès']);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['success' => false, 'message' => 'Erreur: ' . $e->getMessage()], 500);
+        }
     }
 
-// Active un événement (seul un admin peut le faire)
-    public function activate(Request $request, $id)
+    /**
+     * Réservations d'un événement (avec filtres)
+     */
+    public function reservations($id, Request $request)
     {
-        $user = auth()->user();
-        if ($user->role->name !== 'admin') {
-            return response()->json(['message' => 'Seul un administrateur peut activer un événement.'], 403);
+        $event = Events::find($id);
+
+        if (!$event) {
+            return response()->json(['success' => false, 'message' => 'Événement non trouvé'], 404);
         }
 
-        $event = Events::with('group')->findOrFail($id);
+        $query = Reservations_events::with(['user', 'payment'])
+            ->where('event_id', $id);
 
-        if ($event->is_active) {
-            return response()->json(['message' => 'Événement déjà activé.']);
-        }
-
-        $event->is_active = true;
-        $event->save();
-
-        if ($event->group && $event->group->email) {
-            Mail::to($event->group->email)->send(new EventActivated($event));
-        }
-
-        return response()->json([
-            'message' => 'Événement activé avec succès.',
-            'event' => $event
-        ]);
-    }
-public function deactivate(Request $request, $id)
-{
-    $user = auth()->user();
-    if ($user->role->name !== 'admin') {
-        return response()->json(['message' => 'Seul un administrateur peut désactiver un événement.'], 403);
-    }
-
-    $event = Events::with('group')->findOrFail($id);
-
-    if (!$event->is_active) {
-        return response()->json(['message' => 'Événement déjà désactivé.']);
-    }
-
-    $event->is_active = false;
-    $event->save();
-
-    if ($event->group && $event->group->email) {
-        Mail::to($event->group->email)->send(new EventDeactivated($event));
-    }
-
-    return response()->json([
-        'message' => 'Événement désactivé avec succès.',
-        'event' => $event
-    ]);
-}
-
-// Affiche les réservations d'un événement
-    public function reservations($eventId, Request $request)
-    {
-        $query = Reservations_events::with('user', 'payment')
-            ->where('event_id', $eventId);
-
-        if ($request->has('status')) {
+        if ($request->filled('status')) {
             $query->where('status', $request->status);
         }
-
-        if ($request->has('date_start')) {
-            $query->whereDate('created_at', '>=', $request->date_start);
+        if ($request->filled('date_from')) {
+            $query->whereDate('created_at', '>=', $request->date_from);
+        }
+        if ($request->filled('date_to')) {
+            $query->whereDate('created_at', '<=', $request->date_to);
         }
 
-        if ($request->has('date_end')) {
-            $query->whereDate('created_at', '<=', $request->date_end);
-        }
-
-        return response()->json($query->latest()->paginate(15));
-    }
-
-// Affiche les statistiques d'un événement
-    public function statistics($eventId)
-    {
-        $event = Events::findOrFail($eventId);
-
-        $total = Reservations_events::where('event_id', $eventId)->count();
-        $confirmes = Reservations_events::where('event_id', $eventId)->where('status', 'confirmé')->count();
-        $annules = Reservations_events::where('event_id', $eventId)->where('status', 'annulé')->count();
-        $attente = Reservations_events::where('event_id', $eventId)->where('status', 'en_attente')->count();
+        $reservations = $query->latest()->paginate($request->get('per_page', 15));
 
         return response()->json([
-            'event_id' => $eventId,
-            'total' => $total,
-            'confirmes' => $confirmes,
-            'annules' => $annules,
-            'en_attente' => $attente,
-            'places_restantes' => $event->nbr_place_restante,
+            'success' => true,
+            'data'    => $reservations->items(),
+            'meta'    => [
+                'current_page' => $reservations->currentPage(),
+                'total'        => $reservations->total(),
+                'last_page'    => $reservations->lastPage(),
+            ],
         ]);
     }
 
-// Annule un événement et rembourse les réservations confirmées
-    public function cancelEvent($eventId)
+    /**
+     * Statistiques d'un événement
+     */
+    public function statistics($id)
     {
-        $event = Events::findOrFail($eventId);
+        $event = Events::find($id);
 
-        $event->status = 'canceled';
-        $event->is_active = false;
-        $event->save();
+        if (!$event) {
+            return response()->json(['success' => false, 'message' => 'Événement non trouvé'], 404);
+        }
 
-        $reservations = Reservations_events::where('event_id', $eventId)
-            ->where('status', 'confirmé')
-            ->get();
+        $reservations = Reservations_events::where('event_id', $id);
 
-        foreach ($reservations as $reservation) {
-            $reservation->status = 'annulé';
-            $reservation->save();
+        $totalReservations = (clone $reservations)->count();
+        $totalParticipants = (clone $reservations)->sum('nbr_place');
+        $byStatus = (clone $reservations)
+            ->select('status', DB::raw('count(*) as total'))
+            ->groupBy('status')
+            ->pluck('total', 'status');
 
-            if ($reservation->payment) {
-                $reservation->payment->status = 'refunded';
-                $reservation->payment->save();
+        return response()->json([
+            'success' => true,
+            'data'    => [
+                'total_reservations' => $totalReservations,
+                'total_participants' => $totalParticipants,
+                'revenue'            => $totalParticipants * $event->price,
+                'available_spots'    => $event->remaining_spots,
+                'capacity'           => $event->capacity,
+                'reservation_rate'   => $event->capacity > 0
+                    ? round(($totalParticipants / $event->capacity) * 100, 2)
+                    : 0,
+                'by_status'          => $byStatus,
+            ],
+        ]);
+    }
+
+    /**
+     * Exporter les réservations en CSV
+     */
+    public function exportReservationsCsv($id)
+    {
+        $event = Events::find($id);
+
+        if (!$event) {
+            return response()->json(['success' => false, 'message' => 'Événement non trouvé'], 404);
+        }
+
+        $reservations = Reservations_events::with('user')->where('event_id', $id)->get();
+
+        $filename = "reservations_event_{$id}.csv";
+        $headers  = [
+            'Content-Type'        => 'text/csv',
+            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
+        ];
+
+        $callback = function () use ($reservations) {
+            $file = fopen('php://output', 'w');
+            fputcsv($file, ['ID', 'Nom', 'Email', 'Téléphone', 'Places', 'Statut', 'Date']);
+
+            foreach ($reservations as $res) {
+                $firstName = $res->user ? $res->user->first_name . ' ' . $res->user->last_name : 'N/A';
+                fputcsv($file, [
+                    $res->id,
+                    $res->name ?? $firstName,
+                    $res->email ?? ($res->user->email ?? 'N/A'),
+                    $res->phone ?? 'N/A',
+                    $res->nbr_place,
+                    $res->status,
+                    $res->created_at->format('Y-m-d H:i:s'),
+                ]);
             }
-        }
 
-        return response()->json([
-            'message' => 'Événement annulé et réservations remboursées.'
-        ]);
+            fclose($file);
+        };
+
+        return response()->stream($callback, 200, $headers);
     }
 
-// Exporte les réservations d'un événement en CSV
-    public function exportReservationsCsv($eventId)
+    /**
+     * Récupérer les groupes organisateurs
+     */
+    public function getGroups(Request $request)
     {
-        $reservations = Reservations_events::where('event_id', $eventId)->with('user')->get();
+        $groups = User::whereHas('role', fn($q) => $q->where('name', 'groupe'))
+            ->when($request->search, function ($query, $search) {
+                $query->where('first_name', 'like', "%{$search}%")
+                      ->orWhere('last_name', 'like', "%{$search}%")
+                      ->orWhere('email', 'like', "%{$search}%");
+            })
+            ->select('id', 'first_name', 'last_name', 'email')
+            ->limit(100)
+            ->get()
+            ->map(fn($u) => [
+                'id'    => $u->id,
+                'name'  => $u->first_name . ' ' . $u->last_name,
+                'email' => $u->email,
+            ]);
 
-        $csvData = [];
-        $csvData[] = ['Nom', 'Email', 'Téléphone', 'Status', 'Nombre de places', 'Date'];
-
-        foreach ($reservations as $res) {
-            $csvData[] = [
-                $res->user->name ?? '',
-                $res->email ?? '',
-                $res->user->phone ?? '',
-                $res->status,
-                $res->nbr_place,
-                $res->created_at->format('Y-m-d H:i')
-            ];
-        }
-
-        $filename = "reservations_event_$eventId.csv";
-
-        $handle = fopen('php://temp', 'r+');
-        foreach ($csvData as $row) {
-            fputcsv($handle, $row);
-        }
-        rewind($handle);
-
-        return Response::stream(function () use ($handle) {
-            fpassthru($handle);
-        }, 200, [
-            'Content-Type' => 'text/csv',
-            'Content-Disposition' => "attachment; filename=$filename",
-        ]);
+        return response()->json(['success' => true, 'data' => $groups]);
     }
 }
