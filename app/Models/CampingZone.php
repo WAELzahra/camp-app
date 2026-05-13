@@ -14,6 +14,7 @@ class CampingZone extends Model
 
     protected $fillable = [
         'nom',
+        'type_activitee',
         'city',
         'region',
         'commune',
