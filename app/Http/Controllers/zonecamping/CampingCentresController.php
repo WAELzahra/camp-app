@@ -114,8 +114,9 @@ class CampingCentresController extends Controller
                 'manager_name'     => $pc?->manager_name,
                 'average_rating'   => null,
                 'review_count'     => 0,
-                'is_partner'       => $isPartner,
-                '_source'          => 'camping',
+                'is_partner'         => $isPartner,
+                'profile_centre_id'  => $centre->profile_centre_id,
+                '_source'            => 'camping',
                 'profile' => [
                     'bio'         => $centre->description,
                     'city'        => $centre->user?->profile?->city ?? null,

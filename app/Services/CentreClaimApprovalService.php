@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Album;
+use App\Models\CampingCentre;
 use App\Models\CentreClaim;
 use App\Models\Photo;
 
@@ -18,7 +19,12 @@ class CentreClaimApprovalService
         }
 
         $profile = $claimUser?->profile;
-        $pc      = $profile?->profileCentre;
+        // Use a direct query instead of the hasOne relationship to avoid returning
+        // null when the relation is not eager-loaded, which would cause a duplicate
+        // ProfileCentre to be created.
+        $pc = $profile
+            ? \App\Models\ProfileCentre::where('profile_id', $profile->id)->orderBy('price_per_night', 'desc')->first()
+            : null;
 
         if ($campingCentre) {
             if ($profile) {
@@ -97,6 +103,20 @@ class CentreClaimApprovalService
                 'profile_centre_id' => $pc?->id,
                 'validation_status' => 'approved',
             ]);
+
+            // Unlink any auto-synced placeholder camping_centres that were created for
+            // this user (by the admin auto-sync) before this real claim was approved.
+            // Only removes dummy entries with no zones and no photos to prevent data loss.
+            CampingCentre::where('user_id', $claim->user_id)
+                ->where('id', '!=', $campingCentre->id)
+                ->whereDoesntHave('zones')
+                ->whereDoesntHave('photos')
+                ->update([
+                    'user_id'           => null,
+                    'profile_centre_id' => null,
+                    'validation_status' => 'pending',
+                    'status'            => false,
+                ]);
         }
 
         $claim->update([

@@ -10,7 +10,6 @@ use App\Models\Photo;
 use App\Models\ProfileCentre;
 use App\Models\ServiceCategory;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 
 class CenterServiceApiController extends Controller
 {
@@ -20,9 +19,7 @@ class CenterServiceApiController extends Controller
 
     private function photoUrl(?string $path): ?string
     {
-        if (!$path) return null;
-        if (filter_var($path, FILTER_VALIDATE_URL)) return $path;
-        return Storage::disk('public')->url($path);
+        return storage_url($path);
     }
 
     /**
@@ -241,7 +238,17 @@ class CenterServiceApiController extends Controller
             $query->where('price_per_night', '<=', $request->max_price);
         }
 
-        $centers = $query->get();
+        // Deduplicate by user_id — if a user has two ProfileCentres in the database
+        // (data integrity issue prevented by migration), show only the most complete
+        // one (highest price_per_night). ProfileCentres without a linked user are
+        // each kept as-is (keyed by their own id to avoid false deduplication).
+        $centers = $query->get()
+            ->sortByDesc('price_per_night')
+            ->unique(fn($c) => $c->profile?->user_id
+                ? 'u-' . $c->profile->user_id
+                : 'pc-' . $c->id
+            )
+            ->values();
 
         /* ── Bulk-load albums to avoid N+1 ────────────────────────────── */
         $userIds = $centers->map(fn($c) => $c->profile?->user?->id)->filter()->unique()->values()->toArray();
@@ -280,12 +287,21 @@ class CenterServiceApiController extends Controller
             );
         })->values();
 
-        // Non-partner centres: camping_centres with no user AND not linked to a profile_centre
+        // Build a name-based exclusion set from partner centres so we don't show
+        // the same physical location as both partner AND non-partner.
+        $partnerNameSet = $partnerResult->map(fn($c) => mb_strtolower(trim($c['name'] ?? '')))
+            ->filter()
+            ->flip()
+            ->toArray();
+
+        // Non-partner centres: camping_centres with no user AND not linked to a profile_centre.
+        // Also excluded if a partner centre with the same name already exists.
         $nonPartnerResult = \App\Models\CampingCentre::whereNull('user_id')
             ->whereNull('profile_centre_id')
             ->where('status', true)
             ->with('coverPhoto')
             ->get()
+            ->filter(fn($c) => !isset($partnerNameSet[mb_strtolower(trim($c->nom ?? ''))]))
             ->map(fn($c) => [
                 'id'               => $c->id,
                 'name'             => $c->nom,
@@ -313,7 +329,7 @@ class CenterServiceApiController extends Controller
                 'available_equipment' => [],
                 'is_partner'       => false,
                 '_source'          => 'camping',
-            ]);
+            ])->values();
 
         return response()->json($partnerResult->concat($nonPartnerResult)->values());
     }
@@ -329,6 +345,8 @@ class CenterServiceApiController extends Controller
             'availableEquipment',
         ])->findOrFail($centerId);
 
+        $user = $center->profile?->user;
+
         return response()->json([
             'center' => [
                 'id' => $center->id,
@@ -337,6 +355,13 @@ class CenterServiceApiController extends Controller
                 'category' => $center->category,
                 'capacity' => $center->capacite,
                 'location' => $center->coordinates,
+                'profile' => [
+                    'user' => $user ? [
+                        'id'         => $user->id,
+                        'first_name' => $user->first_name,
+                        'last_name'  => $user->last_name,
+                    ] : null,
+                ],
             ],
             'services' => $center->availableServices->map(function ($service) {
                 return [

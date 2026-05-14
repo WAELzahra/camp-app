@@ -812,7 +812,7 @@ class AdminUserController extends Controller
             'role' => $user->role ? $user->role->name : 'Camper',
             'role_id' => $user->role_id,
             'phone_number' => $user->phone_number,
-            'avatar' => $user->avatar,
+            'avatar' => $user->avatar ? storage_url($user->avatar) : null,
             'ville' => $user->ville,
             'adresse' => $user->adresse,
             'date_naissance' => $user->date_naissance,

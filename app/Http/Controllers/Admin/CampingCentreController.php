@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\CampingCentre;
 use App\Models\Camping_zones;
+use App\Models\CentreClaim;
 use App\Models\Photo;
 use App\Models\Profile;
 use App\Models\ProfileCentre;
@@ -27,11 +28,15 @@ class CampingCentreController extends Controller
     public function index()
     {
         // ── Auto-sync ACTIVE registered centre users that have no camping_centre yet ──
-        $linkedUserIds = CampingCentre::whereNotNull('user_id')->pluck('user_id');
+        // Skip users with a pending claim — their camping_centre will be created properly
+        // when the claim is approved, avoiding duplicate entries in the admin list.
+        $linkedUserIds       = CampingCentre::whereNotNull('user_id')->pluck('user_id');
+        $pendingClaimUserIds = CentreClaim::where('status', 'pending')->pluck('user_id');
 
         User::where('role_id', 3)
             ->where('is_active', 1)
             ->whereNotIn('id', $linkedUserIds)
+            ->whereNotIn('id', $pendingClaimUserIds)
             ->with(['profile'])
             ->get()
             ->each(function (User $user) {
