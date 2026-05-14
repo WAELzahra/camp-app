@@ -1128,7 +1128,8 @@ public function uploadPhotos(Request $request, $id)
             foreach ($request->file('photos') as $photo) {
                 // Générer un nom unique
                 $filename = time() . '_' . uniqid() . '.' . $photo->getClientOriginalExtension();
-                $path = $photo->storeAs('albums/' . $user->id, $filename, 'public');
+                $storageDir = $campingCentreId ? 'centre_photos/' . $campingCentreId : 'albums/' . $user->id;
+                $path = $photo->storeAs($storageDir, $filename, 'public');
 
                 // Créer la photo
                 $photoModel = $album->photos()->create([

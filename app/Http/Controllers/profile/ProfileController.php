@@ -888,7 +888,8 @@ class ProfileController extends Controller
                 $extension = $photo->getClientOriginalExtension();
                 $filename = $originalName . '_' . time() . '_' . uniqid() . '.' . $extension;
 
-                $path = $photo->storeAs('profile_photos', $filename, 'public');
+                $storageDir = $campingCentreId ? 'centre_photos/' . $campingCentreId : 'profile_photos';
+                $path = $photo->storeAs($storageDir, $filename, 'public');
 
                 $photoRecord = Photo::create([
                     'path_to_img'       => $path,

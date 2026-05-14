@@ -428,7 +428,7 @@ class CampingCentreController extends Controller
         $hasImage   = !is_null($centre->image);
 
         foreach ($request->file('photos') as $index => $file) {
-            $path    = $file->store('centres/photos', 'public');
+            $path    = $file->store('centre_photos/' . $centre->id, 'public');
             $isCover = ($index === $coverIndex);
 
             Photo::create([
