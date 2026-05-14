@@ -1113,8 +1113,18 @@ public function uploadPhotos(Request $request, $id)
                 ['titre' => 'Album principal']
             );
 
+            // For centre users, stamp photos with the linked camping centre id
+            $campingCentreId = null;
+            if ($user->role_id === 3) {
+                $claimCentreId = \App\Models\CentreClaim::where('user_id', $user->id)
+                    ->where('status', 'approved')
+                    ->value('centre_id');
+                $campingCentreId = $claimCentreId
+                    ?? \App\Models\CampingCentre::where('user_id', $user->id)->value('id');
+            }
+
             $uploadedPhotos = [];
-            
+
             foreach ($request->file('photos') as $photo) {
                 // Générer un nom unique
                 $filename = time() . '_' . uniqid() . '.' . $photo->getClientOriginalExtension();
@@ -1122,9 +1132,10 @@ public function uploadPhotos(Request $request, $id)
 
                 // Créer la photo
                 $photoModel = $album->photos()->create([
-                    'path_to_img' => $path,
-                    'user_id' => $user->id,
-                    'order' => $album->photos()->count() + 1
+                    'path_to_img'       => $path,
+                    'user_id'           => $user->id,
+                    'camping_centre_id' => $campingCentreId,
+                    'order'             => $album->photos()->count() + 1,
                 ]);
 
                 $uploadedPhotos[] = [
@@ -1157,24 +1168,53 @@ public function uploadPhotos(Request $request, $id)
     {
         try {
             $user = User::with('albums.photos')->findOrFail($id);
-            
+
             $photos = [];
+            $seenIds = [];
+
             foreach ($user->albums as $album) {
                 foreach ($album->photos as $photo) {
+                    $seenIds[] = $photo->id;
                     $photos[] = [
-                        'id' => $photo->id,
-                        'url' => storage_url($photo->path_to_img),
-                        'path' => $photo->path_to_img,
-                        'album_id' => $album->id,
-                        'order' => $photo->order,
-                        'created_at' => $photo->created_at
+                        'id'         => $photo->id,
+                        'url'        => storage_url($photo->path_to_img),
+                        'path'       => $photo->path_to_img,
+                        'is_cover'   => (bool) $photo->is_cover,
+                        'album_id'   => $album->id,
+                        'order'      => $photo->order,
+                        'created_at' => $photo->created_at,
                     ];
+                }
+            }
+
+            // For centre users also include photos stored directly on the camping centre
+            // (uploaded via admin centre panel — no album_id, but have camping_centre_id).
+            if ($user->role_id === 3) {
+                $centreIds = \App\Models\CampingCentre::where('user_id', $user->id)->pluck('id');
+                if ($centreIds->isNotEmpty()) {
+                    \App\Models\Photo::whereIn('camping_centre_id', $centreIds)
+                        ->whereNull('album_id')
+                        ->get()
+                        ->each(function ($photo) use (&$photos, &$seenIds) {
+                            if (!in_array($photo->id, $seenIds)) {
+                                $seenIds[]  = $photo->id;
+                                $photos[]   = [
+                                    'id'         => $photo->id,
+                                    'url'        => storage_url($photo->path_to_img),
+                                    'path'       => $photo->path_to_img,
+                                    'is_cover'   => (bool) $photo->is_cover,
+                                    'album_id'   => null,
+                                    'order'      => $photo->order,
+                                    'created_at' => $photo->created_at,
+                                ];
+                            }
+                        });
                 }
             }
 
             return response()->json([
                 'success' => true,
-                'data' => $photos
+                'data' => $photos,
             ]);
 
         } catch (\Exception $e) {

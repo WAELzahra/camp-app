@@ -1955,7 +1955,7 @@ class ProfileController extends Controller
         $sharedSteps = [
             ['key' => 'avatar',        'label' => 'Profile photo',      'done' => (bool) $user->avatar,        'link' => '/settings/images',   'weight' => 15],
             ['key' => 'phone',         'label' => 'Phone number',        'done' => (bool) $user->phone_number,  'link' => '/settings',          'weight' => 10],
-            ['key' => 'city',          'label' => 'City',                'done' => (bool) $user->ville,         'link' => '/settings',          'weight' => 10],
+            ['key' => 'city',          'label' => 'City',                'done' => (bool) ($profile?->city ?: $user->ville), 'link' => '/settings', 'weight' => 10],
             ['key' => 'bio',           'label' => 'Bio / description',   'done' => (bool) $profile?->bio,       'link' => '/settings',          'weight' => 10],
             ['key' => 'email_verified','label' => 'Email verified',      'done' => (bool) $user->email_verified_at, 'link' => '/emailverification', 'weight' => 15],
         ];
