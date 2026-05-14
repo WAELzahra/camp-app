@@ -47,10 +47,21 @@ class CenterServiceApiController extends Controller
         }
 
         /* ── Cover image ─────────────────────────────────────────────── */
+        // Priority: camping_centre photos table (always has correct current paths,
+        // e.g. centre_photos/{id}/) → album → profile.cover_image (may be a stale
+        // URL written before the storage path was updated to centre_photos/).
         $coverImage = null;
 
-        if ($profile?->cover_image) {
-            $coverImage = $this->photoUrl($profile->cover_image);
+        if ($campingCentreId) {
+            $ccCover = Photo::where('camping_centre_id', $campingCentreId)
+                ->where('is_cover', true)
+                ->first()
+                ?? Photo::where('camping_centre_id', $campingCentreId)
+                    ->orderBy('id', 'desc')
+                    ->first();
+            if ($ccCover) {
+                $coverImage = $this->photoUrl($ccCover->path_to_img);
+            }
         }
 
         if (!$coverImage && $userId) {
@@ -65,17 +76,8 @@ class CenterServiceApiController extends Controller
             }
         }
 
-        // Fallback: cover photo from the camping_centre photos (handles centers
-        // approved before the album-migration fix, or where profile.cover_image
-        // is still empty).
-        if (!$coverImage && $campingCentreId) {
-            $ccCover = Photo::where('camping_centre_id', $campingCentreId)
-                ->where('is_cover', true)
-                ->first()
-                ?? Photo::where('camping_centre_id', $campingCentreId)->first();
-            if ($ccCover) {
-                $coverImage = $this->photoUrl($ccCover->path_to_img);
-            }
+        if (!$coverImage && $profile?->cover_image) {
+            $coverImage = $this->photoUrl($profile->cover_image);
         }
 
         /* ── All gallery photos ───────────────────────────────────────── */
