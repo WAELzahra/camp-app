@@ -345,51 +345,14 @@ class CenterServiceApiController extends Controller
             'availableEquipment',
         ])->findOrFail($centerId);
 
-        $user = $center->profile?->user;
+        // formatCenter with $withPhotos=true returns the full flat shape that
+        // normalizeCentre() on the frontend expects (detects via `capacite` key).
+        // It already resolves cover_image via profile → album → camping_centre photos.
+        $data = $this->formatCenter($center, null, null, true);
+        $data['is_partner'] = true;
+        $data['_source']    = 'partner';
 
-        // Use centerServices (hasMany) instead of availableServices (belongsToMany) so
-        // custom services with service_category_id = null are included.
-        $allServices = $center->centerServices
-            ->where('is_available', true)
-            ->sortByDesc('is_standard')
-            ->values();
-
-        return response()->json([
-            'center' => [
-                'id' => $center->id,
-                'name' => $center->name,
-                'price_per_night' => $center->price_per_night,
-                'category' => $center->category,
-                'capacity' => $center->capacite,
-                'location' => $center->coordinates,
-                'profile' => [
-                    'user' => $user ? [
-                        'id'         => $user->id,
-                        'first_name' => $user->first_name,
-                        'last_name'  => $user->last_name,
-                    ] : null,
-                ],
-            ],
-            'services' => $allServices->map(function ($service) {
-                return [
-                    'id'           => $service->id,
-                    'name'         => $service->name ?? $service->serviceCategory?->name ?? 'Service',
-                    'description'  => $service->description ?? $service->serviceCategory?->description ?? '',
-                    'price'        => (float) $service->price,
-                    'unit'         => $service->unit ?? $service->serviceCategory?->unit ?? '',
-                    'is_standard'  => (bool) $service->is_standard,
-                    'is_available' => (bool) $service->is_available,
-                    'nbr_place'    => $service->nbr_place,
-                ];
-            }),
-            'equipment' => $center->availableEquipment->map(function ($eq) {
-                return [
-                    'type' => $eq->type,
-                    'name' => $eq->translated_type,
-                    'icon' => $eq->icon,
-                ];
-            }),
-        ]);
+        return response()->json($data);
     }
 
     /* ──────────────────────────────────────────────────────────────────
