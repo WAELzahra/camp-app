@@ -11,8 +11,11 @@ use App\Models\ProfileGroupe;
 use App\Models\ProfileFournisseur;
 use App\Models\Feedbacks;
 use App\Models\Role;
+use App\Models\CentreClaim;
+use App\Services\CentreClaimApprovalService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Mail;
 use App\Mail\AccountStatusChanged;
 use App\Mail\PasswordResetEmail;
@@ -629,8 +632,26 @@ class AdminUserController extends Controller
                 ], 403);
             }
 
+            $wasInactive = $user->is_active == 0;
             $user->is_active = $user->is_active == 1 ? 0 : 1;
             $user->save();
+
+            // When activating a centre-role user, auto-approve their pending claim
+            if ($wasInactive && $user->is_active == 1 && $user->role_id == 3) {
+                $pendingClaim = CentreClaim::with('centre')
+                    ->where('user_id', $user->id)
+                    ->where('status', 'pending')
+                    ->latest()
+                    ->first();
+
+                if ($pendingClaim) {
+                    try {
+                        (new CentreClaimApprovalService())->approve($pendingClaim, Auth::id());
+                    } catch (\Exception $e) {
+                        Log::error('Auto-approve claim failed: ' . $e->getMessage());
+                    }
+                }
+            }
 
             // Envoyer email de notification
             try {
