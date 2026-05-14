@@ -78,8 +78,9 @@ class CampingCentresController extends Controller
         $centre = CampingCentre::with(['zones', 'profileCentre', 'user.profile', 'photos'])->findOrFail($id);
 
         $pc        = $centre->profileCentre;
-        $isPartner = (! is_null($centre->user_id) || ! is_null($centre->profile_centre_id))
-                     && ($centre->user?->is_active == 1);
+        $isPartner = $centre->validation_status === 'approved'
+                     || ! is_null($centre->profile_centre_id)
+                     || (! is_null($centre->user_id) && $centre->user?->is_active == 1);
 
         $buildUrl = fn(?string $path): ?string =>
             $path ? (filter_var($path, FILTER_VALIDATE_URL) ? $path : storage_url($path)) : null;

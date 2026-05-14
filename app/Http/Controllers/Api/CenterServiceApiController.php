@@ -327,7 +327,7 @@ class CenterServiceApiController extends Controller
                 ],
                 'available_services'  => [],
                 'available_equipment' => [],
-                'is_partner'       => false,
+                'is_partner'       => $c->validation_status === 'approved',
                 '_source'          => 'camping',
             ])->values();
 
@@ -341,11 +341,18 @@ class CenterServiceApiController extends Controller
     {
         $center = ProfileCentre::with([
             'profile.user',
-            'availableServices',
+            'centerServices.serviceCategory',
             'availableEquipment',
         ])->findOrFail($centerId);
 
         $user = $center->profile?->user;
+
+        // Use centerServices (hasMany) instead of availableServices (belongsToMany) so
+        // custom services with service_category_id = null are included.
+        $allServices = $center->centerServices
+            ->where('is_available', true)
+            ->sortByDesc('is_standard')
+            ->values();
 
         return response()->json([
             'center' => [
@@ -363,15 +370,16 @@ class CenterServiceApiController extends Controller
                     ] : null,
                 ],
             ],
-            'services' => $center->availableServices->map(function ($service) {
+            'services' => $allServices->map(function ($service) {
                 return [
-                    'id'           => $service->pivot->id,
-                    'name'         => $service->name,
-                    'description'  => $service->pivot->description ?? $service->description,
-                    'price'        => $service->pivot->price,
-                    'unit'         => $service->pivot->unit,
-                    'is_standard'  => $service->pivot->is_standard,
-                    'is_available' => $service->pivot->is_available ?? true,
+                    'id'           => $service->id,
+                    'name'         => $service->name ?? $service->serviceCategory?->name ?? 'Service',
+                    'description'  => $service->description ?? $service->serviceCategory?->description ?? '',
+                    'price'        => (float) $service->price,
+                    'unit'         => $service->unit ?? $service->serviceCategory?->unit ?? '',
+                    'is_standard'  => (bool) $service->is_standard,
+                    'is_available' => (bool) $service->is_available,
+                    'nbr_place'    => $service->nbr_place,
                 ];
             }),
             'equipment' => $center->availableEquipment->map(function ($eq) {

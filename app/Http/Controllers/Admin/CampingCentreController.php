@@ -82,8 +82,9 @@ class CampingCentreController extends Controller
         $centres = CampingCentre::with(['zones', 'user', 'profileCentre'])
             ->get()
             ->map(function (CampingCentre $c) {
-                $c->is_partner = (! is_null($c->user_id) || ! is_null($c->profile_centre_id))
-                                && ($c->user?->is_active == 1);
+                $c->is_partner = $c->validation_status === 'approved'
+                                || ! is_null($c->profile_centre_id)
+                                || (! is_null($c->user_id) && $c->user?->is_active == 1);
                 return $c;
             });
 
