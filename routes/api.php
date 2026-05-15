@@ -103,18 +103,18 @@ Route::get('/auth/facebook/redirect',[SocialAuthController::class, 'redirectToFa
 Route::get('/auth/facebook/callback',[SocialAuthController::class, 'handleFacebookCallback'])->name('facebook.callback');
 Route::middleware('auth:sanctum')->post('/auth/social/complete-registration', [SocialAuthController::class, 'completeRegistration']);
 
-Route::post('/register', [RegisteredUserController::class, 'store']);
-Route::post('/login', [AuthenticatedSessionController::class, 'store'])->name('login');
-Route::post('/forgot-password', [NewPasswordController::class, 'sendResetEmail']);
-Route::post('/reset-password', [NewPasswordController::class, 'resetPassword']);
-Route::post('/verify-password', [NewPasswordController::class, 'verifyResetCode']);
+Route::middleware('throttle:register')->post('/register', [RegisteredUserController::class, 'store']);
+Route::middleware('throttle:login')->post('/login', [AuthenticatedSessionController::class, 'store'])->name('login');
+Route::middleware('throttle:password-reset')->post('/forgot-password', [NewPasswordController::class, 'sendResetEmail']);
+Route::middleware('throttle:password-reset')->post('/reset-password', [NewPasswordController::class, 'resetPassword']);
+Route::middleware('throttle:password-reset')->post('/verify-password', [NewPasswordController::class, 'verifyResetCode']);
 
 // Email Verification
-Route::post('/send-verification', [VerifyEmailController::class, 'sendVerification']);
-Route::post('/verify-by-token', [VerifyEmailController::class, 'verifyByToken']);
-Route::post('/verify-by-code', [VerifyEmailController::class, 'verifyByCode']);
-Route::post('/resend-verification', [VerifyEmailController::class, 'resendVerification']);
-Route::get('/verification-status/{id}', [VerifyEmailController::class, 'verificationStatus']);
+Route::middleware('throttle:verification')->post('/send-verification', [VerifyEmailController::class, 'sendVerification']);
+Route::middleware('throttle:verification')->post('/verify-by-token', [VerifyEmailController::class, 'verifyByToken']);
+Route::middleware('throttle:verification')->post('/verify-by-code', [VerifyEmailController::class, 'verifyByCode']);
+Route::middleware('throttle:verification')->post('/resend-verification', [VerifyEmailController::class, 'resendVerification']);
+Route::middleware('auth:sanctum')->get('/verification-status/{id}', [VerifyEmailController::class, 'verificationStatus']);
 
 // Email Verification Signed Route
 Route::middleware('signed')->get('/email/verify/{id}/{hash}', function (EmailVerificationRequest $request) {
@@ -246,15 +246,16 @@ Route::prefix('profile')->group(function () {
     Route::get('/public/{id}', [ProfileController::class, 'showById']);
 });
 
-// -------------------- PUBLIC USER VERIFICATION --------------------
-Route::get('/user/{id}/verification-status', function ($id) {
-    $user = \App\Models\User::find($id);
-    if (!$user) {
-        return response()->json(['error' => 'User not found'], 404);
+// -------------------- USER VERIFICATION STATUS (auth required) --------------------
+// Moved behind auth to prevent email enumeration via public user ID lookup.
+Route::middleware('auth:sanctum')->get('/user/{id}/verification-status', function ($id, \Illuminate\Http\Request $request) {
+    // Users may only check their own verification status
+    if ((int) $id !== $request->user()->id) {
+        return response()->json(['error' => 'Forbidden'], 403);
     }
+    $user = $request->user();
     return response()->json([
         'verified' => $user->hasVerifiedEmail(),
-        'email' => $user->email,
     ]);
 });
 

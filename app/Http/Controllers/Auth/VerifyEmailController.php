@@ -78,8 +78,6 @@ class VerifyEmailController extends Controller
                 'user_id' => $user->id,
                 'email' => $user->email,
                 'verification_id' => $verification->id,
-                'token' => $verification->token,
-                'code' => $verification->code
             ]);
 
             return response()->json([
@@ -89,10 +87,6 @@ class VerifyEmailController extends Controller
                     'id' => $verification->id,
                     'method' => $verification->method,
                     'expires_at' => $verification->expires_at->format('Y-m-d H:i:s'),
-                    'code' => $verification->code,
-                    'token' => $verification->token,
-                    'verification_link' => url('/api/verify-by-token?token=' . $verification->token),
-                    'frontend_url' => config('app.frontend_url') . '/verify-email?token=' . $verification->token
                 ]
             ]);
 
@@ -104,8 +98,7 @@ class VerifyEmailController extends Controller
 
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to send verification email: ' . ($e->getMessage()),
-                'error' => env('APP_DEBUG') ? $e->getMessage() : null
+                'message' => 'Failed to send verification email. Please try again.',
             ], 500);
         }
     }
@@ -276,7 +269,6 @@ class VerifyEmailController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Verification failed. Please try again.',
-                'error' => env('APP_DEBUG') ? $e->getMessage() : null
             ], 500);
         }
     }

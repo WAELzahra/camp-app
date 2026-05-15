@@ -87,6 +87,11 @@ class AuthenticatedSessionController extends Controller
     $credentials = $request->only('email', 'password');
 
     if (!Auth::attempt($credentials)) {
+        Log::channel('security')->warning('Failed login attempt', [
+            'email' => $request->input('email'),
+            'ip'    => $request->ip(),
+            'ua'    => $request->userAgent(),
+        ]);
         return response()->json(['message' => 'Invalid credentials'], 401);
     }
 
@@ -98,6 +103,12 @@ class AuthenticatedSessionController extends Controller
     $user = Auth::user();
     $user->last_login_at = now();
     $user->save();
+
+    Log::channel('security')->info('Successful login', [
+        'user_id' => $user->id,
+        'email'   => $user->email,
+        'ip'      => $request->ip(),
+    ]);
 
     return response()->json([
         'user' => $user

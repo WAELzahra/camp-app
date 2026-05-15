@@ -53,23 +53,33 @@ return [
 
     'channels' => [
         'stack' => [
-            'driver' => 'stack',
-            'channels' => ['single'],
+            'driver'            => 'stack',
+            'channels'          => ['daily'],
             'ignore_exceptions' => false,
         ],
 
         'single' => [
-            'driver' => 'single',
-            'path' => storage_path('logs/laravel.log'),
-            'level' => env('LOG_LEVEL', 'debug'),
+            'driver'               => 'single',
+            'path'                 => storage_path('logs/laravel.log'),
+            'level'                => env('LOG_LEVEL', 'error'),
             'replace_placeholders' => true,
         ],
 
         'daily' => [
-            'driver' => 'daily',
-            'path' => storage_path('logs/laravel.log'),
-            'level' => env('LOG_LEVEL', 'debug'),
-            'days' => 14,
+            'driver'               => 'daily',
+            'path'                 => storage_path('logs/laravel.log'),
+            'level'                => env('LOG_LEVEL', 'error'),
+            'days'                 => 30,
+            'replace_placeholders' => true,
+        ],
+
+        // Dedicated channel for auth events, access violations, and 5xx errors.
+        // Kept separate so it can be shipped to a SIEM without mixing app noise.
+        'security' => [
+            'driver'               => 'daily',
+            'path'                 => storage_path('logs/security.log'),
+            'level'                => 'info',
+            'days'                 => 90,
             'replace_placeholders' => true,
         ],
 
