@@ -92,7 +92,7 @@ class ReservationCancellationController extends Controller
         ]);
     } catch (\Exception $e) {
         DB::rollBack();
-        return response()->json(['message' => 'Erreur interne', 'error' => $e->getMessage()], 500);
+        return response()->json(['message' => 'Erreur interne', 'error' => 'server_error'], 500);
     }
 }
 

@@ -144,7 +144,7 @@ class AdminNotificationController extends Controller
                         'user_id' => $user->id,
                         'channel' => 'in_app',
                         'status' => 'failed',
-                        'error_message' => $e->getMessage(),
+                        'error_message' => 'An unexpected error occurred.',
                     ]);
                 }
             }
@@ -166,7 +166,7 @@ class AdminNotificationController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to send notification',
-                'error' => $e->getMessage()
+                'error' => 'server_error'
             ], 500);
         }
     }

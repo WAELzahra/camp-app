@@ -147,7 +147,7 @@ class AnnonceController extends Controller
             DB::rollBack();
             return response()->json([
                 'status'  => 'error',
-                'message' => 'Erreur lors de la création: ' . $e->getMessage(),
+                'message' => 'An unexpected error occurred. Please try again.',
             ], 500);
         }
  
@@ -302,7 +302,7 @@ class AnnonceController extends Controller
             DB::rollBack();
             return response()->json([
                 'status'  => 'error',
-                'message' => 'Erreur lors de la mise à jour: ' . $e->getMessage(),
+                'message' => 'An unexpected error occurred. Please try again.',
             ], 500);
         }
  
@@ -338,7 +338,7 @@ class AnnonceController extends Controller
             DB::rollBack();
             return response()->json([
                 'status'  => 'error',
-                'message' => 'Erreur lors de la suppression: ' . $e->getMessage(),
+                'message' => 'An unexpected error occurred. Please try again.',
             ], 500);
         }
 

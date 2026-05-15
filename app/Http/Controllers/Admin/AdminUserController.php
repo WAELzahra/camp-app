@@ -1157,7 +1157,7 @@ public function uploadPhotos(Request $request, $id)
             \Log::error('Erreur upload: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
-                'message' => 'Erreur: ' . $e->getMessage()
+                'message' => 'An unexpected error occurred. Please try again.'
             ], 500);
         }
     }

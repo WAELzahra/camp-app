@@ -499,7 +499,7 @@ class AdminReservationsController extends Controller
             DB::rollBack();
             return response()->json([
                 'success' => false,
-                'message' => 'Erreur lors de la mise à jour: ' . $e->getMessage()
+                'message' => 'An unexpected error occurred. Please try again.'
             ], 500);
         }
     }
@@ -574,7 +574,7 @@ class AdminReservationsController extends Controller
                     $results['success'][] = ['id' => $id, 'status' => $reservation->status];
 
                 } catch (\Exception $e) {
-                    $results['failed'][] = ['id' => $id, 'reason' => $e->getMessage()];
+                    $results['failed'][] = ['id' => $id, 'reason' => 'Processing failed.'];
                 }
             }
 
@@ -904,7 +904,7 @@ class AdminReservationsController extends Controller
         } catch (\Throwable $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to send email: ' . $e->getMessage()
+                'message' => 'An unexpected error occurred. Please try again.'
             ], 500);
         }
     }
@@ -1035,7 +1035,7 @@ class AdminReservationsController extends Controller
             DB::rollBack();
             return response()->json([
                 'success' => false,
-                'message' => 'Erreur lors de la création: ' . $e->getMessage()
+                'message' => 'An unexpected error occurred. Please try again.'
             ], 500);
         }
     }

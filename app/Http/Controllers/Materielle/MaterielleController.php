@@ -225,7 +225,7 @@ class MaterielleController extends Controller
             DB::rollBack();
             return response()->json([
                 'status'  => 'error',
-                'message' => 'Failed to store materielle: ' . $e->getMessage(),
+                'message' => 'Unable to save the equipment. Please try again.',
             ], 500);
         }
     }
@@ -351,7 +351,7 @@ class MaterielleController extends Controller
             DB::rollBack();
             return response()->json([
                 'status'  => 'error',
-                'message' => 'Update failed: ' . $e->getMessage(),
+                'message' => 'Unable to update the equipment. Please try again.',
             ], 500);
         }
     }
@@ -390,7 +390,7 @@ class MaterielleController extends Controller
             DB::rollBack();
             return response()->json([
                 'status'  => 'error',
-                'message' => 'Failed to delete materielle: ' . $e->getMessage(),
+                'message' => 'Unable to delete the equipment. Please try again.',
             ], 500);
         }
     }

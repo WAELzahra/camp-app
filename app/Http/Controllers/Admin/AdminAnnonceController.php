@@ -177,7 +177,7 @@ class AdminAnnonceController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['success' => false, 'message' => 'Erreur lors de la création', 'error' => $e->getMessage()], 500);
+            return response()->json(['success' => false, 'message' => 'Erreur lors de la création', 'error' => 'server_error'], 500);
         }
     }
 
@@ -263,7 +263,7 @@ class AdminAnnonceController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['success' => false, 'message' => 'Erreur lors de la mise à jour', 'error' => $e->getMessage()], 500);
+            return response()->json(['success' => false, 'message' => 'Erreur lors de la mise à jour', 'error' => 'server_error'], 500);
         }
     }
 
@@ -428,7 +428,7 @@ class AdminAnnonceController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['success' => false, 'message' => 'Erreur lors du traitement', 'error' => $e->getMessage()], 500);
+            return response()->json(['success' => false, 'message' => 'Erreur lors du traitement', 'error' => 'server_error'], 500);
         }
     }
 

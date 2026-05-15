@@ -73,7 +73,7 @@ class CommentController extends Controller
             DB::commit();
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
+            return response()->json(['status' => 'error', 'message' => 'An unexpected error occurred. Please try again.'], 500);
         }
 
         $comment->load(['user', 'replies']);

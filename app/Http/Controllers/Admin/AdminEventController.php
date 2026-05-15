@@ -129,7 +129,7 @@ class AdminEventController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['success' => false, 'message' => 'Erreur: ' . $e->getMessage()], 500);
+            return response()->json(['success' => false, 'message' => 'An unexpected error occurred. Please try again.'], 500);
         }
     }
 
@@ -200,7 +200,7 @@ class AdminEventController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['success' => false, 'message' => 'Erreur: ' . $e->getMessage()], 500);
+            return response()->json(['success' => false, 'message' => 'An unexpected error occurred. Please try again.'], 500);
         }
     }
 
@@ -281,7 +281,7 @@ class AdminEventController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['success' => false, 'message' => 'Erreur: ' . $e->getMessage()], 500);
+            return response()->json(['success' => false, 'message' => 'An unexpected error occurred. Please try again.'], 500);
         }
     }
 
@@ -307,7 +307,7 @@ class AdminEventController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['success' => false, 'message' => 'Erreur: ' . $e->getMessage()], 500);
+            return response()->json(['success' => false, 'message' => 'An unexpected error occurred. Please try again.'], 500);
         }
     }
 

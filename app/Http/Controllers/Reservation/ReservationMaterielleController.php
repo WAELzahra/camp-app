@@ -268,7 +268,7 @@ class ReservationMaterielleController extends Controller
             ], 201);
         } catch (\Throwable $e) {
             DB::rollBack();
-            return response()->json(['status' => 'error', 'message' => 'An error occurred: ' . $e->getMessage()], 500);
+            return response()->json(['status' => 'error', 'message' => 'An unexpected error occurred. Please try again.'], 500);
         }
     }
     // -------------------------------------------------------------------------
@@ -374,8 +374,8 @@ class ReservationMaterielleController extends Controller
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
-            \Log::error('Confirm failed', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
-            return response()->json(['message' => 'Error confirming reservation: ' . $e->getMessage()], 500);
+            \Log::error('Confirm failed', ['error' => 'server_error', 'trace' => $e->getTraceAsString()]);
+            return response()->json(['message' => 'An unexpected error occurred. Please try again.'], 500);
         }
     }
     public function reject(int $id)
@@ -472,7 +472,7 @@ class ReservationMaterielleController extends Controller
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['message' => 'Error: ' . $e->getMessage()], 500);
+            return response()->json(['message' => 'An unexpected error occurred. Please try again.'], 500);
         }
     }
 
@@ -543,7 +543,7 @@ class ReservationMaterielleController extends Controller
             return response()->json(['message' => 'Reservation canceled.', 'reservation' => $reservation]);
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['message' => 'Error: ' . $e->getMessage()], 500);
+            return response()->json(['message' => 'An unexpected error occurred. Please try again.'], 500);
         }
     }
 
@@ -658,7 +658,7 @@ class ReservationMaterielleController extends Controller
             return response()->json(['message' => 'Reservation canceled successfully.', 'reservation' => $reservation]);
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['message' => 'Error: ' . $e->getMessage()], 500);
+            return response()->json(['message' => 'An unexpected error occurred. Please try again.'], 500);
         }
     }
 
@@ -701,7 +701,7 @@ class ReservationMaterielleController extends Controller
             return response()->json(['message' => count($overdue) . ' expired reservation(s) marked as disputed.']);
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['message' => 'Error: ' . $e->getMessage()], 500);
+            return response()->json(['message' => 'An unexpected error occurred. Please try again.'], 500);
         }
     }
 }

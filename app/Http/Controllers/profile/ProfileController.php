@@ -132,7 +132,7 @@ class ProfileController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to update center',
-                'error' => $e->getMessage()
+                'error' => 'server_error'
             ], 500);
         }
     }
@@ -178,7 +178,7 @@ class ProfileController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to change password',
-                'error' => $e->getMessage()
+                'error' => 'server_error'
             ], 500);
         }
     }
@@ -727,7 +727,7 @@ class ProfileController extends Controller
             
             return response()->json([
                 'message' => 'Failed to update profile',
-                'error' => $e->getMessage(),
+                'error' => 'server_error',
             ], 500);
         } finally {
             \Log::info('=== PROFILE UPDATE END ===');
@@ -760,7 +760,7 @@ class ProfileController extends Controller
         } catch (\Exception $e) {
             return response()->json([
                 'message' => 'Avatar upload failed.',
-                'error' => $e->getMessage(),
+                'error' => 'server_error',
             ], 500);
         }
     }
@@ -816,7 +816,7 @@ class ProfileController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to update album info',
-                'error' => $e->getMessage(),
+                'error' => 'server_error',
                 'trace' => config('app.debug') ? $e->getTraceAsString() : null
             ], 500);
         }
@@ -941,7 +941,7 @@ class ProfileController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to upload photos',
-                'error' => $e->getMessage(),
+                'error' => 'server_error',
             ], 500);
         }
     }
@@ -1093,7 +1093,7 @@ class ProfileController extends Controller
             } catch (\Exception $e) {
                 DB::rollBack();
                 \Log::error('Photo deletion error (centre): ' . $e->getMessage());
-                return response()->json(['success' => false, 'message' => 'Failed to delete photo', 'error' => $e->getMessage()], 500);
+                return response()->json(['success' => false, 'message' => 'Failed to delete photo', 'error' => 'server_error'], 500);
             }
         }
 
@@ -1140,7 +1140,7 @@ class ProfileController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
             \Log::error('Photo deletion error: ' . $e->getMessage());
-            return response()->json(['success' => false, 'message' => 'Failed to delete photo', 'error' => $e->getMessage()], 500);
+            return response()->json(['success' => false, 'message' => 'Failed to delete photo', 'error' => 'server_error'], 500);
         }
     }
 
@@ -1188,7 +1188,7 @@ class ProfileController extends Controller
             } catch (\Exception $e) {
                 DB::rollBack();
                 \Log::error('Cover photo update error (centre): ' . $e->getMessage());
-                return response()->json(['success' => false, 'message' => 'Failed to update cover photo', 'error' => $e->getMessage()], 500);
+                return response()->json(['success' => false, 'message' => 'Failed to update cover photo', 'error' => 'server_error'], 500);
             }
         }
 
@@ -1222,7 +1222,7 @@ class ProfileController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
             \Log::error('Cover photo update error: ' . $e->getMessage());
-            return response()->json(['success' => false, 'message' => 'Failed to update cover photo', 'error' => $e->getMessage()], 500);
+            return response()->json(['success' => false, 'message' => 'Failed to update cover photo', 'error' => 'server_error'], 500);
         }
     }
 
@@ -1272,7 +1272,7 @@ class ProfileController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to reorder photos',
-                'error' => $e->getMessage(),
+                'error' => 'server_error',
             ], 500);
         }
     }
@@ -1551,7 +1551,7 @@ class ProfileController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to add custom service',
-                'error' => $e->getMessage()
+                'error' => 'server_error'
             ], 500);
         }
     }
@@ -1616,7 +1616,7 @@ class ProfileController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch service categories',
-                'error' => $e->getMessage()
+                'error' => 'server_error'
             ], 500);
         }
     }
@@ -1698,7 +1698,7 @@ class ProfileController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch center services',
-                'error' => $e->getMessage()
+                'error' => 'server_error'
             ], 500);
         }
     }
@@ -1817,7 +1817,7 @@ class ProfileController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to update service',
-                'error' => $e->getMessage(),
+                'error' => 'server_error',
                 'trace' => config('app.debug') ? $e->getTraceAsString() : null
             ], 500);
         }
@@ -1856,7 +1856,7 @@ class ProfileController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to delete service',
-                'error' => $e->getMessage()
+                'error' => 'server_error'
             ], 500);
         }
     }
@@ -1881,7 +1881,7 @@ class ProfileController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch equipment',
-                'error' => $e->getMessage()
+                'error' => 'server_error'
             ], 500);
         }
     }
@@ -1933,7 +1933,7 @@ class ProfileController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to update equipment',
-                'error' => $e->getMessage()
+                'error' => 'server_error'
             ], 500);
         }
     }

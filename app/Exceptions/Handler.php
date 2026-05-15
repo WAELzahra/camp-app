@@ -6,6 +6,7 @@ use Illuminate\Foundation\Exceptions\Handler as ExceptionHandler;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Database\QueryException;
 use Illuminate\Auth\Access\AuthorizationException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
@@ -73,6 +74,20 @@ class Handler extends ExceptionHandler
                 'message' => 'You do not have permission to perform this action.',
                 'error'   => 'forbidden',
             ], 403);
+        }
+
+        if ($e instanceof QueryException) {
+            Log::error('Database error', [
+                'sql'     => $e->getSql(),
+                'message' => $e->getMessage(),
+                'url'     => request()->fullUrl(),
+                'user_id' => auth()->id(),
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'A database error occurred. Please try again.',
+                'error'   => 'database_error',
+            ], 500);
         }
 
         if ($e instanceof ModelNotFoundException || $e instanceof NotFoundHttpException) {

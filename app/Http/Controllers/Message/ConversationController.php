@@ -222,7 +222,7 @@ class ConversationController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to start conversation',
-                'error' => $e->getMessage()
+                'error' => 'server_error'
             ], 500);
         }
     }
@@ -747,7 +747,7 @@ class ConversationController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to start conversation',
-                'error' => $e->getMessage()
+                'error' => 'server_error'
             ], 500);
         }
     }

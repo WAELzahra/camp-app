@@ -989,7 +989,7 @@ class ReservationsCentreController extends Controller
 
         } catch (\Throwable $e) {
             DB::rollBack();
-            return response()->json(['message' => 'Error: ' . $e->getMessage()], 500);
+            return response()->json(['message' => 'An unexpected error occurred. Please try again.'], 500);
         }
     }
 
