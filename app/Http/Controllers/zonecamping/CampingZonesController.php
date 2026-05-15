@@ -25,7 +25,7 @@ class CampingZonesController extends Controller
         $user  = Auth::user();
         $isAdmin = $user && $user->role && $user->role->name === 'admin';
 
-        $query = CampingZone::with(['coverPhoto', 'centre']);
+        $query = CampingZone::with(['photos', 'coverPhoto', 'centre']);
 
         // Non-admins only see open, public, non-closed zones
         if (!$isAdmin) {
@@ -35,11 +35,24 @@ class CampingZonesController extends Controller
         }
 
         // Filters
+        if ($request->filled('q')) {
+            $term = $request->q;
+            $query->where(function ($q) use ($term) {
+                $q->where('nom',         'LIKE', "%{$term}%")
+                  ->orWhere('city',       'LIKE', "%{$term}%")
+                  ->orWhere('region',     'LIKE', "%{$term}%")
+                  ->orWhere('description','LIKE', "%{$term}%");
+            });
+        }
         if ($request->filled('region'))     $query->where('region', $request->region);
         if ($request->filled('city'))       $query->where('city', $request->city);
         if ($request->filled('terrain'))    $query->where('terrain', 'LIKE', "%{$request->terrain}%");
-        if ($request->filled('difficulty')) $query->where('difficulty', $request->difficulty);
-        if ($request->filled('danger_level')) $query->where('danger_level', $request->danger_level);
+        if ($request->filled('difficulty')) {
+            $query->whereIn('difficulty', (array) $request->difficulty);
+        }
+        if ($request->filled('danger_level')) {
+            $query->whereIn('danger_level', (array) $request->danger_level);
+        }
         if ($request->filled('access_type'))  $query->where('access_type', $request->access_type);
         if ($request->filled('is_protected_area')) {
             $query->where('is_protected_area', (bool) $request->is_protected_area);
@@ -305,7 +318,7 @@ class CampingZonesController extends Controller
      */
     public function search(Request $request)
     {
-        $query = CampingZone::with(['coverPhoto'])
+        $query = CampingZone::with(['photos', 'coverPhoto'])
             ->where('status', true)
             ->where('is_public', true)
             ->where('is_closed', false);
@@ -335,7 +348,7 @@ class CampingZonesController extends Controller
     {
         $request->validate(['region' => 'required|string']);
 
-        $zones = CampingZone::with('coverPhoto')
+        $zones = CampingZone::with(['photos', 'coverPhoto'])
             ->where('region', $request->region)
             ->where('status', true)
             ->where('is_closed', false)
@@ -357,7 +370,7 @@ class CampingZonesController extends Controller
 
         $radius = $request->radius ?? 10;
 
-        $zones = CampingZone::with('coverPhoto')
+        $zones = CampingZone::with(['photos', 'coverPhoto'])
             ->where('status', true)
             ->where('is_public', true)
             ->where('is_closed', false)
@@ -378,7 +391,7 @@ class CampingZonesController extends Controller
      */
     public function topZones(Request $request)
     {
-        $zones = CampingZone::with('coverPhoto')
+        $zones = CampingZone::with(['photos', 'coverPhoto'])
             ->where('status', true)
             ->where('is_public', true)
             ->where('is_closed', false)
@@ -397,7 +410,7 @@ class CampingZonesController extends Controller
     {
         $season = $request->get('season', $this->getCurrentSeason());
 
-        $zones = CampingZone::with('coverPhoto')
+        $zones = CampingZone::with(['photos', 'coverPhoto'])
             ->where('status', true)
             ->where('is_public', true)
             ->where('is_closed', false)
@@ -414,7 +427,7 @@ class CampingZonesController extends Controller
      */
     public function excludeNonRelevantZones()
     {
-        $zones = CampingZone::with('coverPhoto')
+        $zones = CampingZone::with(['photos', 'coverPhoto'])
             ->where('status', true)
             ->where('is_public', true)
             ->where('is_closed', false)
@@ -431,7 +444,7 @@ class CampingZonesController extends Controller
     public function personalizedRecommendations($userId)
     {
         // Fall back to top-rated if no user preferences available
-        $zones = CampingZone::with('coverPhoto')
+        $zones = CampingZone::with(['photos', 'coverPhoto'])
             ->where('status', true)
             ->where('is_public', true)
             ->where('is_closed', false)
@@ -457,7 +470,7 @@ class CampingZonesController extends Controller
     {
         $season = $this->getCurrentSeason();
 
-        $zones = CampingZone::with('coverPhoto')
+        $zones = CampingZone::with(['photos', 'coverPhoto'])
             ->where('status', true)
             ->where('is_public', true)
             ->where('is_closed', false)
@@ -645,8 +658,8 @@ class CampingZonesController extends Controller
                 'email'   => $zone->contact_email,
                 'website' => $zone->contact_website,
             ]),
-            'cover_image'    => $zone->coverPhoto?->path_to_img,
-            'images'         => $zone->photos?->pluck('path_to_img') ?? [],
+            'cover_image'    => $zone->cover_image,
+            'images'         => $zone->images ?? [],
             'status'         => $zone->status,
             'is_closed'      => $zone->is_closed,
         ];
