@@ -361,7 +361,7 @@ class AdminPaymentController extends Controller
     public function adjustBalance(Request $request, $userId)
     {
         $request->validate([
-            'montant'   => 'required|numeric',
+            'montant'   => 'required|numeric|min:0.01',
             'type'      => 'required|in:credit,debit',
             'note'      => 'nullable|string|max:500',
             'password'  => 'required|string',
@@ -372,14 +372,38 @@ class AdminPaymentController extends Controller
         }
 
         $balance = Balance::forUser($userId);
+        $amount  = round((float) $request->montant, 2);
+        $adminId = \Illuminate\Support\Facades\Auth::id();
+        $note    = $request->note ?: 'Ajustement manuel admin';
 
-        if ($request->type === 'credit') {
-            $balance->crediter($request->montant);
-        } else {
-            if ($balance->solde_disponible < $request->montant) {
-                return response()->json(['success' => false, 'message' => 'Solde insuffisant.'], 400);
+        if ($request->type === 'debit' && $balance->solde_disponible < $amount) {
+            return response()->json(['success' => false, 'message' => 'Solde insuffisant.'], 400);
+        }
+
+        \Illuminate\Support\Facades\DB::beginTransaction();
+        try {
+            if ($request->type === 'credit') {
+                $balance->crediter($amount);
+                \App\Models\WalletTransaction::logCredit(
+                    $userId, 'admin_credit',
+                    $amount, 0, 0, $amount,
+                    'admin_adjustment', null,
+                    $note, $adminId
+                );
+            } else {
+                $balance->debiter($amount);
+                \App\Models\WalletTransaction::logDebit(
+                    $userId, 'admin_debit',
+                    $amount,
+                    'admin_adjustment', null,
+                    $note, $adminId
+                );
             }
-            $balance->debiter($request->montant);
+            \Illuminate\Support\Facades\DB::commit();
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\DB::rollBack();
+            \Log::error('adjustBalance failed', ['error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'message' => 'Erreur lors de l\'ajustement.'], 500);
         }
 
         return response()->json([

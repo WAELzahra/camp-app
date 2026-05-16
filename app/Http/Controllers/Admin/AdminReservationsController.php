@@ -16,6 +16,10 @@ use App\Models\Events;
 use App\Models\Materielles;
 use App\Models\Circuit;
 use App\Models\Payments;
+use App\Models\CampingCentre;
+use App\Models\PromoCode;
+use App\Models\Balance;
+use App\Models\WalletTransaction;
 use App\Mail\ReservationStatusUpdated;
 use Illuminate\Support\Facades\Mail;
 
@@ -137,7 +141,7 @@ class AdminReservationsController extends Controller
      */
     private function getCenterReservations(Request $request)
     {
-        $query = Reservations_centre::with(['user', 'centre', 'serviceItems.service'])
+        $query = Reservations_centre::with(['user', 'serviceItems.service'])
             ->select(
                 'id',
                 'user_id',
@@ -145,6 +149,7 @@ class AdminReservationsController extends Controller
                 'date_debut',
                 'date_fin',
                 'nbr_place',
+                'nights',
                 'note',
                 'status',
                 'payments_id',
@@ -153,6 +158,7 @@ class AdminReservationsController extends Controller
                 'platform_fee_rate',
                 'payment_method',
                 'discount_amount',
+                'promo_code_id',
                 'service_count',
                 'created_at',
                 'updated_at',
@@ -187,12 +193,35 @@ class AdminReservationsController extends Controller
             $query->whereDate('date_fin', '<=', $request->date_to);
         }
 
-        return $query->get()->map(function($item) {
-            $item->display_name = "Réservation Centre #{$item->id}";
-            $item->subtitle = "Centre: " . ($item->centre->name ?? 'N/A');
-            $item->capacity = $item->nbr_place;
-            $item->price = (float)($item->total_price ?? 0);
-            $item->code = "CR" . str_pad($item->id, 3, '0', STR_PAD_LEFT);
+        $items = $query->get();
+
+        $centreIds = $items->pluck('centre_id')->filter()->unique()->toArray();
+        $centres   = CampingCentre::whereIn('id', $centreIds)->get()->keyBy('id');
+
+        $promoIds   = $items->pluck('promo_code_id')->filter()->unique()->toArray();
+        $promoCodes = PromoCode::whereIn('id', $promoIds)
+            ->get(['id', 'code', 'discount_type', 'discount_value'])
+            ->keyBy('id');
+
+        return $items->map(function($item) use ($centres, $promoCodes) {
+            $centre = $centres[$item->centre_id] ?? null;
+            $item->centre = $centre ? (object)[
+                'id'      => $centre->id,
+                'name'    => $centre->nom,
+                'address' => $centre->adresse,
+            ] : null;
+
+            $item->display_name  = "Réservation Centre #{$item->id}";
+            $item->subtitle      = "Centre: " . ($centre ? $centre->nom : 'N/A');
+            $item->capacity      = $item->nbr_place;
+            $item->price         = (float)($item->total_price ?? 0);
+            $item->code          = "CR" . str_pad($item->id, 3, '0', STR_PAD_LEFT);
+            $item->nights_count  = $item->nights ?? (
+                $item->date_debut && $item->date_fin
+                    ? max(1, \Carbon\Carbon::parse($item->date_debut)->diffInDays(\Carbon\Carbon::parse($item->date_fin)))
+                    : null
+            );
+            $item->promo_code = $item->promo_code_id ? ($promoCodes[$item->promo_code_id] ?? null) : null;
             return $item;
         });
     }
@@ -219,6 +248,7 @@ class AdminReservationsController extends Controller
                 'reservations_events.platform_fee_amount',
                 'reservations_events.platform_fee_rate',
                 'reservations_events.payment_method',
+                'reservations_events.promo_code_id',
                 'reservations_events.created_at',
                 'reservations_events.updated_at',
                 DB::raw("'events' as reservation_type"),
@@ -253,7 +283,14 @@ class AdminReservationsController extends Controller
             $query->whereDate('ev.end_date', '<=', $request->date_to);
         }
 
-        return $query->get()->map(function($item) {
+        $items = $query->get();
+
+        $promoIds   = $items->pluck('promo_code_id')->filter()->unique()->toArray();
+        $promoCodes = PromoCode::whereIn('id', $promoIds)
+            ->get(['id', 'code', 'discount_type', 'discount_value'])
+            ->keyBy('id');
+
+        return $items->map(function($item) use ($promoCodes) {
             $item->display_name = $item->name ?? "Réservation Événement #{$item->id}";
             $item->subtitle = "Événement: " . ($item->event->title ?? 'N/A');
             $item->capacity = $item->nbr_place;
@@ -261,10 +298,10 @@ class AdminReservationsController extends Controller
             $gross    = (float)($item->event_price_per_person ?? 0) * (int)$item->nbr_place;
             $discount = (float)($item->discount_amount ?? 0);
             $fee      = (float)($item->platform_fee_amount ?? 0);
-            // Total what camper actually paid = base price - discount + service fee
             $item->price = max(0, round($gross - $discount + $fee, 2));
 
             $item->code = "ER" . str_pad($item->id, 3, '0', STR_PAD_LEFT);
+            $item->promo_code = $item->promo_code_id ? ($promoCodes[$item->promo_code_id] ?? null) : null;
             return $item;
         });
     }
@@ -289,9 +326,13 @@ class AdminReservationsController extends Controller
                 'platform_fee_rate',
                 'payment_method',
                 'discount_amount',
+                'promo_code_id',
                 'frais_livraison',
                 'mode_livraison',
                 'status',
+                'pin_used_at',
+                'confirmed_at',
+                'retrieved_at',
                 'created_at',
                 'updated_at',
                 DB::raw("'materielle' as reservation_type")
@@ -327,13 +368,35 @@ class AdminReservationsController extends Controller
             $query->whereDate('date_fin', '<=', $request->date_to);
         }
 
-        return $query->get()->map(function($item) {
+        $items = $query->get();
+
+        $promoIds   = $items->pluck('promo_code_id')->filter()->unique()->toArray();
+        $promoCodes = PromoCode::whereIn('id', $promoIds)
+            ->get(['id', 'code', 'discount_type', 'discount_value'])
+            ->keyBy('id');
+
+        return $items->map(function($item) use ($promoCodes) {
+            // Compute supplier display name from User first_name/last_name
+            if ($item->fournisseur) {
+                $fn = trim(($item->fournisseur->first_name ?? '') . ' ' . ($item->fournisseur->last_name ?? ''));
+                $item->fournisseur->name  = $fn ?: ($item->fournisseur->email ?? 'Unknown');
+                $item->fournisseur->email = $item->fournisseur->email ?? null;
+                $item->fournisseur->phone = $item->fournisseur->phone_number ?? $item->fournisseur->phone ?? null;
+            }
+
             $item->display_name = "Réservation Matériel #{$item->id}";
             $item->subtitle = "Matériel: " . ($item->materielle->nom ?? 'N/A')
                 . " (" . ucfirst($item->type_reservation ?? 'location') . ")";
-            $item->capacity = $item->quantite;
-            $item->price = $item->montant_total ?? 0;
-            $item->code = "MR" . str_pad($item->id, 3, '0', STR_PAD_LEFT);
+            $item->capacity  = $item->quantite;
+            $item->price     = $item->montant_total ?? 0;
+            $item->code      = "MR" . str_pad($item->id, 3, '0', STR_PAD_LEFT);
+            $item->promo_code = $item->promo_code_id ? ($promoCodes[$item->promo_code_id] ?? null) : null;
+            // PIN status for admin display (never expose the hashed pin_code itself)
+            $item->pin_status = match(true) {
+                $item->pin_used_at !== null  => 'used',
+                in_array($item->status, ['confirmed', 'paid']) => 'generated',
+                default => 'not_generated',
+            };
             return $item;
         });
     }
@@ -471,8 +534,15 @@ class AdminReservationsController extends Controller
             ], 422);
         }
 
+        $rejectedStatuses = [
+            'center'     => ['rejected', 'canceled'],
+            'events'     => ['refusée', 'annulée_par_organisateur', 'annulée_par_utilisateur'],
+            'materielle' => ['rejected', 'cancelled_by_fournisseur', 'cancelled_by_camper'],
+            'guides'     => ['rejected', 'canceled'],
+        ];
+
         DB::beginTransaction();
-        
+
         try {
             $oldStatus = $reservation->status;
             $data = $validator->validated();
@@ -481,19 +551,18 @@ class AdminReservationsController extends Controller
                 $this->handleEventPlaceChange($reservation, $data['nbr_place']);
             }
 
-            $reservation->update($data);
+            if ($request->action === 'cancel' && $type === 'events') {
+                $this->restoreEventPlaces($reservation);
+            }
 
-            if ($oldStatus !== $reservation->status && $this->shouldSendEmail($reservation, $type)) {
+            $reservation->update($data);
+            $newStatus = $reservation->status;
+
+            if ($oldStatus !== $newStatus && $this->shouldSendEmail($reservation, $type)) {
                 $this->sendStatusUpdateEmail($reservation, $type, $oldStatus);
             }
 
             DB::commit();
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Réservation mise à jour avec succès',
-                'data' => $reservation->fresh($this->getRelationsForType($type))
-            ]);
 
         } catch (\Exception $e) {
             DB::rollBack();
@@ -501,6 +570,105 @@ class AdminReservationsController extends Controller
                 'success' => false,
                 'message' => 'An unexpected error occurred. Please try again.'
             ], 500);
+        }
+
+        // Refund wallet escrow after commit if status changed to a rejection/cancellation
+        $newStatus = $reservation->status;
+        $isRefundStatus = in_array($newStatus, $rejectedStatuses[$type] ?? []);
+        if ($isRefundStatus) {
+            $this->processAdminRefund($reservation, $type);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Réservation mise à jour avec succès',
+            'data' => $reservation->fresh($this->getRelationsForType($type))
+        ]);
+    }
+
+    /**
+     * Issue a full wallet refund to the camper when admin rejects or cancels a reservation.
+     * Must be called AFTER DB::commit() so wallet operations are independent of the status transaction.
+     */
+    private function processAdminRefund($reservation, string $type): void
+    {
+        $refTypeMap = [
+            'center'     => 'centre_reservation',
+            'events'     => 'event_reservation',
+            'materielle' => 'materiel_reservation',
+            'guides'     => null,
+        ];
+
+        $referenceType = $refTypeMap[$type] ?? null;
+        if (!$referenceType) {
+            return; // guides do not use wallet escrow
+        }
+
+        $userId = $reservation->user_id ?? $reservation->reserver_id ?? null;
+        if (!$userId) {
+            \Log::warning('Admin refund skipped: no user_id', ['type' => $type, 'reservation_id' => $reservation->id]);
+            return;
+        }
+
+        // Guard against double-refund — check for an existing refund credit for this reservation
+        $alreadyRefunded = WalletTransaction::where('user_id', $userId)
+            ->where('type', 'credit')
+            ->where('category', 'refund_in')
+            ->where('reference_type', $referenceType)
+            ->where('reference_id', $reservation->id)
+            ->exists();
+
+        if ($alreadyRefunded) {
+            \Log::info('Admin refund skipped: already refunded', ['type' => $type, 'reservation_id' => $reservation->id]);
+            return;
+        }
+
+        // Find the original escrow debit — only present for wallet payments
+        $escrowTx = WalletTransaction::where('user_id', $userId)
+            ->where('type', 'debit')
+            ->where('category', 'reservation_payment')
+            ->where('reference_type', $referenceType)
+            ->where('reference_id', $reservation->id)
+            ->first();
+
+        if (!$escrowTx) {
+            \Log::info('Admin refund skipped: no escrow debit found (non-wallet payment or escrow already released)', [
+                'type' => $type, 'reservation_id' => $reservation->id,
+                'user_id' => $userId, 'reference_type' => $referenceType,
+                'payment_method' => $reservation->payment_method ?? 'unknown',
+            ]);
+            return;
+        }
+
+        $amount = (float) $escrowTx->amount_gross;
+        if ($amount <= 0) {
+            \Log::info('Admin refund skipped: zero amount in escrow tx', ['type' => $type, 'reservation_id' => $reservation->id]);
+            return;
+        }
+
+        try {
+            Balance::forUser($userId)->refundEscrow($amount);
+            WalletTransaction::logCredit(
+                $userId, 'refund_in',
+                $amount, 0, 0, $amount,
+                $referenceType, $reservation->id,
+                "Remboursement admin — réservation #{$reservation->id}",
+                Auth::id()
+            );
+            \Log::info('Admin refund issued', [
+                'type'           => $type,
+                'reservation_id' => $reservation->id,
+                'amount'         => $amount,
+                'user_id'        => $userId,
+                'admin_id'       => Auth::id(),
+            ]);
+        } catch (\Throwable $e) {
+            \Log::error('Admin refund failed', [
+                'type'           => $type,
+                'reservation_id' => $reservation->id,
+                'user_id'        => $userId,
+                'error'          => $e->getMessage(),
+            ]);
         }
     }
 
@@ -523,13 +691,16 @@ class AdminReservationsController extends Controller
             'failed' => []
         ];
 
+        // Collected after the loop so wallet refunds run OUTSIDE the DB transaction
+        $needsRefund = [];
+
         DB::beginTransaction();
 
         try {
             foreach ($request->ids as $id) {
                 try {
                     $reservation = $modelClass::find($id);
-                    
+
                     if (!$reservation) {
                         $results['failed'][] = ['id' => $id, 'reason' => 'Réservation non trouvée'];
                         continue;
@@ -541,7 +712,7 @@ class AdminReservationsController extends Controller
                     }
 
                     $oldStatus = $reservation->status;
-                    
+
                     switch ($request->action) {
                         case 'approve':
                             $reservation->status = $this->getApprovedStatus($request->type);
@@ -567,6 +738,11 @@ class AdminReservationsController extends Controller
                         $this->restoreEventPlaces($reservation);
                     }
 
+                    // Queue for refund — processed after DB::commit() so wallet ops are independent
+                    if (in_array($request->action, ['reject', 'cancel'])) {
+                        $needsRefund[] = [$reservation, $request->type];
+                    }
+
                     if ($this->shouldSendEmail($reservation, $request->type)) {
                         $this->sendStatusUpdateEmail($reservation, $request->type, $oldStatus);
                     }
@@ -580,12 +756,6 @@ class AdminReservationsController extends Controller
 
             DB::commit();
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Actions groupées effectuées',
-                'data' => $results
-            ]);
-
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json([
@@ -593,6 +763,17 @@ class AdminReservationsController extends Controller
                 'message' => 'Erreur lors des actions groupées: ' . $e->getMessage()
             ], 500);
         }
+
+        // Process wallet refunds OUTSIDE the transaction — status changes are already committed
+        foreach ($needsRefund as [$reservation, $type]) {
+            $this->processAdminRefund($reservation, $type);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Actions groupées effectuées',
+            'data' => $results
+        ]);
     }
 
     /**
@@ -908,6 +1089,41 @@ class AdminReservationsController extends Controller
             ], 500);
         }
     }
+    /**
+     * Generate an emergency admin override PIN for a materielle reservation.
+     * Used when the camper's PIN is unavailable (app crash, no phone, etc.).
+     * The PIN is shown once in the response and is never stored in plaintext.
+     */
+    public function generateMasterPin(int $id)
+    {
+        $reservation = Reservations_materielles::find($id);
+
+        if (!$reservation) {
+            return response()->json(['success' => false, 'message' => 'Reservation not found'], 404);
+        }
+
+        if (!in_array($reservation->status, ['confirmed', 'paid'])) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Emergency PIN can only be generated for confirmed reservations awaiting pickup.',
+            ], 400);
+        }
+
+        $rawPin = $reservation->generateAdminPin();
+
+        \Log::warning("Admin generated emergency master PIN", [
+            'admin_id'       => Auth::id(),
+            'reservation_id' => $id,
+            'camper_id'      => $reservation->user_id,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Emergency PIN generated. Show this to the supplier — it will not be shown again.',
+            'pin'     => $rawPin,
+        ]);
+    }
+
     /**
     * Crée une nouvelle réservation
      */

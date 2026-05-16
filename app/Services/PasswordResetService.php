@@ -49,10 +49,7 @@ class PasswordResetService
         // Send email with code
         $this->sendResetEmail($user, $code, $token);
         
-        Log::info('Password reset request created', [
-            'email' => $email,
-            'code' => $code
-        ]);
+        Log::info('Password reset request created', ['email' => $email]);
         
         return [
             'success' => true,
@@ -91,8 +88,12 @@ class PasswordResetService
                 'user_id' => $user->id
             ]);
             
-        } catch (\Exception $e) {
-            Log::error('Failed to send password reset email: ' . $e->getMessage());
+        } catch (\Throwable $e) {
+            Log::error('Failed to send password reset email', [
+                'exception' => get_class($e),
+                'message'   => $e->getMessage(),
+                'email'     => $user->email,
+            ]);
             throw $e;
         }
     }
@@ -108,7 +109,7 @@ class PasswordResetService
             ->first();
         
         if (!$record) {
-            Log::warning('Invalid reset code', ['email' => $email, 'code' => $code]);
+            Log::warning('Invalid reset code attempt', ['email' => $email]);
             return [
                 'success' => false,
                 'message' => 'Invalid verification code'

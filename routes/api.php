@@ -1013,7 +1013,8 @@ Route::prefix('annonces')->group(function () {
         Route::post('/bulk-action', [AdminReservationsController::class, 'bulkAction']);
         Route::get('/export', [AdminReservationsController::class, 'export']);
         Route::post('/materielle/check-availability/{materialId}', [AdminReservationsController::class, 'checkMaterialAvailability']);
-        
+        Route::post('/materielle/{id}/generate-master-pin', [AdminReservationsController::class, 'generateMasterPin']);
+
         Route::prefix('{type}')->whereIn('type', ['center', 'events', 'materielle', 'guides'])->group(function () {
             Route::post('/', [AdminReservationsController::class, 'store']);
             Route::get('/{id}', [AdminReservationsController::class, 'show']);
@@ -1262,6 +1263,14 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     // Admin wallet
     Route::get('/wallet/summary',      [\App\Http\Controllers\Admin\AdminWalletController::class, 'summary']);
     Route::get('/wallet/transactions', [\App\Http\Controllers\Admin\AdminWalletController::class, 'transactions']);
+
+    // User financial tracker
+    Route::get('/track/search',        [\App\Http\Controllers\Admin\AdminUserTrackController::class, 'search']);
+    Route::get('/track/{userId}',      [\App\Http\Controllers\Admin\AdminUserTrackController::class, 'audit']);
+
+    // Admin balance adjustments (solde historique)
+    Route::get('/balance-history',     [\App\Http\Controllers\Admin\AdminUserTrackController::class, 'balanceHistory']);
+    Route::post('/balance-adjust',     [\App\Http\Controllers\Admin\AdminUserTrackController::class, 'balanceAdjust']);
 });
 
 // ==================== PROMO CODE ROUTES ====================

@@ -22,8 +22,8 @@ class PasswordResetMail extends Mailable
         string $code,
         string $resetLink,
         string $frontendUrl,
-        User $user = null,
-        Carbon $expiresAt = null
+        ?User $user = null,
+        ?Carbon $expiresAt = null
     ) {
         $this->code = $code;
         $this->resetLink = $resetLink;

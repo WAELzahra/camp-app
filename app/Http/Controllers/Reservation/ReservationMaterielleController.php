@@ -360,23 +360,32 @@ class ReservationMaterielleController extends Controller
             }
 
             DB::commit();
-
-            \Log::info('Reservation confirmed, sending email', [
-                'camper_email' => $reservation->user->email,
-                'pin_length'   => strlen($rawPin),
-            ]);
-
-            Mail::to($reservation->user->email)->send(new ReservationConfirmedToCamper($reservation, $rawPin));
-
-            return response()->json([
-                'message'     => 'Reservation confirmed. PIN has been sent to the camper by email.',
-                'reservation' => $reservation,
-            ]);
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             DB::rollBack();
-            \Log::error('Confirm failed', ['error' => 'server_error', 'trace' => $e->getTraceAsString()]);
+            \Log::error('Confirm failed', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
             return response()->json(['message' => 'An unexpected error occurred. Please try again.'], 500);
         }
+
+        // Mail is sent outside the transaction — a mail failure must not roll back a committed reservation.
+        try {
+            \Log::info('Reservation confirmed, sending PIN email', [
+                'reservation_id' => $reservation->id,
+                'camper_email'   => $reservation->user->email,
+            ]);
+            Mail::to($reservation->user->email)->send(new ReservationConfirmedToCamper($reservation, $rawPin));
+        } catch (\Throwable $mailErr) {
+            \Log::error('PIN email failed — reservation confirmed but camper not notified', [
+                'reservation_id' => $reservation->id,
+                'camper_email'   => $reservation->user->email,
+                'error'          => $mailErr->getMessage(),
+            ]);
+            // Don't return 500 — the reservation IS confirmed. Admin can generate an emergency PIN if needed.
+        }
+
+        return response()->json([
+            'message'     => 'Reservation confirmed. PIN has been sent to the camper by email.',
+            'reservation' => $reservation,
+        ]);
     }
     public function reject(int $id)
     {
