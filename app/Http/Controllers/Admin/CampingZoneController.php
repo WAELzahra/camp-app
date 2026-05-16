@@ -378,7 +378,7 @@ class CampingZoneController extends Controller
             'closure_reason'    => 'nullable|string',
             'closure_start'     => 'nullable|date',
             'closure_end'       => 'nullable|date|after_or_equal:closure_start',
-            'image'             => 'nullable|image|max:4096',
+            'image'             => 'nullable|image|max:5120',
         ]);
 
         if ($request->hasFile('image')) {
@@ -603,7 +603,7 @@ class CampingZoneController extends Controller
 
         $request->validate([
             'photos'      => 'required|array',
-            'photos.*'    => 'file|image|max:4096',
+            'photos.*'    => 'file|image|max:5120',
             'cover_index' => 'nullable|integer',
         ]);
 

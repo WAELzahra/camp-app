@@ -100,7 +100,7 @@ class BoutiqueController extends Controller
         $validated = $request->validate([
             'nom_boutique' => 'required|string|max:255',
             'description'  => 'nullable|string',
-            'image'        => 'nullable|image|mimes:jpeg,png,jpg,webp|max:2048',
+            'image'        => 'nullable|image|mimes:jpeg,png,jpg,webp|max:5120',
         ], [
             'nom_boutique.required' => 'Le nom de la boutique est obligatoire.',
         ]);
@@ -143,7 +143,7 @@ class BoutiqueController extends Controller
         $validated = $request->validate([
             'nom_boutique' => 'sometimes|required|string|max:255',
             'description'  => 'nullable|string',
-            'image'        => 'nullable|image|mimes:jpeg,png,jpg,webp|max:2048',
+            'image'        => 'nullable|image|mimes:jpeg,png,jpg,webp|max:5120',
         ], [
             'nom_boutique.required' => 'Le nom de la boutique est requis.',
         ]);

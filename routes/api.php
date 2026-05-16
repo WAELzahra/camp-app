@@ -202,6 +202,7 @@ Route::prefix('zones')->group(function () {
     Route::get('/top-by-season', [CampingZonesController::class, 'topZonesBySeason']);
     Route::get('/recommend', [CampingZonesController::class, 'recommendZones']);
     Route::get('/exclude-non-relevant', [CampingZonesController::class, 'excludeNonRelevantZones']);
+    Route::get('/registered-map', [CampingZonesController::class, 'registeredZonesMap']);
     Route::get('/{id}', [CampingZonesController::class, 'show']);
     Route::get('/{id}/validate-coordinates', [CampingZonesController::class, 'validateCoordinates']);
     Route::get('/{id}/stats', [CampingZonesController::class, 'zoneStats']);

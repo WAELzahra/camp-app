@@ -111,7 +111,7 @@ class CampingCentreController extends Controller
             'user_id'           => 'nullable|exists:users,id',
             // Photos : tableau de fichiers images
             'photos'            => 'nullable|array',
-            'photos.*'          => 'file|image|max:4096',
+            'photos.*'          => 'file|image|max:5120',
             'cover_index'       => 'nullable|integer|min:0',
         ]);
 
@@ -167,7 +167,7 @@ class CampingCentreController extends Controller
         'lat'               => 'sometimes|numeric',
         'lng'               => 'sometimes|numeric',
         'type'              => 'sometimes|string',
-        'image'             => 'nullable|image|max:2048',
+        'image'             => 'nullable|image|max:5120',
         'description'       => 'nullable|string',
         'status'            => 'sometimes|boolean',
         'validation_status' => 'nullable|in:pending,approved,rejected',
@@ -419,7 +419,7 @@ class CampingCentreController extends Controller
     {
         $request->validate([
             'photos'      => 'required|array',
-            'photos.*'    => 'file|image|max:4096',
+            'photos.*'    => 'file|image|max:5120',
             'cover_index' => 'nullable|integer',
         ]);
 

@@ -146,7 +146,7 @@ class MaterielleController extends Controller
             'quantite_dispo'       => 'required|integer|min:0',
             'livraison_disponible' => 'boolean',
             'frais_livraison'      => 'nullable|numeric|min:0',
-            'image'                => 'required|image|mimes:jpeg,png,jpg,webp|max:4096',
+            'image'                => 'required|image|mimes:jpeg,png,jpg,webp|max:5120',
         ]);
 
         $isRentable = $request->boolean('is_rentable', true);

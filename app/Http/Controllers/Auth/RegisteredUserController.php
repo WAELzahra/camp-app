@@ -56,7 +56,7 @@ class RegisteredUserController extends Controller
             'interval_prix' => ['nullable', 'string', 'max:100'],
             'product_category' => ['nullable', 'string', 'max:255'],
             'legal_document_file' => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
-            'center_images.*' => ['nullable', 'image', 'mimes:jpg,jpeg,png,gif', 'max:2048'],
+            'center_images.*' => ['nullable', 'image', 'mimes:jpg,jpeg,png,gif', 'max:5120'],
         ]);
 
         if (strtolower($validated['role']) === 'admin') {

@@ -119,7 +119,7 @@ class AdminAnnonceController extends Controller
             'status'      => 'nullable|in:pending,approved,rejected',
             'user_id'     => 'nullable|exists:users,id',
             'photos'      => 'nullable|array',
-            'photos.*'    => 'image|mimes:jpeg,png,jpg,gif|max:2048',
+            'photos.*'    => 'image|mimes:jpeg,png,jpg,gif|max:5120',
         ]);
 
         if ($validator->fails()) {

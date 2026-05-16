@@ -284,7 +284,7 @@ class CampingZonesController extends Controller
         $zone = CampingZone::findOrFail($id);
         $request->validate([
             'images'   => 'required|array',
-            'images.*' => 'required|image|max:4096',
+            'images.*' => 'required|image|max:5120',
         ]);
 
         $uploaded = [];
@@ -511,6 +511,40 @@ class CampingZonesController extends Controller
     // =========================================================================
     // GEO / MAP
     // =========================================================================
+
+    /**
+     * Lightweight map overlay: all active public zones with coordinates + photos.
+     * Mirrors /api/centres/registered-map for the interactive map.
+     */
+    public function registeredZonesMap()
+    {
+        $zones = CampingZone::with(['coverPhoto', 'photos'])
+            ->where('status', true)
+            ->where('is_public', true)
+            ->where('is_closed', false)
+            ->whereNotNull('lat')
+            ->whereNotNull('lng')
+            ->get();
+
+        $data = $zones->map(fn($zone) => [
+            'id'            => $zone->id,
+            'name'          => $zone->nom,
+            'description'   => $zone->description ?? '',
+            'latitude'      => (float) $zone->lat,
+            'longitude'     => (float) $zone->lng,
+            'region'        => $zone->region,
+            'city'          => $zone->city,
+            'difficulty'    => $zone->difficulty,
+            'rating'        => $zone->rating,
+            'reviews_count' => $zone->reviews_count,
+            'activities'    => $zone->activities ?? [],
+            'max_capacity'  => $zone->max_capacity,
+            'photos'        => $zone->images,
+            'cover_image'   => $zone->cover_image,
+        ]);
+
+        return response()->json(['status' => 'success', 'data' => $data]);
+    }
 
     /**
      * Export all open zones as GeoJSON FeatureCollection.
