@@ -78,9 +78,7 @@ class CampingCentresController extends Controller
         $centre = CampingCentre::with(['zones', 'profileCentre', 'user.profile', 'photos'])->findOrFail($id);
 
         $pc        = $centre->profileCentre;
-        $isPartner = $centre->validation_status === 'approved'
-                     || ! is_null($centre->profile_centre_id)
-                     || (! is_null($centre->user_id) && $centre->user?->is_active == 1);
+        $isPartner = (bool) $centre->is_partner;
 
         $buildUrl = fn(?string $path): ?string =>
             $path ? (filter_var($path, FILTER_VALIDATE_URL) ? $path : storage_url($path)) : null;
@@ -99,6 +97,11 @@ class CampingCentresController extends Controller
             'is_cover' => (bool) $p->is_cover,
         ])->filter(fn($p) => $p['url'])->values();
 
+        // If photos table is empty but the centre has a main image, include it
+        if ($photos->isEmpty() && $coverImage) {
+            $photos = collect([['id' => null, 'url' => $coverImage, 'is_cover' => true]]);
+        }
+
         return response()->json([
             'status' => 'success',
             'data'   => [
@@ -110,6 +113,7 @@ class CampingCentresController extends Controller
                 'disponibilite'    => $pc ? (bool) $pc->disponibilite : true,
                 'latitude'         => $centre->lat  ? (string) $centre->lat  : null,
                 'longitude'        => $centre->lng  ? (string) $centre->lng  : null,
+                'telephone'        => $centre->telephone,
                 'contact_email'    => $pc?->contact_email,
                 'contact_phone'    => $pc?->contact_phone,
                 'manager_name'     => $pc?->manager_name,

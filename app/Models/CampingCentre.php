@@ -17,19 +17,22 @@ class CampingCentre extends Model
         'type',
         'description',
         'adresse',
+        'telephone',
         'lat',
         'lng',
         'image',
         'status',
         'validation_status',
+        'is_partner',
         'user_id',
         'profile_centre_id',
     ];
 
     protected $casts = [
-        'status' => 'boolean',
-        'lat'    => 'float',
-        'lng'    => 'float',
+        'status'     => 'boolean',
+        'is_partner' => 'boolean',
+        'lat'        => 'float',
+        'lng'        => 'float',
     ];
 
     // ─── Relations ────────────────────────────────────────────────────────────

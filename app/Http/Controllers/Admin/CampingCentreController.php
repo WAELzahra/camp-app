@@ -73,20 +73,14 @@ class CampingCentreController extends Controller
                     'lng'               => (float) ($pc->longitude ?? 0),
                     'status'            => (bool) ($pc->disponibilite ?? false),
                     'validation_status' => 'approved',
+                    'is_partner'        => true,
                     'user_id'           => $user->id,
-                    'profile_centre_id' => $pc->id,  // ✅ This is now guaranteed to belong to the user
+                    'profile_centre_id' => $pc->id,
                 ]);
             });
 
-        // ── Return all centres with is_partner flag ──────────────────────────
-        $centres = CampingCentre::with(['zones', 'user', 'profileCentre'])
-            ->get()
-            ->map(function (CampingCentre $c) {
-                $c->is_partner = $c->validation_status === 'approved'
-                                || ! is_null($c->profile_centre_id)
-                                || (! is_null($c->user_id) && $c->user?->is_active == 1);
-                return $c;
-            });
+        // ── Return all centres (is_partner is now an explicit DB column) ───────
+        $centres = CampingCentre::with(['zones', 'user', 'profileCentre'])->get();
 
         return response()->json([
             'status'  => 'success',
@@ -102,14 +96,15 @@ class CampingCentreController extends Controller
         $request->validate([
             'nom'               => 'required|string|max:255',
             'adresse'           => 'required|string|max:255',
+            'telephone'         => 'nullable|string|max:20',
             'lat'               => 'required|numeric',
             'lng'               => 'required|numeric',
             'type'              => 'nullable|string',
             'description'       => 'nullable|string',
             'status'            => 'nullable|boolean',
+            'is_partner'        => 'nullable|boolean',
             'validation_status' => 'nullable|in:pending,approved,rejected',
             'user_id'           => 'nullable|exists:users,id',
-            // Photos : tableau de fichiers images
             'photos'            => 'nullable|array',
             'photos.*'          => 'file|image|max:5120',
             'cover_index'       => 'nullable|integer|min:0',
@@ -118,11 +113,13 @@ class CampingCentreController extends Controller
         $centre = CampingCentre::create([
             'nom'               => $request->nom,
             'adresse'           => $request->adresse,
+            'telephone'         => $request->telephone ?? null,
             'lat'               => $request->lat,
             'lng'               => $request->lng,
             'type'              => $request->type ?? 'centre',
             'description'       => $request->description,
             'status'            => $request->boolean('status', false),
+            'is_partner'        => $request->boolean('is_partner', false),
             'validation_status' => $request->input('validation_status', 'pending'),
             'user_id'           => $request->user_id ?? null,
         ]);
@@ -164,12 +161,14 @@ class CampingCentreController extends Controller
     $data = $request->validate([
         'nom'               => 'sometimes|string|max:255',
         'adresse'           => 'sometimes|string|max:255',
+        'telephone'         => 'nullable|string|max:20',
         'lat'               => 'sometimes|numeric',
         'lng'               => 'sometimes|numeric',
         'type'              => 'sometimes|string',
         'image'             => 'nullable|image|max:5120',
         'description'       => 'nullable|string',
         'status'            => 'sometimes|boolean',
+        'is_partner'        => 'sometimes|boolean',
         'validation_status' => 'nullable|in:pending,approved,rejected',
     ]);
 
@@ -289,6 +288,18 @@ class CampingCentreController extends Controller
 
 
     // Activation / désactivation d’un centre
+    public function togglePartner($id)
+    {
+        $centre = CampingCentre::findOrFail($id);
+        $centre->is_partner = ! $centre->is_partner;
+        $centre->save();
+
+        return response()->json([
+            'message'    => $centre->is_partner ? 'Centre marqué comme partenaire' : 'Statut partenaire retiré',
+            'is_partner' => $centre->is_partner,
+        ]);
+    }
+
     public function toggleStatus(Request $request, $id)
     {
         $centre = CampingCentre::findOrFail($id);

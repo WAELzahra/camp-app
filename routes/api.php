@@ -1154,7 +1154,8 @@ Route::prefix('annonces')->group(function () {
         Route::get('/{id}', [CampingCentreController::class, 'show']);
         Route::put('/{id}', [CampingCentreController::class, 'update']);
         Route::post('/{id}/assign-zones', [CampingCentreController::class, 'assignZones']);
-        Route::patch('/{id}/toggle-status', [CampingCentreController::class, 'toggleStatus']);
+        Route::patch('/{id}/toggle-status',  [CampingCentreController::class, 'toggleStatus']);
+        Route::patch('/{id}/toggle-partner', [CampingCentreController::class, 'togglePartner']);
         Route::post('/{id}/link-user', [CampingCentreController::class, 'linkUser']);
         Route::post('/{id}/unlink-user', [CampingCentreController::class, 'unlinkUser']);
         Route::delete('/{id}', [CampingCentreController::class, 'destroy']);

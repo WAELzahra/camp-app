@@ -296,12 +296,11 @@ class CenterServiceApiController extends Controller
             ->flip()
             ->toArray();
 
-        // Non-partner centres: camping_centres with no user AND not linked to a profile_centre.
+        // Non-partner centres: camping_centres explicitly marked is_partner=false.
         // Also excluded if a partner centre with the same name already exists.
-        $nonPartnerResult = \App\Models\CampingCentre::whereNull('user_id')
-            ->whereNull('profile_centre_id')
+        $nonPartnerResult = \App\Models\CampingCentre::where('is_partner', false)
             ->where('status', true)
-            ->with('coverPhoto')
+            ->with(['coverPhoto', 'photos'])
             ->get()
             ->filter(fn($c) => !isset($partnerNameSet[mb_strtolower(trim($c->nom ?? ''))]))
             ->map(fn($c) => [
@@ -313,6 +312,7 @@ class CenterServiceApiController extends Controller
                 'disponibilite'    => true,
                 'latitude'         => $c->lat  ? (string) $c->lat  : null,
                 'longitude'        => $c->lng  ? (string) $c->lng  : null,
+                'telephone'        => $c->telephone,
                 'contact_email'    => null,
                 'contact_phone'    => null,
                 'manager_name'     => null,
@@ -329,8 +329,13 @@ class CenterServiceApiController extends Controller
                 ],
                 'available_services'  => [],
                 'available_equipment' => [],
-                'is_partner'       => $c->validation_status === 'approved',
+                'is_partner'       => (bool) $c->is_partner,
                 '_source'          => 'camping',
+                'photos'           => $c->photos->map(fn($p) => [
+                    'id'       => $p->id,
+                    'url'      => storage_url($p->path_to_img),
+                    'is_cover' => (bool) $p->is_cover,
+                ])->filter(fn($p) => $p['url'])->values()->toArray(),
             ])->values();
 
         return response()->json($partnerResult->concat($nonPartnerResult)->values());
