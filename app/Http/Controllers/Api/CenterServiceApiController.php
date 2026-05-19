@@ -245,13 +245,30 @@ class CenterServiceApiController extends Controller
                 });
         }
 
-        $partnerResult = $centers->map(function ($c) use ($ratingMap) {
+        // Bulk-load CampingCentre cover images as fallback for partners with no profile.cover_image
+        $campingCoverMap = [];
+        if (!empty($userIds)) {
+            \App\Models\CampingCentre::whereIn('user_id', $userIds)
+                ->whereNotNull('image')
+                ->select('user_id', 'image')
+                ->get()
+                ->each(function ($row) use (&$campingCoverMap) {
+                    $campingCoverMap[$row->user_id] = $row->image;
+                });
+        }
+
+        $partnerResult = $centers->map(function ($c) use ($ratingMap, $campingCoverMap) {
             $profile = $c->profile;
             $user    = $profile?->user;
             $userId  = $user?->id;
 
-            // Use profile.cover_image directly — no album/Photo queries needed for list
-            $coverImage = $profile?->cover_image ? $this->photoUrl($profile->cover_image) : null;
+            // Cover image: prefer profile.cover_image, fall back to linked CampingCentre image
+            $coverImage = null;
+            if ($profile?->cover_image) {
+                $coverImage = $this->photoUrl($profile->cover_image);
+            } elseif ($userId && isset($campingCoverMap[$userId])) {
+                $coverImage = $this->photoUrl($campingCoverMap[$userId]);
+            }
 
             $avgRating   = null;
             $reviewCount = 0;
@@ -281,7 +298,13 @@ class CenterServiceApiController extends Controller
                     'city'        => $profile?->city,
                     'address'     => $profile?->address,
                     'cover_image' => $coverImage,
-                    'user'        => $user ? ['ville' => $user->ville] : null,
+                    'user'        => $user ? [
+                        'id'         => $user->id,
+                        'first_name' => $user->first_name,
+                        'last_name'  => $user->last_name,
+                        'avatar'     => $this->photoUrl($user->avatar),
+                        'ville'      => $user->ville,
+                    ] : null,
                 ],
                 'available_equipment' => $equipment,
                 'is_partner'      => true,
