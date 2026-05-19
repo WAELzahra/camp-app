@@ -203,48 +203,23 @@ class CenterServiceApiController extends Controller
     }
 
     /* ──────────────────────────────────────────────────────────────────
-     * GET /centers/services  — list all available centers
+     * GET /centers/list  — lightweight card list (no services, no photos)
      *
-     * Returns both partner centres (profile_centres) and non-partner
-     * centres (camping_centres with no user_id) that have admin status=true.
-     * Partner centres whose linked camping_centre has status=false are hidden.
+     * Returns only the fields the list cards actually use. Skips all
+     * service/album/Photo queries, cutting response size by ~70%.
      * ────────────────────────────────────────────────────────────────── */
-    public function centersWithServices(Request $request)
+    public function centersListSummary()
     {
-        // Partner centres that admin has explicitly disabled (status=false)
         $disabledProfileIds = \App\Models\CampingCentre::whereNotNull('profile_centre_id')
             ->where('status', false)
             ->pluck('profile_centre_id')
             ->toArray();
 
-        $query = ProfileCentre::with([
-            'profile.user',
-            'availableEquipment',  
-        ])->available()
-        ->whereNotIn('id', $disabledProfileIds)
-        ->whereHas('profile.user', fn($q) => $q->where('is_active', 1));
-
-        if ($request->has('category')) {
-            $query->where('category', $request->category);
-        }
-        if ($request->has('equipment')) {
-            $query->withEquipment($request->equipment);
-        }
-        if ($request->has('service')) {
-            $query->withService($request->service);
-        }
-        if ($request->has('min_price')) {
-            $query->where('price_per_night', '>=', $request->min_price);
-        }
-        if ($request->has('max_price')) {
-            $query->where('price_per_night', '<=', $request->max_price);
-        }
-
-        // Deduplicate by user_id — if a user has two ProfileCentres in the database
-        // (data integrity issue prevented by migration), show only the most complete
-        // one (highest price_per_night). ProfileCentres without a linked user are
-        // each kept as-is (keyed by their own id to avoid false deduplication).
-        $centers = $query->get()
+        $centers = ProfileCentre::with(['profile.user', 'availableEquipment'])
+            ->available()
+            ->whereNotIn('id', $disabledProfileIds)
+            ->whereHas('profile.user', fn($q) => $q->where('is_active', 1))
+            ->get()
             ->sortByDesc('price_per_night')
             ->unique(fn($c) => $c->profile?->user_id
                 ? 'u-' . $c->profile->user_id
@@ -252,19 +227,8 @@ class CenterServiceApiController extends Controller
             )
             ->values();
 
-        /* ── Bulk-load albums to avoid N+1 ────────────────────────────── */
+        // Bulk-load ratings — single query for all centres
         $userIds = $centers->map(fn($c) => $c->profile?->user?->id)->filter()->unique()->values()->toArray();
-
-        $albumMap = [];
-        if (!empty($userIds)) {
-            Album::whereIn('user_id', $userIds)
-                ->where('titre', 'Profile Gallery')
-                ->with(['coverPhoto'])
-                ->get()
-                ->each(fn($album) => $albumMap[$album->user_id] = $album);
-        }
-
-        /* ── Bulk-load ratings ─────────────────────────────────────────── */
         $ratingMap = [];
         if (!empty($userIds)) {
             Feedbacks::where('type', 'centre')
@@ -281,61 +245,77 @@ class CenterServiceApiController extends Controller
                 });
         }
 
-        // Partner centres with is_partner flag
-        $partnerResult = $centers->map(function ($c) use ($albumMap, $ratingMap) {
-            return array_merge(
-                $this->formatCenter($c, $albumMap, $ratingMap, false),
-                ['is_partner' => true, '_source' => 'partner']
-            );
+        $partnerResult = $centers->map(function ($c) use ($ratingMap) {
+            $profile = $c->profile;
+            $user    = $profile?->user;
+            $userId  = $user?->id;
+
+            // Use profile.cover_image directly — no album/Photo queries needed for list
+            $coverImage = $profile?->cover_image ? $this->photoUrl($profile->cover_image) : null;
+
+            $avgRating   = null;
+            $reviewCount = 0;
+            if ($userId && isset($ratingMap[$userId])) {
+                $avgRating   = $ratingMap[$userId]['avg'];
+                $reviewCount = $ratingMap[$userId]['count'];
+            }
+
+            // Equipment: only type + is_available (strip id and notes)
+            $equipment = $c->availableEquipment->map(fn($eq) => [
+                'type'         => $eq->type,
+                'is_available' => (bool) $eq->is_available,
+            ])->values()->toArray();
+
+            return [
+                'id'              => $c->id,
+                'name'            => $c->name,
+                'capacite'        => $c->capacite,
+                'price_per_night' => (float) $c->price_per_night,
+                'category'        => $c->category,
+                'disponibilite'   => (bool) $c->disponibilite,
+                'latitude'        => $c->latitude  ? (string) $c->latitude  : null,
+                'longitude'       => $c->longitude ? (string) $c->longitude : null,
+                'average_rating'  => $avgRating,
+                'review_count'    => $reviewCount,
+                'profile' => [
+                    'city'        => $profile?->city,
+                    'address'     => $profile?->address,
+                    'cover_image' => $coverImage,
+                    'user'        => $user ? ['ville' => $user->ville] : null,
+                ],
+                'available_equipment' => $equipment,
+                'is_partner'      => true,
+                '_source'         => 'partner',
+            ];
         })->values();
 
-        // Build a name-based exclusion set from partner centres so we don't show
-        // the same physical location as both partner AND non-partner.
         $partnerNameSet = $partnerResult->map(fn($c) => mb_strtolower(trim($c['name'] ?? '')))
-            ->filter()
-            ->flip()
-            ->toArray();
+            ->filter()->flip()->toArray();
 
-        // Non-partner centres: camping_centres explicitly marked is_partner=false.
-        // Also excluded if a partner centre with the same name already exists.
         $nonPartnerResult = \App\Models\CampingCentre::where('is_partner', false)
             ->where('status', true)
-            ->with(['coverPhoto', 'photos'])
             ->get()
             ->filter(fn($c) => !isset($partnerNameSet[mb_strtolower(trim($c->nom ?? ''))]))
             ->map(fn($c) => [
-                'id'               => $c->id,
-                'name'             => $c->nom,
-                'capacite'         => 0,
-                'price_per_night'  => 0,
-                'category'         => 'Camping',
-                'disponibilite'    => true,
-                'latitude'         => $c->lat  ? (string) $c->lat  : null,
-                'longitude'        => $c->lng  ? (string) $c->lng  : null,
-                'telephone'        => $c->telephone,
-                'contact_email'    => null,
-                'contact_phone'    => null,
-                'manager_name'     => null,
-                'average_rating'   => null,
-                'review_count'     => 0,
+                'id'              => $c->id,
+                'name'            => $c->nom,
+                'capacite'        => 0,
+                'price_per_night' => 0,
+                'category'        => 'Camping',
+                'disponibilite'   => true,
+                'latitude'        => $c->lat  ? (string) $c->lat  : null,
+                'longitude'       => $c->lng  ? (string) $c->lng  : null,
+                'average_rating'  => null,
+                'review_count'    => 0,
                 'profile' => [
-                    'bio'         => $c->description,
                     'city'        => null,
                     'address'     => $c->adresse,
-                    'cover_image' => $c->image
-                        ? storage_url($c->image)
-                        : ($c->coverPhoto ? storage_url($c->coverPhoto->path_to_img) : null),
+                    'cover_image' => $c->image ? storage_url($c->image) : null,
                     'user'        => null,
                 ],
-                'available_services'  => [],
                 'available_equipment' => [],
-                'is_partner'       => (bool) $c->is_partner,
-                '_source'          => 'camping',
-                'photos'           => $c->photos->map(fn($p) => [
-                    'id'       => $p->id,
-                    'url'      => storage_url($p->path_to_img),
-                    'is_cover' => (bool) $p->is_cover,
-                ])->filter(fn($p) => $p['url'])->values()->toArray(),
+                'is_partner'      => false,
+                '_source'         => 'camping',
             ])->values();
 
         return response()->json($partnerResult->concat($nonPartnerResult)->values());

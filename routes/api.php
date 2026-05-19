@@ -229,7 +229,7 @@ Route::prefix('public')->group(function () {
 
 // -------------------- PUBLIC CENTER SERVICES API --------------------
 Route::prefix('centers')->group(function () {
-    Route::get('/services', [CenterServiceApiController::class, 'centersWithServices']);
+    Route::get('/list', [CenterServiceApiController::class, 'centersListSummary']);
     Route::get('/{center}/services', [CenterServiceApiController::class, 'centerServices']);
     Route::get('/service-categories', [CenterServiceApiController::class, 'serviceCategories']);
     Route::post('/calculate-price', [CenterServiceApiController::class, 'calculatePrice']);
