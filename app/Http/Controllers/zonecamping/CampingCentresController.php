@@ -40,6 +40,7 @@ class CampingCentresController extends Controller
         $data = $centres->map(function ($centre) {
             $userId = $centre->profile?->user_id;
             $photos = [];
+            $coverImage = null;
             if ($userId) {
                 // Always fetch by camping_centre_id — user_id is only metadata (who uploaded).
                 $campingCentreId = \App\Models\CampingCentre::where('user_id', $userId)->value('id');
@@ -50,6 +51,16 @@ class CampingCentresController extends Controller
                         ->map(fn($p) => storage_url($p))
                         ->values()
                         ->toArray();
+
+                    // Cover image: prioritise the marked cover photo, fall back to user avatar
+                    $coverPath = Photo::where('camping_centre_id', $campingCentreId)
+                        ->where('is_cover', true)
+                        ->value('path_to_img');
+                    $coverImage = $coverPath
+                        ? storage_url($coverPath)
+                        : ($centre->profile?->user?->avatar
+                            ? storage_url($centre->profile->user->avatar)
+                            : null);
                 }
             }
 
@@ -60,6 +71,7 @@ class CampingCentresController extends Controller
                 'latitude'    => (float) $centre->latitude,
                 'longitude'   => (float) $centre->longitude,
                 'photos'      => $photos,
+                'cover_image' => $coverImage,
                 'price'       => $centre->price_per_night,
                 'category'    => $centre->category,
                 'capacity'    => $centre->capacite,
