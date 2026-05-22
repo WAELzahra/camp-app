@@ -23,6 +23,9 @@ use App\Mail\EventReservationStatusChanged;
 use App\Mail\EventReservationCanceledByGroup;
 use App\Models\Balance;
 use App\Models\WalletTransaction;
+use App\Models\EventReservationMaterial;
+use App\Models\Materielles;
+use App\Models\OrganizerSupplierLink;
 use App\Services\CancellationPolicyService;
 use App\Services\CommissionService;
 
@@ -493,6 +496,9 @@ public function updateManualParticipant(Request $request, $reservationId)
             'payment_method'    => 'nullable|in:wallet,card',
             'group_skill_level' => 'nullable|in:beginner,intermediate,advanced,mixed',
             'trip_purpose'      => 'nullable|string|max:255',
+            'materials'         => 'nullable|array',
+            'materials.*.materielle_id' => 'required_with:materials|exists:materielles,id',
+            'materials.*.quantite'      => 'required_with:materials|integer|min:1',
         ]);
 
         // Card payment is not available in v1
@@ -528,10 +534,41 @@ public function updateManualParticipant(Request $request, $reservationId)
             $promoCodeId    = $promo->id;
         }
 
+        // ── Validate and price materials (optional) ──────────────────────────────
+        $materialItems  = [];
+        $materialsTotal = 0;
+
+        if ($request->filled('materials') && is_array($request->materials)) {
+            // Verify organizer has accepted supplier links for each material
+            $acceptedSupplierIds = OrganizerSupplierLink::where('organizer_id', $request->group_id)
+                ->where('status', 'accepted')
+                ->pluck('supplier_id');
+
+            foreach ($request->materials as $item) {
+                $mat = Materielles::find($item['materielle_id']);
+                if (!$mat || $mat->status !== 'up' || !$mat->is_rentable) {
+                    return response()->json(['success' => false, 'message' => "Material #{$item['materielle_id']} is not available."], 422);
+                }
+                if (!$acceptedSupplierIds->contains($mat->fournisseur_id)) {
+                    return response()->json(['success' => false, 'message' => "Material #{$item['materielle_id']} supplier is not associated with this organizer."], 422);
+                }
+                $qty   = (int) $item['quantite'];
+                $price = (float) $mat->tarif_nuit;
+                $total = round($price * $qty, 2);
+                $materialsTotal += $total;
+                $materialItems[] = [
+                    'materielle'    => $mat,
+                    'quantite'      => $qty,
+                    'prix_unitaire' => $price,
+                    'montant_total' => $total,
+                ];
+            }
+        }
+
         // ── Price calculation ────────────────────────────────────────────────────
         $netBase    = max(0, round($basePrice - $discountAmount, 2));
-        $feeData    = CommissionService::addServiceFee($netBase);
-        $totalToPay = $feeData['total'];          // what camper pays
+        $feeData    = CommissionService::addServiceFee($netBase + $materialsTotal);
+        $totalToPay = $feeData['total'];          // what camper pays (event + materials + platform fee)
         $platformFeeAmt  = $feeData['fee_amount'];
         $platformFeeRate = round($feeData['fee_rate'] * 100, 2);
 
@@ -579,6 +616,23 @@ public function updateManualParticipant(Request $request, $reservationId)
                 'trip_purpose'         => $request->input('trip_purpose'),
             ]);
 
+            // ── Create material line items ────────────────────────────────────────
+            foreach ($materialItems as $item) {
+                $matFeeData = CommissionService::addServiceFee($item['montant_total']);
+                EventReservationMaterial::create([
+                    'event_reservation_id' => $reservation->id,
+                    'materielle_id'        => $item['materielle']->id,
+                    'supplier_id'          => $item['materielle']->fournisseur_id,
+                    'quantite'             => $item['quantite'],
+                    'prix_unitaire'        => $item['prix_unitaire'],
+                    'montant_total'        => $item['montant_total'],
+                    'platform_fee_amount'  => $matFeeData['fee_amount'],
+                    'platform_fee_rate'    => round($matFeeData['fee_rate'] * 100, 2),
+                    'supplier_net_revenue' => CommissionService::calculate('fournisseur', $item['montant_total'])['net_revenue'],
+                    'supplier_credited'    => false,
+                ]);
+            }
+
             // Escrow: lock funds immediately so camper cannot spend them on other reservations
             if ($totalToPay > 0) {
                 Balance::forUser($user->id)->lockFunds($totalToPay);
@@ -609,13 +663,14 @@ public function updateManualParticipant(Request $request, $reservationId)
         return response()->json([
             'success'     => true,
             'message'     => 'Réservation confirmée et paiement effectué via wallet.',
-            'reservation' => $reservation,
+            'reservation' => $reservation->load('materials.materielle'),
             'payment'     => [
-                'method'           => 'wallet',
-                'total_paid'       => $totalToPay,
-                'base_price'       => $netBase,
-                'platform_fee'     => $platformFeeAmt,
-                'platform_fee_pct' => $platformFeeRate,
+                'method'            => 'wallet',
+                'total_paid'        => $totalToPay,
+                'event_price'       => $netBase,
+                'materials_price'   => $materialsTotal,
+                'platform_fee'      => $platformFeeAmt,
+                'platform_fee_pct'  => $platformFeeRate,
             ],
         ], 201);
     }
@@ -755,45 +810,77 @@ public function updateManualParticipant(Request $request, $reservationId)
         if ($reservation->payment_method === 'wallet' && $reservation->status === 'en_attente_validation') {
 
             if ($newStatus === 'confirmé') {
-                // Release escrow and credit organizer (funds were locked at reservation creation)
+                // Release escrow and split revenue between organizer and suppliers
                 DB::beginTransaction();
                 try {
                     $platformFeeAmt  = round((float) ($reservation->platform_fee_amount ?? 0), 2);
                     $platformFeeRate = round((float) ($reservation->platform_fee_rate   ?? 0), 2);
+
+                    // Calculate material totals to split from total paid
+                    $materialItems   = $reservation->materials()->where('supplier_credited', false)->get();
+                    $materialsTotal  = $materialItems->sum('montant_total');
+                    $eventNetBase    = round($netBase - $materialsTotal, 2); // event-only base
                     $totalPaid       = round($netBase + $platformFeeAmt, 2);
 
-                    // Release camper's escrowed funds (debit already happened at creation)
+                    // Release camper's escrowed funds
                     Balance::forUser($reservation->user_id)->releaseEscrow($totalPaid);
 
-                    // Credit organizer minus group commission
-                    $orgCalc = CommissionService::calculate('group', $netBase);
-                    Balance::forUser($reservation->group_id)->crediter($orgCalc['net_revenue']);
-                    WalletTransaction::logCredit(
-                        $reservation->group_id, 'reservation_income',
-                        $netBase,
-                        round($orgCalc['rate'] * 100, 2),
-                        $orgCalc['commission'],
-                        $orgCalc['net_revenue'],
-                        'event_reservation', $reservation->id,
-                        "Revenu réservation événement : {$event->title}",
-                        $reservation->user_id
-                    );
+                    // ── Credit organizer for event revenue (minus commission) ──────
+                    $orgCalc = CommissionService::calculate('group', max(0, $eventNetBase));
+                    if ($orgCalc['net_revenue'] > 0) {
+                        Balance::forUser($reservation->group_id)->crediter($orgCalc['net_revenue']);
+                        WalletTransaction::logCredit(
+                            $reservation->group_id, 'reservation_income',
+                            max(0, $eventNetBase),
+                            round($orgCalc['rate'] * 100, 2),
+                            $orgCalc['commission'],
+                            $orgCalc['net_revenue'],
+                            'event_reservation', $reservation->id,
+                            "Revenu événement : {$event->title}",
+                            $reservation->user_id
+                        );
+                        if ($orgCalc['commission'] > 0) {
+                            \App\Models\AdminWalletTransaction::log(
+                                'commission', $orgCalc['commission'],
+                                'event_reservation', $reservation->id,
+                                "Commission organisateur — {$event->title} (réservation #{$reservation->id})",
+                                $reservation->group_id
+                            );
+                        }
+                    }
 
-                    // Log to admin wallet history
+                    // ── Credit each supplier for their material revenue ────────────
+                    foreach ($materialItems as $matItem) {
+                        $supCalc = CommissionService::calculate('fournisseur', $matItem->montant_total);
+                        Balance::forUser($matItem->supplier_id)->crediter($supCalc['net_revenue']);
+                        WalletTransaction::logCredit(
+                            $matItem->supplier_id, 'reservation_income',
+                            $matItem->montant_total,
+                            round($supCalc['rate'] * 100, 2),
+                            $supCalc['commission'],
+                            $supCalc['net_revenue'],
+                            'event_reservation_material', $matItem->id,
+                            "Revenu matériel (événement : {$event->title})",
+                            $reservation->user_id
+                        );
+                        if ($supCalc['commission'] > 0) {
+                            \App\Models\AdminWalletTransaction::log(
+                                'commission', $supCalc['commission'],
+                                'event_reservation_material', $matItem->id,
+                                "Commission fournisseur — matériel #{$matItem->materielle_id}",
+                                $matItem->supplier_id
+                            );
+                        }
+                        $matItem->update(['supplier_credited' => true, 'supplier_net_revenue' => $supCalc['net_revenue']]);
+                    }
+
+                    // Log platform service fee
                     if ($platformFeeAmt > 0) {
                         \App\Models\AdminWalletTransaction::log(
                             'platform_fee', $platformFeeAmt,
                             'event_reservation', $reservation->id,
                             "Platform fee — {$event->title} (réservation #{$reservation->id})",
                             $reservation->user_id
-                        );
-                    }
-                    if ($orgCalc['commission'] > 0) {
-                        \App\Models\AdminWalletTransaction::log(
-                            'commission', $orgCalc['commission'],
-                            'event_reservation', $reservation->id,
-                            "Commission groupe — {$event->title} (réservation #{$reservation->id})",
-                            $reservation->group_id
                         );
                     }
 

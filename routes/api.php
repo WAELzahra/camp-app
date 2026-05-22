@@ -105,6 +105,7 @@ Route::middleware('auth:sanctum')->post('/auth/social/complete-registration', [S
 
 Route::middleware('throttle:register')->post('/register', [RegisteredUserController::class, 'store']);
 Route::middleware('throttle:login')->post('/login', [AuthenticatedSessionController::class, 'store'])->name('login');
+Route::post('/token-login', [AuthenticatedSessionController::class, 'tokenLogin']);
 Route::middleware('throttle:password-reset')->post('/forgot-password', [NewPasswordController::class, 'sendResetEmail']);
 Route::middleware('throttle:password-reset')->post('/reset-password', [NewPasswordController::class, 'resetPassword']);
 Route::middleware('throttle:password-reset')->post('/verify-password', [NewPasswordController::class, 'verifyResetCode']);
@@ -174,6 +175,9 @@ Route::get('/materielles/fournisseur/{fournisseur_id}', [MaterielleController::c
 Route::get('/materielles/{materielle_id}', [MaterielleController::class, 'show']);
 Route::get('/materielles/compare/{id1}/{id2}', [MaterielleController::class, 'compare']);
 Route::get('/materielles', [MaterielleController::class, 'marketplace']);
+
+// ── Supplier invitation token validation (public — no auth) ──────────────────
+Route::get('/supplier-invitation/{token}', [\App\Http\Controllers\Organizer\OrganizerSupplierController::class, 'validateInvitationToken']);
 
 // -------------------- PUBLIC EVENTS (UNIQUEMENT GET - POUR LES VISITEURS) --------------------
 Route::prefix('events')->group(function () {
@@ -648,6 +652,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/my-interest-ids',         [EventInterestController::class, 'myInterestIds']);
         Route::get('/{id}/interest/check',     [EventInterestController::class, 'check']);
         
+        // Public: get available equipment from organizer's suppliers for a specific event
+        Route::get('/{eventId}/materials', [\App\Http\Controllers\Organizer\OrganizerSupplierController::class, 'eventMaterials']);
+
         Route::middleware(['group', 'require.active'])->group(function () {
             Route::post('/', [EventController::class, 'store']);
             Route::put('/{id}', [EventController::class, 'update']);
@@ -706,6 +713,26 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/co-owners/{userId}',            [GroupeCoOwnerController::class, 'remove']);
     });
     
+    // ── Organizer ↔ Supplier Association ─────────────────────────────────────
+    Route::prefix('organizer')->middleware(['organizer', 'require.active'])->group(function () {
+        // Organizer manages their supplier network
+        Route::get('/suppliers',                        [\App\Http\Controllers\Organizer\OrganizerSupplierController::class, 'mySuppliers']);
+        Route::get('/suppliers/accepted',               [\App\Http\Controllers\Organizer\OrganizerSupplierController::class, 'myAcceptedSuppliers']);
+        Route::get('/suppliers/search',                 [\App\Http\Controllers\Organizer\OrganizerSupplierController::class, 'searchSuppliers']);
+        Route::post('/suppliers/request',               [\App\Http\Controllers\Organizer\OrganizerSupplierController::class, 'requestLink']);
+        Route::post('/suppliers/invite',                [\App\Http\Controllers\Organizer\OrganizerSupplierController::class, 'inviteSupplier']);
+        Route::delete('/suppliers/link/{linkId}',       [\App\Http\Controllers\Organizer\OrganizerSupplierController::class, 'cancelLink']);
+        Route::get('/suppliers/{supplierId}/materials', [\App\Http\Controllers\Organizer\OrganizerSupplierController::class, 'supplierMaterials']);
+        Route::get('/materials',                        [\App\Http\Controllers\Organizer\OrganizerSupplierController::class, 'allAssociatedMaterials']);
+    });
+
+    // Supplier responds to organizer association requests
+    Route::prefix('supplier')->middleware(['fournisseur', 'require.active'])->group(function () {
+        Route::get('/association-requests',             [\App\Http\Controllers\Organizer\OrganizerSupplierController::class, 'myRequests']);
+        Route::patch('/association-requests/{linkId}/accept', [\App\Http\Controllers\Organizer\OrganizerSupplierController::class, 'acceptRequest']);
+        Route::patch('/association-requests/{linkId}/reject', [\App\Http\Controllers\Organizer\OrganizerSupplierController::class, 'rejectRequest']);
+    });
+
     // Group Reservation Management — requires approved account
     Route::prefix('group/reservations')->middleware(['require.active'])->group(function () {
         Route::get('/', [ReservationEventController::class, 'toutesMesReservations']);
