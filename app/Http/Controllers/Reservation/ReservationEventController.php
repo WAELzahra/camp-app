@@ -162,8 +162,11 @@ class ReservationEventController extends Controller
 
         // ── Wallet refund ────────────────────────────────────────────────────────
         if ($reservation->payment_method === 'wallet' && $reservation->status === 'en_attente_validation') {
-            // Funds were escrowed at creation — full refund, no cancellation policy (never confirmed)
-            $totalPaid = round($totalPrice + $platformFeeAmt, 2);
+            // Funds were escrowed at creation — full refund including materials (never confirmed)
+            $materialItems = EventReservationMaterial::where('event_reservation_id', $reservation->id)->get();
+            $materialsTotal = $materialItems->sum('montant_total');
+            $materialsFeeTot = $materialItems->sum('platform_fee_amount');
+            $totalPaid = round($totalPrice + $platformFeeAmt + $materialsTotal + $materialsFeeTot, 2);
             DB::beginTransaction();
             try {
                 Balance::forUser($user->id)->refundEscrow($totalPaid);
@@ -188,6 +191,11 @@ class ReservationEventController extends Controller
             $actualRefund    = max(0, round($refundAmount - $platformCancFee, 2));
             $cancFeeForOrg   = round($gross - $refundAmount, 2); // policy fee the organizer keeps
 
+            // Credited material items that need clawback and refund
+            $creditedMaterials = EventReservationMaterial::where('event_reservation_id', $reservation->id)
+                ->where('supplier_credited', true)
+                ->get();
+
             DB::beginTransaction();
             try {
                 // Claw back from organizer exactly what they received
@@ -199,7 +207,26 @@ class ReservationEventController extends Controller
                     $user->id
                 );
 
-                // Credit camper (refund minus platform cancellation fee)
+                // Claw back from each supplier and refund camper for material costs
+                foreach ($creditedMaterials as $matItem) {
+                    Balance::forUser($matItem->supplier_id)->debiter($matItem->supplier_net_revenue);
+                    WalletTransaction::logDebit(
+                        $matItem->supplier_id, 'refund_out', $matItem->supplier_net_revenue,
+                        'event_reservation_material', $matItem->id,
+                        "Remboursement annulation camper — matériel #{$matItem->materielle_id}",
+                        $user->id
+                    );
+                    // Refund camper the material total
+                    Balance::forUser($user->id)->crediter($matItem->montant_total);
+                    WalletTransaction::logCredit(
+                        $user->id, 'refund_in', $matItem->montant_total, 0, 0, $matItem->montant_total,
+                        'event_reservation_material', $matItem->id,
+                        "Remboursement matériel — annulation réservation #{$reservation->id}",
+                        $matItem->supplier_id
+                    );
+                }
+
+                // Credit camper (event refund minus platform cancellation fee)
                 if ($actualRefund > 0) {
                     Balance::forUser($user->id)->crediter($actualRefund);
                     WalletTransaction::logCredit(
@@ -949,7 +976,7 @@ public function updateManualParticipant(Request $request, $reservationId)
             DB::beginTransaction();
             try {
                 if ($reservation->status === 'confirmée') {
-                    // Money was collected at approval → full refund to camper + clawback from organizer
+                    // Money was collected at approval → full refund to camper + clawback from organizer + suppliers
                     $feeData   = CommissionService::addServiceFee($netBase);
                     $totalPaid = round($feeData['total'], 2);
                     $orgCalc   = CommissionService::calculate('group', $netBase);
@@ -962,18 +989,37 @@ public function updateManualParticipant(Request $request, $reservationId)
                         $reservation->user_id
                     );
 
-                    Balance::forUser($reservation->user_id)->crediter($totalPaid);
+                    // Clawback credited material revenue from suppliers
+                    $creditedMaterials = EventReservationMaterial::where('event_reservation_id', $reservation->id)
+                        ->where('supplier_credited', true)
+                        ->get();
+                    $materialsRefundTotal = 0;
+                    foreach ($creditedMaterials as $matItem) {
+                        Balance::forUser($matItem->supplier_id)->debiter($matItem->supplier_net_revenue);
+                        WalletTransaction::logDebit(
+                            $matItem->supplier_id, 'refund_out', $matItem->supplier_net_revenue,
+                            'event_reservation_material', $matItem->id,
+                            "Remboursement — annulation groupe (matériel #{$matItem->materielle_id})",
+                            $reservation->user_id
+                        );
+                        $materialsRefundTotal += $matItem->montant_total;
+                    }
+
+                    Balance::forUser($reservation->user_id)->crediter($totalPaid + $materialsRefundTotal);
                     WalletTransaction::logCredit(
                         $reservation->user_id, 'refund_in',
-                        $totalPaid, 0, 0, $totalPaid,
+                        $totalPaid + $materialsRefundTotal, 0, 0, $totalPaid + $materialsRefundTotal,
                         'event_reservation', $reservation->id,
                         "Remboursement — annulation par groupe #{$reservation->id}",
                         $reservation->group_id
                     );
                 } elseif ($reservation->status === 'en_attente_validation') {
-                    // Funds were escrowed at creation — full refund, organizer never received anything
+                    // Funds were escrowed — full refund including materials escrow
+                    $materialItems = EventReservationMaterial::where('event_reservation_id', $reservation->id)->get();
+                    $materialsTotal = $materialItems->sum('montant_total');
+                    $materialsFeeTot = $materialItems->sum('platform_fee_amount');
                     $feeData   = CommissionService::addServiceFee($netBase);
-                    $totalPaid = round($feeData['total'], 2);
+                    $totalPaid = round($feeData['total'] + $materialsTotal + $materialsFeeTot, 2);
                     Balance::forUser($reservation->user_id)->refundEscrow($totalPaid);
                     WalletTransaction::logCredit(
                         $reservation->user_id, 'refund_in',
