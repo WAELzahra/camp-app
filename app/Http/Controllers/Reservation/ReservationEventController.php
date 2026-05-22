@@ -163,10 +163,9 @@ class ReservationEventController extends Controller
         // ── Wallet refund ────────────────────────────────────────────────────────
         if ($reservation->payment_method === 'wallet' && $reservation->status === 'en_attente_validation') {
             // Funds were escrowed at creation — full refund including materials (never confirmed)
-            $materialItems = EventReservationMaterial::where('event_reservation_id', $reservation->id)->get();
-            $materialsTotal = $materialItems->sum('montant_total');
-            $materialsFeeTot = $materialItems->sum('platform_fee_amount');
-            $totalPaid = round($totalPrice + $platformFeeAmt + $materialsTotal + $materialsFeeTot, 2);
+            // $platformFeeAmt (from reservation) already covers the combined fee on event + materials
+            $materialsTotal = EventReservationMaterial::where('event_reservation_id', $reservation->id)->sum('montant_total');
+            $totalPaid = round($totalPrice + $platformFeeAmt + $materialsTotal, 2);
             DB::beginTransaction();
             try {
                 Balance::forUser($user->id)->refundEscrow($totalPaid);
@@ -977,7 +976,9 @@ public function updateManualParticipant(Request $request, $reservationId)
             try {
                 if ($reservation->status === 'confirmée') {
                     // Money was collected at approval → full refund to camper + clawback from organizer + suppliers
-                    $feeData   = CommissionService::addServiceFee($netBase);
+                    // totalPaid = what camper originally paid = netBase + materialsTotal + combined platform fee
+                    $materialsBaseTotal = EventReservationMaterial::where('event_reservation_id', $reservation->id)->sum('montant_total');
+                    $feeData   = CommissionService::addServiceFee($netBase + $materialsBaseTotal);
                     $totalPaid = round($feeData['total'], 2);
                     $orgCalc   = CommissionService::calculate('group', $netBase);
 
@@ -1014,12 +1015,10 @@ public function updateManualParticipant(Request $request, $reservationId)
                         $reservation->group_id
                     );
                 } elseif ($reservation->status === 'en_attente_validation') {
-                    // Funds were escrowed — full refund including materials escrow
-                    $materialItems = EventReservationMaterial::where('event_reservation_id', $reservation->id)->get();
-                    $materialsTotal = $materialItems->sum('montant_total');
-                    $materialsFeeTot = $materialItems->sum('platform_fee_amount');
-                    $feeData   = CommissionService::addServiceFee($netBase);
-                    $totalPaid = round($feeData['total'] + $materialsTotal + $materialsFeeTot, 2);
+                    // Funds were escrowed — full refund = netBase + materialsTotal + combined platform fee
+                    $materialsTotal = EventReservationMaterial::where('event_reservation_id', $reservation->id)->sum('montant_total');
+                    $feeData   = CommissionService::addServiceFee($netBase + $materialsTotal);
+                    $totalPaid = round($feeData['total'], 2);
                     Balance::forUser($reservation->user_id)->refundEscrow($totalPaid);
                     WalletTransaction::logCredit(
                         $reservation->user_id, 'refund_in',

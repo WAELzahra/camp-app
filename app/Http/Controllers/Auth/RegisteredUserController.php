@@ -39,6 +39,7 @@ class RegisteredUserController extends Controller
             'langue' => ['nullable', 'string', 'max:50'],
             'password' => ['required', 'confirmed', Rules\Password::min(8)->mixedCase()->numbers()->symbols()],
             'role' => ['required', 'string', 'exists:roles,name'],
+            'invitation_token' => ['nullable', 'string', 'max:128'],
             
             // Make all these fields nullable instead of required
             'adresse' => ['nullable', 'string', 'max:500'],
@@ -88,7 +89,7 @@ class RegisteredUserController extends Controller
             ]);
 
             // 2️⃣ Créer le profile général
-            $profileId = DB::table('profiles')->insertGetId([
+            DB::table('profiles')->insert([
                 'user_id' => $user->id,
                 'bio' => null,
                 'cover_image' => null,
@@ -97,31 +98,44 @@ class RegisteredUserController extends Controller
                 'updated_at' => now(),
             ]);
 
+            // 3️⃣ Handle supplier invitation token
+            if (!empty($validated['invitation_token']) && $role->name === 'fournisseur') {
+                $invitation = \App\Models\SupplierInvitation::where('token', $validated['invitation_token'])
+                    ->where('status', 'pending')
+                    ->where('email', $validated['email'])
+                    ->first();
+
+                if ($invitation && !\Carbon\Carbon::parse($invitation->expires_at)->isPast()) {
+                    $invitation->update([
+                        'status'        => 'registered',
+                        'registered_at' => now(),
+                        'supplier_id'   => $user->id,
+                    ]);
+
+                    \App\Models\OrganizerSupplierLink::create([
+                        'organizer_id' => $invitation->organizer_id,
+                        'supplier_id'  => $user->id,
+                        'status'       => 'accepted',
+                        'responded_at' => now(),
+                    ]);
+                }
+            }
+
             DB::commit();
 
-            $message = $isActive
-                ? 'Inscription réussie ! Vous pouvez maintenant vous connecter.'
-                : 'Inscription réussie ! Veuillez attendre l\'activation par un administrateur.';
             $verificationService = new \App\Services\EmailVerificationService('both');
             $verificationService->sendVerification($user, 'both');
             event(new UserRegistered($user));
 
-        // Return the user data so frontend can display it
-        return response()->json([
-            'message' => 'Registration successful! Please verify your email.',
-            'user' => [
-                'id' => $user->id,
-                'first_name' => $user->first_name,
-                'last_name' => $user->last_name,
-                'email' => $user->email,
-            ],
-            'requires_verification' => true,
-        ], 201);
             return response()->json([
-                'message' => $isActive
-                    ? 'Inscription réussie ! Vous pouvez maintenant vous connecter.'
-                    : 'Inscription réussie ! Veuillez attendre l\'activation par un administrateur.',
-                'user' => $user
+                'message' => 'Registration successful! Please verify your email.',
+                'user' => [
+                    'id'         => $user->id,
+                    'first_name' => $user->first_name,
+                    'last_name'  => $user->last_name,
+                    'email'      => $user->email,
+                ],
+                'requires_verification' => true,
             ], 201);
 
         } catch (\Exception $e) {
@@ -130,8 +144,8 @@ class RegisteredUserController extends Controller
             \Log::error($e->getTraceAsString());
 
             return response()->json([
-                'error' => 'Une erreur est survenue lors de l\'inscription.',
-                'details' => config('app.debug') ? $e->getMessage() : null
+                'error'   => 'Une erreur est survenue lors de l\'inscription.',
+                'details' => config('app.debug') ? $e->getMessage() : null,
             ], 500);
         }
     }

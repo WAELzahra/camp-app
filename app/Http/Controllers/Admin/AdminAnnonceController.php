@@ -458,7 +458,7 @@ class AdminAnnonceController extends Controller
             ],
             'by_user_role' => [
                 'campeur'     => Annonce::whereHas('user', fn ($q) => $q->whereHas('role', fn ($r) => $r->where('name', 'campeur')))->count(),
-                'groupe'      => Annonce::whereHas('user', fn ($q) => $q->whereHas('role', fn ($r) => $r->where('name', 'groupe')))->count(),
+                'groupe'      => Annonce::whereHas('user', fn ($q) => $q->where('role_id', 2))->count(),
                 'fournisseur' => Annonce::whereHas('user', fn ($q) => $q->whereHas('role', fn ($r) => $r->where('name', 'fournisseur')))->count(),
                 'admin'       => Annonce::whereHas('user', fn ($q) => $q->whereHas('role', fn ($r) => $r->where('name', 'admin')))->count(),
             ],

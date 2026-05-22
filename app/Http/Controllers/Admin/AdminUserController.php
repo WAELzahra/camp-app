@@ -412,7 +412,8 @@ class AdminUserController extends Controller
             break;
 
         // ── profile_groupes ───────────────────────────────────────────────────
-        case 'groupe':
+        case 'organizer':
+        case 'groupe': // backward compat
         case 'group':
             if ($user->profile) {
                 if (!$user->profile->profileGroupe) {
