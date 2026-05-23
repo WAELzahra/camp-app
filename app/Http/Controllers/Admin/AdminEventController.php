@@ -431,7 +431,7 @@ class AdminEventController extends Controller
      */
     public function getGroups(Request $request)
     {
-        $groups = User::whereHas('role', fn($q) => $q->where('name', 'groupe'))
+        $groups = User::where('role_id', 2)
             ->when($request->search, function ($query, $search) {
                 $query->where('first_name', 'like', "%{$search}%")
                       ->orWhere('last_name', 'like', "%{$search}%")
