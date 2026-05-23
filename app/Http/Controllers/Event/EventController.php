@@ -177,9 +177,9 @@ class EventController extends Controller
      */
     public function getEventDetails($id)
     {
-        $event = Events::where('is_active', true)
-                      ->with(['group', 'photos'])
-                      ->find($id);
+        // No is_active filter — finished/past events must stay viewable
+        // (the list endpoint also has no is_active filter, so they appear there too).
+        $event = Events::with(['group', 'photos'])->find($id);
 
         if (!$event) {
             return response()->json(['message' => 'Event not found'], 404);
@@ -816,12 +816,21 @@ class EventController extends Controller
             try {
                 $feeData    = CommissionService::addServiceFee($netBase);
                 $totalToPay = round($feeData['total'], 2);
-                $orgCalc    = CommissionService::calculate('group', $netBase);
+                // Use stored net_amount for exact clawback (prevents mismatch if rate changed)
+                $origTx = \App\Models\WalletTransaction::where('user_id', $reservation->group_id)
+                    ->where('type', 'credit')
+                    ->where('category', 'reservation_income')
+                    ->where('reference_type', 'event_reservation')
+                    ->where('reference_id', $reservation->id)
+                    ->first();
+                $netToClawback = $origTx
+                    ? (float) $origTx->net_amount
+                    : CommissionService::calculateForUser('group', $netBase, $reservation->group_id)['net_revenue'];
 
-                // Clawback from organizer what they received
-                Balance::forUser($reservation->group_id)->debiter($orgCalc['net_revenue']);
+                // Clawback from organizer exactly what they received
+                Balance::forUser($reservation->group_id)->debiter($netToClawback);
                 WalletTransaction::logDebit(
-                    $reservation->group_id, 'refund_out', $orgCalc['net_revenue'],
+                    $reservation->group_id, 'refund_out', $netToClawback,
                     'event_reservation', $reservation->id,
                     "Remboursement annulation organisateur : {$event->title}",
                     $reservation->user_id
@@ -864,7 +873,7 @@ class EventController extends Controller
                     Balance::forUser($reservation->user_id)->releaseEscrow($totalToPay);
 
                     // Credit organizer minus commission
-                    $orgCalc = CommissionService::calculate('group', $netBase);
+                    $orgCalc = CommissionService::calculateForUser('group', $netBase, $reservation->group_id);
                     Balance::forUser($reservation->group_id)->crediter($orgCalc['net_revenue']);
                     WalletTransaction::logCredit(
                         $reservation->group_id, 'reservation_income',

@@ -176,9 +176,17 @@ class ReservationEventController extends Controller
                 \Log::error('Event pending cancellation escrow refund failed: ' . $e->getMessage());
             }
         } elseif ($reservation->payment_method === 'wallet' && $reservation->status === 'confirmée') {
-            // Organizer net_revenue: commission is taken from the base price (not gross)
-            $calc          = \App\Services\CommissionService::calculate('group', $totalPrice);
-            $orgNetRevenue = $calc['net_revenue'];
+            // Use the stored net_amount from the original credit to guarantee exact clawback,
+            // even if the commission rate was changed after approval.
+            $originalCreditTx = \App\Models\WalletTransaction::where('user_id', $event->group_id)
+                ->where('type', 'credit')
+                ->where('category', 'reservation_income')
+                ->where('reference_type', 'event_reservation')
+                ->where('reference_id', $reservation->id)
+                ->first();
+            $orgNetRevenue = $originalCreditTx
+                ? (float) $originalCreditTx->net_amount
+                : \App\Services\CommissionService::calculateForUser('group', $totalPrice, $event->group_id)['net_revenue'];
 
             // Platform cancellation fee reduces camper's refund
             $platformCancFee = \App\Models\PlatformCancellationFee::feeAmount('camper', $gross);
@@ -187,7 +195,7 @@ class ReservationEventController extends Controller
 
             DB::beginTransaction();
             try {
-                // Claw back from organizer exactly what they received
+                // Claw back from organizer exactly what they received (exact stored amount)
                 Balance::forUser($event->group_id)->debiter($orgNetRevenue);
                 WalletTransaction::logDebit(
                     $event->group_id, 'refund_out', $orgNetRevenue,
@@ -766,7 +774,7 @@ public function updateManualParticipant(Request $request, $reservationId)
                     Balance::forUser($reservation->user_id)->releaseEscrow($totalPaid);
 
                     // Credit organizer minus group commission
-                    $orgCalc = CommissionService::calculate('group', $netBase);
+                    $orgCalc = CommissionService::calculateForUser('group', $netBase, $reservation->group_id);
                     Balance::forUser($reservation->group_id)->crediter($orgCalc['net_revenue']);
                     WalletTransaction::logCredit(
                         $reservation->group_id, 'reservation_income',
@@ -865,11 +873,20 @@ public function updateManualParticipant(Request $request, $reservationId)
                     // Money was collected at approval → full refund to camper + clawback from organizer
                     $feeData   = CommissionService::addServiceFee($netBase);
                     $totalPaid = round($feeData['total'], 2);
-                    $orgCalc   = CommissionService::calculate('group', $netBase);
+                    // Look up original credit to use exact stored net_amount for clawback
+                    $origTx = WalletTransaction::where('user_id', $reservation->group_id)
+                        ->where('type', 'credit')
+                        ->where('category', 'reservation_income')
+                        ->where('reference_type', 'event_reservation')
+                        ->where('reference_id', $reservation->id)
+                        ->first();
+                    $netToClawback = $origTx
+                        ? (float) $origTx->net_amount
+                        : CommissionService::calculateForUser('group', $netBase, $reservation->group_id)['net_revenue'];
 
-                    Balance::forUser($reservation->group_id)->debiter($orgCalc['net_revenue']);
+                    Balance::forUser($reservation->group_id)->debiter($netToClawback);
                     WalletTransaction::logDebit(
-                        $reservation->group_id, 'refund_out', $orgCalc['net_revenue'],
+                        $reservation->group_id, 'refund_out', $netToClawback,
                         'event_reservation', $reservation->id,
                         "Remboursement — annulation groupe #{$reservation->id}",
                         $reservation->user_id

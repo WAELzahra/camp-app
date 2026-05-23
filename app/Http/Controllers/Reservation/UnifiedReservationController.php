@@ -235,7 +235,7 @@ class UnifiedReservationController extends Controller
             $commissionRate = (float) $orgTx->commission_rate;
         } else {
             $netBase        = max(0, $basePrice - $discountAmt);
-            $calc           = CommissionService::calculate('group', $netBase);
+            $calc           = CommissionService::calculateForUser('group', $netBase, $event->group_id ?? 0);
             $commissionAmt  = round($calc['commission'], 2);
             $commissionRate = round($calc['rate'] * 100, 2);
         }
@@ -324,7 +324,7 @@ class UnifiedReservationController extends Controller
             $commissionRate = (float) $supTx->commission_rate;
         } else {
             $netBase        = max(0, $montantTotal - $platformFeeAmt);
-            $calc           = CommissionService::calculate('supplier', $netBase);
+            $calc           = CommissionService::calculateForUser('supplier', $netBase, $reservation->fournisseur_id ?? 0);
             $commissionAmt  = round($calc['commission'], 2);
             $commissionRate = round($calc['rate'] * 100, 2);
         }
@@ -464,10 +464,10 @@ class UnifiedReservationController extends Controller
             'discount_amount' => $reservation->discount_amount ?? 0,
             'commission_amount' => $centreTx
                 ? (float) $centreTx->commission_amount
-                : round(CommissionService::calculate('center', max(0, round((float)($reservation->total_price ?? 0) - (float)($reservation->platform_fee_amount ?? 0), 2)))['commission'], 2),
+                : round(CommissionService::calculateForUser('center', max(0, round((float)($reservation->total_price ?? 0) - (float)($reservation->platform_fee_amount ?? 0), 2)), $reservation->centre_id ?? 0)['commission'], 2),
             'commission_rate' => $centreTx
                 ? (float) $centreTx->commission_rate
-                : round(CommissionService::calculate('center', 100)['rate'] * 100, 2),
+                : round(CommissionService::calculateForUser('center', 100, $reservation->centre_id ?? 0)['rate'] * 100, 2),
             'nights' => $reservation->nights ?? 1,
             'user' => $reservation->user ? [
                 'id' => $reservation->user->id,

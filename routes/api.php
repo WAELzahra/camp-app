@@ -1124,6 +1124,18 @@ Route::prefix('annonces')->group(function () {
         Route::put('/commissions',   [\App\Http\Controllers\Admin\AdminSettingsController::class, 'updateCommissions']);
     });
 
+    // -------------------- CUSTOM COMMISSION RULES --------------------
+    Route::prefix('custom-commissions')->group(function () {
+        Route::get('/',                         [\App\Http\Controllers\Admin\AdminCustomCommissionController::class, 'index']);
+        Route::post('/',                        [\App\Http\Controllers\Admin\AdminCustomCommissionController::class, 'store']);
+        Route::get('/users/search',             [\App\Http\Controllers\Admin\AdminCustomCommissionController::class, 'searchUsers']);
+        Route::get('/{id}',                     [\App\Http\Controllers\Admin\AdminCustomCommissionController::class, 'show']);
+        Route::put('/{id}',                     [\App\Http\Controllers\Admin\AdminCustomCommissionController::class, 'update']);
+        Route::delete('/{id}',                  [\App\Http\Controllers\Admin\AdminCustomCommissionController::class, 'destroy']);
+        Route::post('/{id}/users',              [\App\Http\Controllers\Admin\AdminCustomCommissionController::class, 'addUser']);
+        Route::delete('/{id}/users/{userId}',   [\App\Http\Controllers\Admin\AdminCustomCommissionController::class, 'removeUser']);
+    });
+
     // -------------------- ZONE REPORTS --------------------
     Route::prefix('signals')->group(function () {
         Route::get('/', [SignaleZoneController::class, 'indexAll']);

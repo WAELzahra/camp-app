@@ -28,7 +28,7 @@ class PaymentController extends Controller
             return response()->json(['error' => 'Le montant doit être au moins 50% du total.'], 422);
         }
 
-        $calc        = CommissionService::calculate('group', $montant);
+        $calc        = CommissionService::calculateForUser('group', $montant, $event->group_id);
         $commission  = $calc['commission'];
         $net_revenue = $calc['net_revenue'];
 
