@@ -65,7 +65,7 @@ class ReservationMaterielleController extends Controller
         }
 
         $receiverType = $user->role_id === 4 ? 'supplier' : 'camper';
-        $mapped = $reservations->map(function ($r) use ($receiverType) {
+        $mapped = $reservations->map(function ($r) use ($receiverType, $user) {
             $base = max(0, round((float) $r->montant_total - (float) ($r->platform_fee_amount ?? 0), 2));
             $calc = CommissionService::calculateForUser($receiverType, $base, $user->id);
             $r->commission_rate   = round($calc['rate'] * 100, 2);

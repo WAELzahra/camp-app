@@ -24,7 +24,8 @@ class CustomCommissionRule extends Model
      */
     public function users(): BelongsToMany
     {
-        return $this->belongsToMany(User::class, 'custom_commission_rule_users')
+        // Pivot table uses 'rule_id' (not the Laravel default 'custom_commission_rule_id')
+        return $this->belongsToMany(User::class, 'custom_commission_rule_users', 'rule_id', 'user_id')
                     ->withTimestamps();
     }
 }

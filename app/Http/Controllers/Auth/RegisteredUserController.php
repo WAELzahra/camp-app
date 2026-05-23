@@ -89,11 +89,23 @@ class RegisteredUserController extends Controller
             ]);
 
             // 2️⃣ Créer le profile général
+            // Map role name → profiles.type ENUM value
+            // (roles.name = 'organizer' maps to profiles.type = 'groupe')
+            $profileTypeMap = [
+                'campeur'     => 'campeur',
+                'guide'       => 'guide',
+                'centre'      => 'centre',
+                'fournisseur' => 'fournisseur',
+                'organizer'   => 'groupe',
+                'groupe'      => 'groupe',
+            ];
+            $profileType = $profileTypeMap[$role->name] ?? $role->name;
+
             DB::table('profiles')->insert([
                 'user_id' => $user->id,
                 'bio' => null,
                 'cover_image' => null,
-                'type' => $role->name,
+                'type' => $profileType,
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);

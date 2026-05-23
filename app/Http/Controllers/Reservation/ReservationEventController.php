@@ -766,7 +766,8 @@ public function updateManualParticipant(Request $request, $reservationId)
 
     public function reservationsParEvenement($event_id)
     {
-        $user = Auth::user();
+        $user  = Auth::user();
+        $event = Events::findOrFail($event_id);
 
         $reservations = Reservations_events::where('group_id', $user->id)
             ->where('event_id', $event_id)
@@ -778,7 +779,18 @@ public function updateManualParticipant(Request $request, $reservationId)
             return response()->json(['message' => 'Aucune réservation trouvée pour cet événement.'], 200);
         }
 
-        return response()->json($reservations);
+        // Append per-reservation commission fields using the group's custom rate (falls back to global)
+        $enriched = $reservations->map(function ($r) use ($user, $event) {
+            $base = max(0, round(($r->nbr_place * (float) $event->price) - (float) ($r->discount_amount ?? 0), 2));
+            $calc = CommissionService::calculateForUser('group', $base, $user->id);
+            $r->commission_rate   = round($calc['rate'] * 100, 2);   // e.g. 8.00 (%)
+            $r->commission_amount = $calc['commission'];
+            $r->net_revenue       = $calc['net_revenue'];
+            $r->base_amount       = $base;
+            return $r;
+        });
+
+        return response()->json($enriched);
     }
 
     // Export des réservations (CSV)
@@ -860,7 +872,7 @@ public function updateManualParticipant(Request $request, $reservationId)
                     Balance::forUser($reservation->user_id)->releaseEscrow($totalPaid);
 
                     // ── Credit organizer for event revenue (minus commission) ──────
-                    $orgCalc = CommissionService::calculate('group', max(0, $eventNetBase));
+                    $orgCalc = CommissionService::calculateForUser('group', max(0, $eventNetBase), $reservation->group_id);
                     if ($orgCalc['net_revenue'] > 0) {
                         Balance::forUser($reservation->group_id)->crediter($orgCalc['net_revenue']);
                         WalletTransaction::logCredit(
@@ -885,7 +897,7 @@ public function updateManualParticipant(Request $request, $reservationId)
 
                     // ── Credit each supplier for their material revenue ────────────
                     foreach ($materialItems as $matItem) {
-                        $supCalc = CommissionService::calculate('fournisseur', $matItem->montant_total);
+                        $supCalc = CommissionService::calculateForUser('supplier', $matItem->montant_total, $matItem->supplier_id);
                         Balance::forUser($matItem->supplier_id)->crediter($supCalc['net_revenue']);
                         WalletTransaction::logCredit(
                             $matItem->supplier_id, 'reservation_income',

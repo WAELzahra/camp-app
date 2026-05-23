@@ -769,9 +769,23 @@ class EventController extends Controller
 
         $participants = $query->get();
 
+        // Enrich each participant with commission fields using the group's custom rate
+        $enriched = $participants->map(function ($p) use ($event) {
+            $base = max(0, round(
+                ($p->nbr_place * (float) $event->price) - (float) ($p->discount_amount ?? 0),
+                2
+            ));
+            $calc = CommissionService::calculateForUser('group', $base, $event->group_id);
+            $p->commission_rate   = round($calc['rate'] * 100, 2);  // e.g. 5.00 (%)
+            $p->commission_amount = $calc['commission'];
+            $p->net_revenue       = $calc['net_revenue'];
+            $p->base_amount       = $base;
+            return $p;
+        });
+
         return response()->json([
             'success' => true,
-            'data' => $participants
+            'data' => $enriched
         ]);
     }
     /**
