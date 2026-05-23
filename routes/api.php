@@ -179,6 +179,9 @@ Route::get('/materielles', [MaterielleController::class, 'marketplace']);
 // ── Supplier invitation token validation (public — no auth) ──────────────────
 Route::get('/supplier-invitation/{token}', [\App\Http\Controllers\Organizer\OrganizerSupplierController::class, 'validateInvitationToken']);
 
+// ── Public: accepted suppliers for a given organizer ────────────────────────
+Route::get('/groups/{userId}/accepted-suppliers', [\App\Http\Controllers\Organizer\OrganizerSupplierController::class, 'publicAcceptedSuppliers']);
+
 // -------------------- PUBLIC EVENTS (UNIQUEMENT GET - POUR LES VISITEURS) --------------------
 Route::prefix('events')->group(function () {
     Route::get('/', [EventController::class, 'index']);

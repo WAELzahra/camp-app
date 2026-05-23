@@ -353,8 +353,9 @@ class ReservationEventController extends Controller
 
         $event = Events::findOrFail($eventId);
 
-        $remaining = $event->remaining_spots ?? $event->nbr_place_restante ?? 0;
-        if ($remaining < $request->nbr_place) {
+        // null remaining_spots = no capacity limit (custom events)
+        $remaining = $event->remaining_spots ?? $event->nbr_place_restante ?? null;
+        if ($remaining !== null && $remaining < $request->nbr_place) {
             return response()->json(['message' => 'Not enough spots available for this event.'], 400);
         }
 
@@ -369,10 +370,10 @@ class ReservationEventController extends Controller
             'created_by' => auth()->id(),
         ]);
 
-        // Decrement whichever field the Events model exposes
-        if (isset($event->remaining_spots)) {
+        // Only decrement when capacity tracking is enabled
+        if ($event->remaining_spots !== null) {
             $event->decrement('remaining_spots', $request->nbr_place);
-        } else {
+        } elseif ($event->nbr_place_restante !== null) {
             $event->nbr_place_restante -= $request->nbr_place;
             $event->save();
         }

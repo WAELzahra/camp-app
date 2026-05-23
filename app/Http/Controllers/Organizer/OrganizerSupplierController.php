@@ -90,13 +90,12 @@ class OrganizerSupplierController extends Controller
     }
 
     /**
-     * Send an association request to an existing supplier.
+     * Directly associate an existing supplier (no approval required from supplier side).
      */
     public function requestLink(Request $request)
     {
         $request->validate([
             'supplier_id' => 'required|exists:users,id',
-            'message'     => 'nullable|string|max:500',
         ]);
 
         $organizer = Auth::user();
@@ -112,31 +111,37 @@ class OrganizerSupplierController extends Controller
 
         if ($existing) {
             if ($existing->status === 'accepted') {
-                return response()->json(['success' => false, 'message' => 'You are already associated with this supplier.'], 409);
+                return response()->json(['success' => false, 'message' => 'This supplier is already associated.'], 409);
             }
-            if ($existing->status === 'pending') {
-                return response()->json(['success' => false, 'message' => 'A request is already pending.'], 409);
+            // Any previous non-accepted record for same supplier → upgrade to accepted
+            // But first check the one-supplier limit (excluding this record)
+            $otherAccepted = OrganizerSupplierLink::where('organizer_id', $organizer->id)
+                ->where('status', 'accepted')
+                ->where('id', '!=', $existing->id)
+                ->exists();
+            if ($otherAccepted) {
+                return response()->json(['success' => false, 'message' => 'You already have an associated supplier. Remove them first.'], 409);
             }
-            // Rejected/cancelled → allow re-request
-            $existing->update(['status' => 'pending', 'message' => $request->message, 'responded_at' => null]);
-            return response()->json(['success' => true, 'message' => 'Association request re-sent.', 'data' => $existing]);
+            $existing->update(['status' => 'accepted', 'responded_at' => now()]);
+            return response()->json(['success' => true, 'message' => 'Supplier associated.', 'data' => $existing]);
+        }
+
+        // One-supplier limit: reject if an accepted link already exists
+        $alreadyHasSupplier = OrganizerSupplierLink::where('organizer_id', $organizer->id)
+            ->where('status', 'accepted')
+            ->exists();
+        if ($alreadyHasSupplier) {
+            return response()->json(['success' => false, 'message' => 'You already have an associated supplier. Remove them first.'], 409);
         }
 
         $link = OrganizerSupplierLink::create([
             'organizer_id' => $organizer->id,
             'supplier_id'  => $supplier->id,
-            'status'       => 'pending',
-            'message'      => $request->message,
+            'status'       => 'accepted',
+            'responded_at' => now(),
         ]);
 
-        // Notify supplier by email
-        try {
-            Mail::to($supplier->email)->send(new \App\Mail\OrganizerAssociationRequest($link));
-        } catch (\Exception $e) {
-            \Log::warning('Failed to send supplier association email: ' . $e->getMessage());
-        }
-
-        return response()->json(['success' => true, 'message' => 'Association request sent.', 'data' => $link], 201);
+        return response()->json(['success' => true, 'message' => 'Supplier associated.', 'data' => $link], 201);
     }
 
     /**
@@ -349,6 +354,27 @@ class OrganizerSupplierController extends Controller
             ]);
 
         return response()->json(['success' => true, 'data' => $materials, 'has_suppliers' => true]);
+    }
+
+    /**
+     * Public: return accepted suppliers for a given organizer (no auth required).
+     */
+    public function publicAcceptedSuppliers($userId)
+    {
+        $links = OrganizerSupplierLink::where('organizer_id', $userId)
+            ->where('status', 'accepted')
+            ->with(['supplier:id,first_name,last_name,email,avatar'])
+            ->get()
+            ->map(fn($link) => [
+                'id'     => $link->supplier?->id,
+                'name'   => trim(($link->supplier?->first_name ?? '') . ' ' . ($link->supplier?->last_name ?? '')),
+                'email'  => $link->supplier?->email,
+                'avatar' => $link->supplier?->avatar,
+            ])
+            ->filter(fn($item) => $item['id'] !== null)
+            ->values();
+
+        return response()->json(['success' => true, 'data' => $links]);
     }
 
     /**

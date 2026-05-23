@@ -162,6 +162,15 @@ class User extends Authenticatable implements MustVerifyEmail
     }
 
     /**
+     * The single accepted supplier link for this organizer (group).
+     */
+    public function acceptedSupplierLink()
+    {
+        return $this->hasOne(\App\Models\OrganizerSupplierLink::class, 'organizer_id')
+                    ->where('status', 'accepted');
+    }
+
+    /**
      * Reservations where this user is the CAMPER (buyer/renter).
      */
     public function reservationsCamper()

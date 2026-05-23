@@ -35,7 +35,7 @@ class EventController extends Controller
     public function getGroupEvents($groupId, Request $request)
     {
         $query = Events::where('group_id', $groupId)
-                    ->with(['group', 'photos']);
+                    ->with(['group', 'group.acceptedSupplierLink.supplier:id,first_name,last_name,avatar,email', 'photos']);
 
         // Optional filters
         if ($request->has('status')) {
@@ -52,6 +52,10 @@ class EventController extends Controller
         $query->orderBy($sortBy, $sortOrder);
 
         $events = $query->paginate($request->get('per_page', 15));
+        $events->getCollection()->transform(function ($event) {
+            $event->accepted_supplier = $event->group?->acceptedSupplierLink?->supplier ?? null;
+            return $event;
+        });
 
         return response()->json([
             'success' => true,
@@ -82,7 +86,7 @@ class EventController extends Controller
 
         try {
             $query = Events::where('group_id', $user->id)
-                        ->with(['group', 'photos']);
+                        ->with(['group', 'group.acceptedSupplierLink.supplier:id,first_name,last_name,avatar,email', 'photos']);
 
             // Optional filters
             if ($request->has('status')) {
@@ -106,11 +110,12 @@ class EventController extends Controller
                 if ($event->photos && $event->photos->isNotEmpty()) {
                     $coverPhoto = $event->photos->firstWhere('is_cover', true);
                     if ($coverPhoto) {
-                        $event->cover_image = $coverPhoto->url; // This will use the accessor
+                        $event->cover_image = $coverPhoto->url;
                     } else {
-                        $event->cover_image = $event->photos->first()->url; // This will use the accessor
+                        $event->cover_image = $event->photos->first()->url;
                     }
                 }
+                $event->accepted_supplier = $event->group?->acceptedSupplierLink?->supplier ?? null;
                 return $event;
             });
 
@@ -131,8 +136,8 @@ class EventController extends Controller
      */
     public function index(Request $request)
     {
-        $query = Events::with(['group', 'photos'])
-                    ->orderBy('start_date', 'asc'); // Order by start date
+        $query = Events::with(['group', 'group.acceptedSupplierLink.supplier:id,first_name,last_name,avatar,email', 'photos'])
+                    ->orderByRaw('ISNULL(start_date) ASC, start_date ASC'); // NULL start_date (custom) at end
 
         // Optional: Basic search - keep this as it's efficient
         if ($request->has('q')) {
@@ -154,7 +159,7 @@ class EventController extends Controller
         $perPage = $request->get('per_page', 500);
         $events = $query->paginate($perPage);
 
-        // Add cover_image to each event
+        // Add cover_image + accepted_supplier to each event
         $events->getCollection()->transform(function ($event) {
             if ($event->photos && $event->photos->isNotEmpty()) {
                 $cover = $event->photos->firstWhere('is_cover', true) ?? $event->photos->first();
@@ -164,6 +169,7 @@ class EventController extends Controller
                         : null
                 );
             }
+            $event->accepted_supplier = $event->group?->acceptedSupplierLink?->supplier ?? null;
             return $event;
         });
 
@@ -179,11 +185,13 @@ class EventController extends Controller
     {
         // No is_active filter — finished/past events must stay viewable
         // (the list endpoint also has no is_active filter, so they appear there too).
-        $event = Events::with(['group', 'photos'])->find($id);
+        $event = Events::with(['group', 'group.acceptedSupplierLink.supplier:id,first_name,last_name,avatar,email', 'photos'])->find($id);
 
         if (!$event) {
             return response()->json(['message' => 'Event not found'], 404);
         }
+
+        $event->accepted_supplier = $event->group?->acceptedSupplierLink?->supplier ?? null;
 
         return response()->json([
             'success' => true,
@@ -345,11 +353,11 @@ class EventController extends Controller
             // Event fields
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
-            'event_type' => 'required|in:camping,hiking,voyage',
-            'start_date' => 'required|date',
-            'end_date' => 'required|date|after_or_equal:start_date',
-            'capacity' => 'required|integer|min:1',
-            'price' => 'required|numeric|min:0',
+            'event_type' => 'required|in:camping,hiking,voyage,custom',
+            'start_date' => 'nullable|date|required_unless:event_type,custom',
+            'end_date'   => 'nullable|date|required_unless:event_type,custom|after_or_equal:start_date',
+            'capacity'   => 'nullable|integer|min:1',
+            'price'      => 'required|numeric|min:0',
             
             // Camping specific fields
             'camping_duration' => 'nullable|integer|min:1',
@@ -393,12 +401,12 @@ class EventController extends Controller
             'group_id' => $user->id,
             'title' => $validated['title'],
             'description' => $validated['description'] ?? null,
-            'event_type' => $validated['event_type'],
-            'start_date' => $validated['start_date'],
-            'end_date' => $validated['end_date'],
-            'capacity' => $validated['capacity'],
-            'price' => $validated['price'],
-            'remaining_spots' => $validated['capacity'],
+            'event_type'      => $validated['event_type'],
+            'start_date'      => $validated['start_date'] ?? null,
+            'end_date'        => $validated['end_date']   ?? null,
+            'capacity'        => $validated['capacity']   ?? null,
+            'price'           => $validated['price'],
+            'remaining_spots' => $validated['capacity']   ?? null,
             'camping_duration' => $validated['camping_duration'] ?? null,
             'camping_gear' => $validated['camping_gear'] ?? null,
             'is_group_travel' => $request->boolean('is_group_travel', false),
@@ -591,9 +599,10 @@ class EventController extends Controller
         $validated = $request->validate([
             'title'                   => 'sometimes|string|max:255',
             'description'             => 'nullable|string',
-            'start_date'              => 'sometimes|date',
-            'end_date'                => 'sometimes|date|after_or_equal:start_date',
-            'capacity'                => 'sometimes|integer|min:1',
+            'event_type'              => 'sometimes|in:camping,hiking,voyage,custom',
+            'start_date'              => 'nullable|date',
+            'end_date'                => 'nullable|date|after_or_equal:start_date',
+            'capacity'                => 'nullable|integer|min:1',
             'price'                   => 'sometimes|numeric|min:0',
 
             // Camping
