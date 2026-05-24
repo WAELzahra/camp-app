@@ -844,30 +844,31 @@ class ProfileController extends Controller
         DB::beginTransaction();
 
         try {
-            $albumTitle = $request->input('album_title', 'Profile Gallery');
             $albumDescription = $request->input('album_description', null);
 
-            $album = Album::firstOrCreate(
-                [
-                    'user_id' => $user->id,
-                    'titre' => 'Profile Gallery',
-                ],
-                [
-                    'titre' => $albumTitle,
-                    'description' => $albumDescription,
-                ]
-            );
+            // Find the album using the same robust lookup as getProfilePhotos:
+            // prefer 'Profile Gallery', fall back to any album for this user.
+            // This guarantees the upload always targets the same album that the
+            // load path will query, regardless of whether the user renamed it.
+            $album = Album::where('user_id', $user->id)
+                ->where('titre', 'Profile Gallery')
+                ->first()
+                ?? Album::where('user_id', $user->id)->latest()->first();
 
-            $updateData = [
-                'titre' => $albumTitle,
-                'updated_at' => now(),
-            ];
-
-            if ($request->has('album_description')) {
-                $updateData['description'] = $albumDescription;
+            if (!$album) {
+                // First-ever upload — create the canonical album.
+                $album = Album::create([
+                    'user_id'     => $user->id,
+                    'titre'       => 'Profile Gallery',
+                    'description' => $albumDescription ?? 'User profile gallery images',
+                ]);
             }
 
-            $album->update($updateData);
+            // Only update the description if explicitly provided; never rename the
+            // album during an upload (title changes go through updateAlbumInfo).
+            if ($request->has('album_description')) {
+                $album->update(['description' => $albumDescription, 'updated_at' => now()]);
+            }
 
             // For centre users: migrate any camping_centre photos that are not yet
             // in this album into it now, preserving their existing is_cover flags.
@@ -993,14 +994,33 @@ class ProfileController extends Controller
                 ]);
             }
 
-            // ── All other roles: original album-based logic ───────────────────────
-            $album = Album::firstOrCreate(
-                ['user_id' => $user->id, 'titre' => 'Profile Gallery'],
-                ['titre' => 'Profile Gallery', 'description' => 'User profile gallery images']
-            );
+            // ── All other roles: album-based logic ───────────────────────
+            // Use ->first() (not firstOrCreate) — we never want to create an empty
+            // album just because the user opened the Images tab before uploading.
+            // The album is created on first upload via storeOrUpdateProfilePhotos.
+            //
+            // Lookup order:
+            //   1. 'Profile Gallery' album (canonical default name)
+            //   2. Any album for this user (covers renamed albums)
+            $album = Album::where('user_id', $user->id)
+                ->where('titre', 'Profile Gallery')
+                ->first()
+                ?? Album::where('user_id', $user->id)->latest()->first();
 
-            $photos = Photo::where('user_id', $user->id)
-                ->where('album_id', $album->id)
+            if (!$album) {
+                // No album yet — return empty gracefully
+                return response()->json([
+                    'success' => true,
+                    'album'   => null,
+                    'photos'  => [],
+                ]);
+            }
+
+            // Load photos from the album.  We intentionally do NOT add an extra
+            // WHERE user_id filter here so that admin-imported or co-owner photos
+            // that live in this album (album_id matches, user_id may differ) are
+            // also surfaced.  The album itself is already scoped to the owner.
+            $photos = Photo::where('album_id', $album->id)
                 ->orderBy('order', 'asc')
                 ->orderBy('created_at', 'desc')
                 ->get();
@@ -1332,8 +1352,21 @@ class ProfileController extends Controller
                     $profileGroupe = $profile->profileGroupe;
                     $data['details'] = $profileGroupe;
 
-                    // Album + photos (cover photo used as banner)
-                    $album = \App\Models\Album::with('photos')
+                    // Album + photos (cover photo used as banner).
+                    // Mirror the exact same lookup order used in getProfilePhotos so
+                    // the public profile and the settings Images tab always show the
+                    // same set of photos.
+                    // 1. 'Profile Gallery' album (canonical default)
+                    // 2. Any album for this user (fallback for renamed albums)
+                    $album = \App\Models\Album::with(['photos' => function ($q) {
+                            $q->orderBy('order', 'asc')->orderBy('created_at', 'desc');
+                        }])
+                        ->where('user_id', $user->id)
+                        ->where('titre', 'Profile Gallery')
+                        ->first()
+                        ?? \App\Models\Album::with(['photos' => function ($q) {
+                            $q->orderBy('order', 'asc')->orderBy('created_at', 'desc');
+                        }])
                         ->where('user_id', $user->id)
                         ->latest()
                         ->first();
@@ -1342,7 +1375,7 @@ class ProfileController extends Controller
                         'id'     => $album->id,
                         'photos' => $album->photos->map(fn($p) => [
                             'id'       => $p->id,
-                            'url'      => $p->url,
+                            'url'      => storage_url($p->path_to_img),
                             'is_cover' => (bool) $p->is_cover,
                         ])->values(),
                     ] : null;
@@ -1410,11 +1443,19 @@ class ProfileController extends Controller
                         ])->values();
                 }
             } else {
+                // Same robust lookup as getProfilePhotos / upload:
+                // prefer 'Profile Gallery', fall back to any album.
                 $album = \App\Models\Album::with(['photos' => function ($q) {
                         $q->orderBy('order', 'asc')->orderBy('created_at', 'desc');
                     }])
                     ->where('user_id', $user->id)
                     ->where('titre', 'Profile Gallery')
+                    ->first()
+                    ?? \App\Models\Album::with(['photos' => function ($q) {
+                        $q->orderBy('order', 'asc')->orderBy('created_at', 'desc');
+                    }])
+                    ->where('user_id', $user->id)
+                    ->latest()
                     ->first();
 
                 if ($album) {

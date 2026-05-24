@@ -582,38 +582,78 @@ class AdminUserController extends Controller
     }
 
     /**
-     * Réinitialiser le mot de passe
+     * Réinitialiser le mot de passe (admin — no current password required).
+     *
+     * Body (all optional):
+     *   new_password             string  min:8  — if omitted a random 12-char password is generated
+     *   new_password_confirmation string        — required when new_password is provided
+     *   notify_user              bool           — default true; set to false to skip the email
      */
-    public function resetPassword($id)
+    public function resetPassword(Request $request, $id)
     {
+        // Validate only when a custom password is provided
+        if ($request->filled('new_password')) {
+            $validator = \Illuminate\Support\Facades\Validator::make($request->all(), [
+                'new_password'              => 'required|string|min:8|confirmed',
+                'new_password_confirmation' => 'required|string',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $validator->errors()->first(),
+                    'errors'  => $validator->errors(),
+                ], 422);
+            }
+        }
+
         try {
             $user = User::findOrFail($id);
 
-            $newPassword = Str::random(10);
-            
+            // Admin cannot reset their own password through this endpoint
+            if (auth()->id() == $user->id) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You cannot reset your own password through the admin panel.',
+                ], 403);
+            }
+
+            // Use provided password or generate a secure random one
+            $newPassword = $request->filled('new_password')
+                ? $request->input('new_password')
+                : Str::random(12);
+
             $user->password = Hash::make($newPassword);
             $user->save();
 
-            try {
-                Mail::to($user->email)->send(new PasswordResetEmail($user, $newPassword));
-            } catch (\Exception $e) {
-                Log::error('Erreur envoi email: ' . $e->getMessage());
+            // Notify the user unless explicitly disabled
+            $notifyUser = $request->input('notify_user', true);
+            $emailSent  = false;
+            if ($notifyUser) {
+                try {
+                    Mail::to($user->email)->send(new PasswordResetEmail($user, $newPassword));
+                    $emailSent = true;
+                } catch (\Exception $e) {
+                    Log::error('Password reset email error: ' . $e->getMessage());
+                }
             }
 
             return response()->json([
                 'success' => true,
-                'message' => 'Mot de passe réinitialisé avec succès',
+                'message' => 'Password reset successfully.',
                 'data' => [
-                    'email' => $user->email,
-                    'temporary_password' => $newPassword
-                ]
+                    'email'              => $user->email,
+                    'temporary_password' => $newPassword,
+                    'email_sent'         => $emailSent,
+                    'custom_password'    => $request->filled('new_password'),
+                ],
             ]);
 
         } catch (\Exception $e) {
-            Log::error('Erreur reset password: ' . $e->getMessage());
+            Log::error('Admin reset password error: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
-                'message' => 'Erreur lors de la réinitialisation'
+                'message' => 'Failed to reset password.',
             ], 500);
         }
     }
