@@ -245,49 +245,37 @@ class CenterServiceApiController extends Controller
                 });
         }
 
-        // Bulk-load cover photos from the Photo table (2 queries total).
-        // Priority mirrors formatCenter(): Photo table (is_cover/latest) → profile.cover_image.
-        // This is what makes partner cover images appear correctly in production
-        // where photos are stored in camping_centre_photos/ via the ImagesTab upload,
-        // not in profiles.cover_image.
-        $campingCentreMap = [];  // userId → CampingCentre id
-        $coverPhotoMap    = [];  // campingCentreId → resolved URL
+        // Bulk-load cover photos by user_id — one query covers ALL upload paths:
+        //   • centre_photos/{id}/  (ImagesTab uploads for centers with a CampingCentre row)
+        //   • albums/{user_id}/    (admin panel uploads — most partner centers)
+        //   • profile_photos/      (older fallback path)
+        // Querying by camping_centre_id would miss admin-created partners that have no
+        // CampingCentre row, which is the common case. user_id is always set.
+        $coverPhotoMap = []; // userId → resolved cover URL
 
         if (!empty($userIds)) {
-            \App\Models\CampingCentre::whereIn('user_id', $userIds)
-                ->select('id', 'user_id')
+            Photo::whereIn('user_id', $userIds)
+                ->whereNotNull('path_to_img')
+                ->orderByRaw('is_cover DESC, id DESC')
                 ->get()
-                ->each(fn($cc) => $campingCentreMap[$cc->user_id] = $cc->id);
-
-            $campingCentreIds = array_values($campingCentreMap);
-            if (!empty($campingCentreIds)) {
-                // For each camping_centre keep only the best photo:
-                // is_cover = true wins, otherwise the most-recently-inserted row.
-                Photo::whereIn('camping_centre_id', $campingCentreIds)
-                    ->whereNotNull('path_to_img')
-                    ->orderByRaw('is_cover DESC, id DESC')
-                    ->get()
-                    ->each(function ($photo) use (&$coverPhotoMap) {
-                        $ccId = $photo->camping_centre_id;
-                        // Only store the first match per centre (highest priority wins
-                        // because we sorted is_cover DESC, id DESC above).
-                        if (!isset($coverPhotoMap[$ccId])) {
-                            $coverPhotoMap[$ccId] = $this->photoUrl($photo->path_to_img);
-                        }
-                    });
-            }
+                ->each(function ($photo) use (&$coverPhotoMap) {
+                    $uid = $photo->user_id;
+                    // First match per user wins (is_cover = true sorts first).
+                    if (!isset($coverPhotoMap[$uid])) {
+                        $coverPhotoMap[$uid] = $this->photoUrl($photo->path_to_img);
+                    }
+                });
         }
 
-        $partnerResult = $centers->map(function ($c) use ($ratingMap, $campingCentreMap, $coverPhotoMap) {
+        $partnerResult = $centers->map(function ($c) use ($ratingMap, $coverPhotoMap) {
             $profile = $c->profile;
             $user    = $profile?->user;
             $userId  = $user?->id;
 
-            // Resolve cover image: Photo table first (correct production paths),
-            // fall back to profile.cover_image (may be null or stale).
-            $ccId       = $userId ? ($campingCentreMap[$userId] ?? null) : null;
-            $coverImage = ($ccId && isset($coverPhotoMap[$ccId]))
-                ? $coverPhotoMap[$ccId]
+            // Photo table wins (any upload path); profile.cover_image is the fallback
+            // for centers where no Photo record exists yet.
+            $coverImage = ($userId && isset($coverPhotoMap[$userId]))
+                ? $coverPhotoMap[$userId]
                 : ($profile?->cover_image ? $this->photoUrl($profile->cover_image) : null);
 
             $avgRating   = null;
