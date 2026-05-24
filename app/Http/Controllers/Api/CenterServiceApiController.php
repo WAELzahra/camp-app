@@ -329,8 +329,10 @@ class CenterServiceApiController extends Controller
         $partnerNameSet = $partnerResult->map(fn($c) => mb_strtolower(trim($c['name'] ?? '')))
             ->filter()->flip()->toArray();
 
-        $nonPartnerResult = \App\Models\CampingCentre::where('is_partner', false)
-            ->where('status', true)
+        // Include ALL active CampingCentre rows not already covered by a ProfileCentre partner.
+        // We no longer restrict to is_partner=false: centres that are marked partner in the
+        // camping_centres table but have no ProfileCentre record must still appear in the list.
+        $nonPartnerResult = \App\Models\CampingCentre::where('status', true)
             ->get()
             ->filter(fn($c) => !isset($partnerNameSet[mb_strtolower(trim($c->nom ?? ''))]))
             ->map(fn($c) => [
@@ -351,7 +353,7 @@ class CenterServiceApiController extends Controller
                     'user'        => null,
                 ],
                 'available_equipment' => [],
-                'is_partner'      => false,
+                'is_partner'      => (bool) $c->is_partner,
                 '_source'         => 'camping',
             ])->values();
 
