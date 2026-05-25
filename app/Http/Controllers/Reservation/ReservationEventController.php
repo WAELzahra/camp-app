@@ -24,6 +24,8 @@ use App\Mail\EventReservationCanceledByGroup;
 use App\Models\Balance;
 use App\Models\WalletTransaction;
 use App\Models\EventReservationMaterial;
+use App\Models\EventReservationService;
+use App\Models\EventService;
 use App\Models\Materielles;
 use App\Models\OrganizerSupplierLink;
 use App\Services\CancellationPolicyService;
@@ -145,11 +147,11 @@ class ReservationEventController extends Controller
         $event = \App\Models\Events::findOrFail($reservation->event_id);
 
         // ── Fee calculation using dynamic cancellation policy ───────────────────
-        // $totalPrice = base price (nbr_place × event->price), without platform fee
-        // $gross = what camper actually paid (base + platform fee)
-        $totalPrice     = $reservation->nbr_place * $event->price;
+        $netBase        = round($reservation->nbr_place * $event->price - ($reservation->discount_amount ?? 0), 2);
+        $servicesTotal  = round(EventReservationService::where('event_reservation_id', $reservation->id)->sum('subtotal'), 2);
         $platformFeeAmt = (float) ($reservation->platform_fee_amount ?? 0);
-        $gross          = round($totalPrice + $platformFeeAmt, 2);
+        // gross = full amount camper paid for event + services (policy fee base)
+        $gross          = round($netBase + $servicesTotal + $platformFeeAmt, 2);
         $startDate      = \Carbon\Carbon::parse($event->start_date);
 
         // Policy applies to gross (total paid), consistent with centre & equipment
@@ -162,10 +164,9 @@ class ReservationEventController extends Controller
 
         // ── Wallet refund ────────────────────────────────────────────────────────
         if ($reservation->payment_method === 'wallet' && $reservation->status === 'en_attente_validation') {
-            // Funds were escrowed at creation — full refund including materials (never confirmed)
-            // $platformFeeAmt (from reservation) already covers the combined fee on event + materials
+            // Funds were escrowed at creation — full refund of event + services + materials + platform fee
             $materialsTotal = EventReservationMaterial::where('event_reservation_id', $reservation->id)->sum('montant_total');
-            $totalPaid = round($totalPrice + $platformFeeAmt + $materialsTotal, 2);
+            $totalPaid = round($netBase + $servicesTotal + $materialsTotal + $platformFeeAmt, 2);
             DB::beginTransaction();
             try {
                 Balance::forUser($user->id)->refundEscrow($totalPaid);
@@ -191,7 +192,7 @@ class ReservationEventController extends Controller
                 ->first();
             $orgNetRevenue = $originalCreditTx
                 ? (float) $originalCreditTx->net_amount
-                : \App\Services\CommissionService::calculateForUser('group', $totalPrice, $event->group_id)['net_revenue'];
+                : \App\Services\CommissionService::calculateForUser('group', $netBase + $servicesTotal, $event->group_id)['net_revenue'];
 
             // Platform cancellation fee reduces camper's refund
             $platformCancFee = \App\Models\PlatformCancellationFee::feeAmount('camper', $gross);
@@ -307,7 +308,7 @@ class ReservationEventController extends Controller
             'data'    => [
                 'reservation_id'          => $reservation->id,
                 'status'                  => 'annulée_par_utilisateur',
-                'total_price'             => $totalPrice,
+                'total_price'             => $netBase + $servicesTotal,
                 'cancellation_fee'        => $cancellationFee,
                 'cancellation_fee_percent'=> $cancellationFeePercent,
                 'processing_fee'          => $processingFee,
@@ -534,6 +535,10 @@ public function updateManualParticipant(Request $request, $reservationId)
             'materials'         => 'nullable|array',
             'materials.*.materielle_id' => 'required_with:materials|exists:materielles,id',
             'materials.*.quantite'      => 'required_with:materials|integer|min:1',
+            'services'                  => 'nullable|array',
+            'services.*.service_id'     => 'required_with:services|exists:event_services,id',
+            'services.*.quantity'       => 'required_with:services|integer|min:1',
+            'services.*.notes'          => 'nullable|string|max:500',
         ]);
 
         // Card payment is not available in v1
@@ -600,9 +605,34 @@ public function updateManualParticipant(Request $request, $reservationId)
             }
         }
 
+        // ── Validate and price event services (optional add-ons) ────────────────
+        $serviceItems  = [];
+        $servicesTotal = 0;
+
+        if ($request->filled('services') && is_array($request->services)) {
+            foreach ($request->services as $item) {
+                $svc = EventService::find($item['service_id']);
+                if (!$svc || !$svc->is_active || $svc->event_id != $request->event_id) {
+                    return response()->json(['success' => false, 'message' => "Service #{$item['service_id']} is not available for this event."], 422);
+                }
+                $qty      = (int) $item['quantity'];
+                $price    = (float) $svc->price;
+                $subtotal = round($price * $qty, 2);
+                $servicesTotal += $subtotal;
+                $serviceItems[] = [
+                    'service'              => $svc,
+                    'quantity'             => $qty,
+                    'notes'                => $item['notes'] ?? null,
+                    'price_snapshot'       => $price,
+                    'pricing_unit_snapshot'=> $svc->pricing_unit,
+                    'subtotal'             => $subtotal,
+                ];
+            }
+        }
+
         // ── Price calculation ────────────────────────────────────────────────────
         $netBase    = max(0, round($basePrice - $discountAmount, 2));
-        $feeData    = CommissionService::addServiceFee($netBase + $materialsTotal);
+        $feeData    = CommissionService::addServiceFee($netBase + $materialsTotal + $servicesTotal);
         $totalToPay = $feeData['total'];          // what camper pays (event + materials + platform fee)
         $platformFeeAmt  = $feeData['fee_amount'];
         $platformFeeRate = round($feeData['fee_rate'] * 100, 2);
@@ -668,6 +698,19 @@ public function updateManualParticipant(Request $request, $reservationId)
                 ]);
             }
 
+            // ── Create service line items ─────────────────────────────────────────
+            foreach ($serviceItems as $item) {
+                EventReservationService::create([
+                    'event_reservation_id'  => $reservation->id,
+                    'event_service_id'      => $item['service']->id,
+                    'quantity'              => $item['quantity'],
+                    'notes'                 => $item['notes'],
+                    'price_snapshot'        => $item['price_snapshot'],
+                    'pricing_unit_snapshot' => $item['pricing_unit_snapshot'],
+                    'subtotal'              => $item['subtotal'],
+                ]);
+            }
+
             // Escrow: lock funds immediately so camper cannot spend them on other reservations
             if ($totalToPay > 0) {
                 Balance::forUser($user->id)->lockFunds($totalToPay);
@@ -698,12 +741,13 @@ public function updateManualParticipant(Request $request, $reservationId)
         return response()->json([
             'success'     => true,
             'message'     => 'Réservation confirmée et paiement effectué via wallet.',
-            'reservation' => $reservation->load('materials.materielle'),
+            'reservation' => $reservation->load('materials.materielle', 'services.service'),
             'payment'     => [
                 'method'            => 'wallet',
                 'total_paid'        => $totalToPay,
                 'event_price'       => $netBase,
                 'materials_price'   => $materialsTotal,
+                'services_price'    => $servicesTotal,
                 'platform_fee'      => $platformFeeAmt,
                 'platform_fee_pct'  => $platformFeeRate,
             ],
@@ -849,9 +893,10 @@ public function updateManualParticipant(Request $request, $reservationId)
             return response()->json(['errors' => $validator->errors(), 'message' => 'Validation échouée.'], 422);
         }
 
-        $newStatus = $data['status'];
-        $event     = Events::findOrFail($reservation->event_id);
-        $netBase   = round(($reservation->nbr_place * $event->price) - ($reservation->discount_amount ?? 0), 2);
+        $newStatus     = $data['status'];
+        $event         = Events::findOrFail($reservation->event_id);
+        $netBase       = round(($reservation->nbr_place * $event->price) - ($reservation->discount_amount ?? 0), 2);
+        $servicesTotal = round(EventReservationService::where('event_reservation_id', $reservation->id)->sum('subtotal'), 2);
 
         // ── Wallet movements triggered by group decision ──────────────────────────
         if ($reservation->payment_method === 'wallet' && $reservation->status === 'en_attente_validation') {
@@ -942,7 +987,7 @@ public function updateManualParticipant(Request $request, $reservationId)
                 // Refund escrowed funds — group rejected the reservation
                 DB::beginTransaction();
                 try {
-                    $feeData   = CommissionService::addServiceFee($netBase);
+                    $feeData   = CommissionService::addServiceFee($netBase + $servicesTotal);
                     $totalPaid = round($feeData['total'], 2);
                     Balance::forUser($reservation->user_id)->refundEscrow($totalPaid);
                     WalletTransaction::logCredit(
@@ -988,8 +1033,9 @@ public function updateManualParticipant(Request $request, $reservationId)
             return response()->json(['message' => 'Non autorisé.'], 403);
         }
 
-        $event   = Events::findOrFail($reservation->event_id);
-        $netBase = round(($reservation->nbr_place * $event->price) - ($reservation->discount_amount ?? 0), 2);
+        $event         = Events::findOrFail($reservation->event_id);
+        $netBase       = round(($reservation->nbr_place * $event->price) - ($reservation->discount_amount ?? 0), 2);
+        $servicesTotal = round(EventReservationService::where('event_reservation_id', $reservation->id)->sum('subtotal'), 2);
 
         // ── Wallet refund when group cancels ─────────────────────────────────────
         if ($reservation->payment_method === 'wallet') {
@@ -997,9 +1043,9 @@ public function updateManualParticipant(Request $request, $reservationId)
             try {
                 if ($reservation->status === 'confirmée') {
                     // Money was collected at approval → full refund to camper + clawback from organizer + suppliers
-                    // totalPaid = what camper originally paid = netBase + materialsTotal + combined platform fee
+                    // totalPaid = what camper originally paid = netBase + materialsTotal + servicesTotal + combined platform fee
                     $materialsBaseTotal = EventReservationMaterial::where('event_reservation_id', $reservation->id)->sum('montant_total');
-                    $feeData   = CommissionService::addServiceFee($netBase + $materialsBaseTotal);
+                    $feeData   = CommissionService::addServiceFee($netBase + $materialsBaseTotal + $servicesTotal);
                     $totalPaid = round($feeData['total'], 2);
                     // Look up original credit to use exact stored net_amount for clawback
                     $origTx = WalletTransaction::where('user_id', $reservation->group_id)
@@ -1045,9 +1091,9 @@ public function updateManualParticipant(Request $request, $reservationId)
                         $reservation->group_id
                     );
                 } elseif ($reservation->status === 'en_attente_validation') {
-                    // Funds were escrowed — full refund = netBase + materialsTotal + combined platform fee
+                    // Funds were escrowed — full refund = netBase + materialsTotal + servicesTotal + combined platform fee
                     $materialsTotal = EventReservationMaterial::where('event_reservation_id', $reservation->id)->sum('montant_total');
-                    $feeData   = CommissionService::addServiceFee($netBase + $materialsTotal);
+                    $feeData   = CommissionService::addServiceFee($netBase + $materialsTotal + $servicesTotal);
                     $totalPaid = round($feeData['total'], 2);
                     Balance::forUser($reservation->user_id)->refundEscrow($totalPaid);
                     WalletTransaction::logCredit(

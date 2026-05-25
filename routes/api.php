@@ -190,6 +190,7 @@ Route::prefix('events')->group(function () {
     Route::get('/my-events', [EventController::class, 'myEvents']);
     Route::get('/{id}/share-links', [EventController::class, 'getEventShareLinks'])->where('id', '[0-9]+');
     Route::get('/{id}/copy-link', [EventController::class, 'getEventCopyLink'])->where('id', '[0-9]+');
+    Route::get('/{eventId}/services', [\App\Http\Controllers\Event\EventServiceController::class, 'index'])->where('eventId', '[0-9]+');
     Route::get('/{id}', [EventController::class, 'getEventDetails'])->where('id', '[0-9]+');
 });
 
@@ -304,6 +305,107 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/my/balance', function () {
         $balance = \App\Models\Balance::forUser(auth()->id());
         return response()->json(['success' => true, 'data' => $balance]);
+    });
+
+    // ---- Escrow breakdown (camper: per-reservation held-funds detail) ----
+    Route::get('/my/escrow-breakdown', function () {
+        $uid   = auth()->id();
+        $items = [];
+
+        // Events pending validation/payment via wallet
+        $eventReservations = \App\Models\Reservations_events::with('event')
+            ->where('user_id', $uid)
+            ->whereIn('status', ['en_attente_validation', 'en_attente_paiement'])
+            ->where('payment_method', 'wallet')
+            ->get();
+
+        foreach ($eventReservations as $r) {
+            $event = $r->event;
+            if (!$event) continue;
+
+            $netBase        = round(($r->nbr_place * $event->price) - ($r->discount_amount ?? 0), 2);
+            $servicesTotal  = round(\App\Models\EventReservationService::where('event_reservation_id', $r->id)->sum('subtotal'), 2);
+            $platformFeeAmt = round((float) ($r->platform_fee_amount ?? 0), 2);
+            $lockedAmt      = round($netBase + $servicesTotal + $platformFeeAmt, 2);
+
+            if ($lockedAmt <= 0) continue;
+
+            $items[] = [
+                'type'          => 'event',
+                'id'            => $r->id,
+                'title'         => $event->title,
+                'status'        => $r->status,
+                'date'          => $r->created_at,
+                'locked_amount' => $lockedAmt,
+                'breakdown'     => [
+                    'base'     => $netBase,
+                    'services' => $servicesTotal,
+                    'fee'      => $platformFeeAmt,
+                ],
+            ];
+        }
+
+        // Centre reservations pending approval via wallet
+        $centreReservations = \App\Models\Reservations_centre::where('user_id', $uid)
+            ->where('status', 'pending')
+            ->where('payment_method', 'wallet')
+            ->get();
+
+        foreach ($centreReservations as $r) {
+            $profile    = \App\Models\Profile::where('user_id', $r->centre_id)->first();
+            $centreName = $profile?->profileCentre?->name ?? 'Centre';
+
+            $lockedAmt      = round((float) ($r->total_price ?? 0), 2);
+            $platformFeeAmt = round((float) ($r->platform_fee_amount ?? 0), 2);
+            $base           = round($lockedAmt - $platformFeeAmt, 2);
+
+            if ($lockedAmt <= 0) continue;
+
+            $items[] = [
+                'type'          => 'centre',
+                'id'            => $r->id,
+                'title'         => $centreName,
+                'status'        => $r->status,
+                'date'          => $r->created_at,
+                'locked_amount' => $lockedAmt,
+                'breakdown'     => [
+                    'base' => $base,
+                    'fee'  => $platformFeeAmt,
+                ],
+            ];
+        }
+
+        // Material reservations pending confirmation via wallet
+        $materialReservations = \App\Models\Reservations_materielles::with('materielle')
+            ->where('user_id', $uid)
+            ->where('status', 'pending')
+            ->where('payment_method', 'wallet')
+            ->get();
+
+        foreach ($materialReservations as $r) {
+            $lockedAmt      = round((float) ($r->montant_total ?? 0), 2);
+            $platformFeeAmt = round((float) ($r->platform_fee_amount ?? 0), 2);
+            $base           = round($lockedAmt - $platformFeeAmt, 2);
+
+            if ($lockedAmt <= 0) continue;
+
+            $items[] = [
+                'type'          => 'material',
+                'id'            => $r->id,
+                'title'         => $r->materielle?->nom ?? 'Matériel',
+                'status'        => $r->status,
+                'date'          => $r->created_at,
+                'locked_amount' => $lockedAmt,
+                'breakdown'     => [
+                    'base' => $base,
+                    'fee'  => $platformFeeAmt,
+                ],
+            ];
+        }
+
+        usort($items, fn ($a, $b) => strcmp((string) $b['date'], (string) $a['date']));
+
+        return response()->json(['success' => true, 'data' => $items]);
     });
 
     // ---- Withdrawal request (user submits) ----
@@ -664,6 +766,10 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::delete('/{id}', [EventController::class, 'destroy']);
             Route::patch('/participants/{id}/status', [EventController::class, 'updateStatus']);
             Route::post('/{id}/invite', [EventController::class, 'sendInvites']);
+            // Event services CRUD
+            Route::post('/{eventId}/services', [\App\Http\Controllers\Event\EventServiceController::class, 'store']);
+            Route::put('/{eventId}/services/{serviceId}', [\App\Http\Controllers\Event\EventServiceController::class, 'update']);
+            Route::delete('/{eventId}/services/{serviceId}', [\App\Http\Controllers\Event\EventServiceController::class, 'destroy']);
         });
     });
     

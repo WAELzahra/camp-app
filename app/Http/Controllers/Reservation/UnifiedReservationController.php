@@ -110,7 +110,7 @@ class UnifiedReservationController extends Controller
     private function getEventReservationsAsCamper($userId)
     {
         $reservations = \App\Models\Reservations_events::where('user_id', $userId)
-            ->with(['event.group.profile.profileGroupe', 'user'])
+            ->with(['event.group.profile.profileGroupe', 'user', 'services.service'])
             ->get();
         $txMap = $this->batchLoadWalletTx('event_reservation', $reservations->pluck('id'));
         return $reservations->map(fn($r) => $this->formatEventReservation($r, 'camper', $txMap->get($r->id)));
@@ -122,7 +122,7 @@ class UnifiedReservationController extends Controller
     private function getEventReservationsAsOwner($userId)
     {
         $reservations = \App\Models\Reservations_events::where('group_id', $userId)
-            ->with(['event', 'user'])
+            ->with(['event', 'user', 'services.service'])
             ->get();
         $txMap = $this->batchLoadWalletTx('event_reservation', $reservations->pluck('id'));
         return $reservations->map(fn($r) => $this->formatEventReservation($r, 'owner', $txMap->get($r->id)));
@@ -226,8 +226,12 @@ class UnifiedReservationController extends Controller
         $discountAmt    = round((float)($reservation->discount_amount ?? 0), 2);
         $platformFeeAmt = round((float)($reservation->platform_fee_amount ?? 0), 2);
         $platformFeeRate = round((float)($reservation->platform_fee_rate ?? 0), 2);
-        // Total the camper actually paid = base − discount + platform fee
-        $totalPrice = max(0, round($basePrice - $discountAmt + $platformFeeAmt, 2));
+
+        $eventServices  = $reservation->services ?? collect();
+        $servicesTotal  = round($eventServices->sum('subtotal'), 2);
+
+        // Total = base + add-on services − discount + platform fee
+        $totalPrice = max(0, round($basePrice + $servicesTotal - $discountAmt + $platformFeeAmt, 2));
 
         // Commission from the pre-loaded wallet transaction (or estimate)
         if ($orgTx) {
@@ -297,8 +301,19 @@ class UnifiedReservationController extends Controller
             'location' => $event->address ?? '',
             'created_at' => $reservation->created_at,
             'updated_at' => $reservation->updated_at,
-            'service_count' => 1,
-            'service_items' => [],
+            'service_count' => $eventServices->count(),
+            'service_items' => $eventServices->map(function ($svc) {
+                return [
+                    'id'                  => $svc->id,
+                    'service_name'        => $svc->service?->name ?? 'Service',
+                    'service_description' => $svc->service?->description ?? null,
+                    'quantity'            => (int) $svc->quantity,
+                    'unit_price'          => (float) ($svc->price_snapshot ?? $svc->service?->price ?? 0),
+                    'unit'                => $svc->pricing_unit_snapshot ?? $svc->service?->pricing_unit ?? null,
+                    'subtotal'            => (float) ($svc->subtotal ?? 0),
+                    'notes'               => $svc->notes ?? null,
+                ];
+            })->values()->toArray(),
             'modified_by' => $reservation->last_modified_by ?? null,
             'modified_label' => null,
             'can_edit' => $role === 'camper' && in_array($reservation->status, ['pending', 'en_attente_paiement']),

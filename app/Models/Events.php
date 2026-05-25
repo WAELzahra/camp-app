@@ -83,6 +83,11 @@ class Events extends Model
         return $this->hasMany(Reservations_events::class, 'event_id');
     }
 
+    public function services()
+    {
+        return $this->hasMany(EventService::class, 'event_id')->where('is_active', true);
+    }
+
     /**
      * Get all photos for this event - FIXED: use Photo model (singular)
      */

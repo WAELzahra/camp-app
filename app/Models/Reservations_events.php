@@ -71,4 +71,9 @@ protected $table = 'reservations_events';
     {
         return $this->hasMany(EventReservationMaterial::class, 'event_reservation_id');
     }
+
+    public function services()
+    {
+        return $this->hasMany(EventReservationService::class, 'event_reservation_id');
+    }
 }

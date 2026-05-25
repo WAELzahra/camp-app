@@ -128,8 +128,10 @@ class CancellationPreviewController extends Controller
     {
         $r     = Reservations_events::where('id', $id)->where('user_id', $userId)->firstOrFail();
         $event = Events::findOrFail($r->event_id);
-        // gross = base price + stored platform fee (consistent with centre & equipment)
-        $gross = round($r->nbr_place * $event->price + (float) ($r->platform_fee_amount ?? 0), 2);
+        // gross = what the camper actually paid: base - discount + services + platform fee
+        $netBase       = round($r->nbr_place * $event->price - ($r->discount_amount ?? 0), 2);
+        $servicesTotal = round(\App\Models\EventReservationService::where('event_reservation_id', $r->id)->sum('subtotal'), 2);
+        $gross         = round($netBase + $servicesTotal + (float) ($r->platform_fee_amount ?? 0), 2);
         return [
             Carbon::parse($event->start_date),
             $gross,

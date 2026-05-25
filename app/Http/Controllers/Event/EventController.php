@@ -22,6 +22,7 @@ use App\Notifications\EventInviteNotification;
 use App\Events\NewNotificationCreated;
 use App\Models\Balance;
 use App\Models\WalletTransaction;
+use App\Models\EventReservationService;
 use App\Services\CommissionService;
 use Illuminate\Support\Facades\DB;
 
@@ -450,11 +451,34 @@ class EventController extends Controller
             }
         }
 
+        // Handle services sent as JSON string in FormData
+        if ($request->filled('services')) {
+            $servicesData = is_string($request->services)
+                ? json_decode($request->services, true)
+                : $request->services;
+
+            if (is_array($servicesData)) {
+                foreach ($servicesData as $svc) {
+                    if (!empty($svc['name']) && isset($svc['price'])) {
+                        \App\Models\EventService::create([
+                            'event_id'     => $event->id,
+                            'name'         => $svc['name'],
+                            'description'  => $svc['description'] ?? null,
+                            'price'        => (float) $svc['price'],
+                            'pricing_unit' => $svc['pricing_unit'] ?? 'per person',
+                            'max_quantity' => isset($svc['max_quantity']) ? (int) $svc['max_quantity'] : null,
+                            'is_active'    => true,
+                        ]);
+                    }
+                }
+            }
+        }
+
         // Notify followers
         $this->notifyFollowers($user->id, $event);
 
         // Load the photos relationship
-        $event->load('photos');
+        $event->load('photos', 'services');
 
         return response()->json([
             'success' => true,
@@ -776,19 +800,21 @@ class EventController extends Controller
             $query->where('status', $status);
         }
 
-        $participants = $query->get();
+        $participants = $query->with('services')->get();
 
         // Enrich each participant with commission fields using the group's custom rate
         $enriched = $participants->map(function ($p) use ($event) {
+            $servicesTotal = round($p->services->sum('subtotal'), 2);
             $base = max(0, round(
-                ($p->nbr_place * (float) $event->price) - (float) ($p->discount_amount ?? 0),
+                ($p->nbr_place * (float) $event->price) + $servicesTotal - (float) ($p->discount_amount ?? 0),
                 2
             ));
             $calc = CommissionService::calculateForUser('group', $base, $event->group_id);
-            $p->commission_rate   = round($calc['rate'] * 100, 2);  // e.g. 5.00 (%)
+            $p->commission_rate   = round($calc['rate'] * 100, 2);
             $p->commission_amount = $calc['commission'];
             $p->net_revenue       = $calc['net_revenue'];
             $p->base_amount       = $base;
+            $p->services_total    = $servicesTotal;
             return $p;
         });
 
@@ -827,8 +853,9 @@ class EventController extends Controller
                        ->where('group_id', $user->id)
                        ->firstOrFail();
 
-        $newStatus = $request->status;
-        $netBase   = round(($reservation->nbr_place * $event->price) - ($reservation->discount_amount ?? 0), 2);
+        $newStatus     = $request->status;
+        $netBase       = round(($reservation->nbr_place * $event->price) - ($reservation->discount_amount ?? 0), 2);
+        $servicesTotal = round(EventReservationService::where('event_reservation_id', $reservation->id)->sum('subtotal'), 2);
 
         // ── Case 1: Group cancels a CONFIRMED (already paid) reservation → full refund ──
         if ($reservation->payment_method === 'wallet'
@@ -837,7 +864,7 @@ class EventController extends Controller
 
             DB::beginTransaction();
             try {
-                $feeData    = CommissionService::addServiceFee($netBase);
+                $feeData    = CommissionService::addServiceFee($netBase + $servicesTotal);
                 $totalToPay = round($feeData['total'], 2);
                 // Use stored net_amount for exact clawback (prevents mismatch if rate changed)
                 $origTx = \App\Models\WalletTransaction::where('user_id', $reservation->group_id)
@@ -848,7 +875,7 @@ class EventController extends Controller
                     ->first();
                 $netToClawback = $origTx
                     ? (float) $origTx->net_amount
-                    : CommissionService::calculateForUser('group', $netBase, $reservation->group_id)['net_revenue'];
+                    : CommissionService::calculateForUser('group', $netBase + $servicesTotal, $reservation->group_id)['net_revenue'];
 
                 // Clawback from organizer exactly what they received
                 Balance::forUser($reservation->group_id)->debiter($netToClawback);
@@ -888,19 +915,18 @@ class EventController extends Controller
                 // Release escrow and pay organizer — camper was already charged at booking
                 DB::beginTransaction();
                 try {
-                    $platformFeeAmt  = round((float) ($reservation->platform_fee_amount ?? 0), 2);
-                    $feeData         = CommissionService::addServiceFee($netBase);
-                    $totalToPay      = round($feeData['total'], 2);
+                    $platformFeeAmt = round((float) ($reservation->platform_fee_amount ?? 0), 2);
+                    // Release the full escrowed amount: base + services + stored platform fee
+                    $totalToRelease = round($netBase + $servicesTotal + $platformFeeAmt, 2);
+                    Balance::forUser($reservation->user_id)->releaseEscrow($totalToRelease);
 
-                    // Release camper escrow (solde_en_attente → 0, solde_disponible unchanged)
-                    Balance::forUser($reservation->user_id)->releaseEscrow($totalToPay);
-
-                    // Credit organizer minus commission
-                    $orgCalc = CommissionService::calculateForUser('group', $netBase, $reservation->group_id);
+                    // Credit organizer for event base + services revenue, minus commission
+                    $orgBase = $netBase + $servicesTotal;
+                    $orgCalc = CommissionService::calculateForUser('group', $orgBase, $reservation->group_id);
                     Balance::forUser($reservation->group_id)->crediter($orgCalc['net_revenue']);
                     WalletTransaction::logCredit(
                         $reservation->group_id, 'reservation_income',
-                        $netBase,
+                        $orgBase,
                         round($orgCalc['rate'] * 100, 2),
                         $orgCalc['commission'],
                         $orgCalc['net_revenue'],
@@ -938,7 +964,7 @@ class EventController extends Controller
                 // Refund escrowed funds — funds were locked at booking, return them now
                 DB::beginTransaction();
                 try {
-                    $feeData    = CommissionService::addServiceFee($netBase);
+                    $feeData    = CommissionService::addServiceFee($netBase + $servicesTotal);
                     $totalToPay = round($feeData['total'], 2);
                     Balance::forUser($reservation->user_id)->refundEscrow($totalToPay);
                     WalletTransaction::logCredit(
