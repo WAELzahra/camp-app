@@ -870,11 +870,16 @@ class ProfileController extends Controller
                 $album->update(['description' => $albumDescription, 'updated_at' => now()]);
             }
 
-            // For centre users: migrate any camping_centre photos that are not yet
-            // in this album into it now, preserving their existing is_cover flags.
-            // This must happen BEFORE the new-upload cover check so we don't
-            // accidentally make a fresh upload the cover when one already exists.
+            // For centre users: bidirectional migration so both query paths stay consistent.
+            // Must happen BEFORE the new-upload cover check.
             if ($campingCentreId) {
+                // Stamp camping_centre_id on legacy photos that only have album_id (old format).
+                Photo::where('user_id', $user->id)
+                    ->where('album_id', $album->id)
+                    ->whereNull('camping_centre_id')
+                    ->update(['camping_centre_id' => $campingCentreId]);
+
+                // Pull admin/partner photos that have camping_centre_id but no album_id.
                 Photo::where('camping_centre_id', $campingCentreId)
                     ->where('user_id', $user->id)
                     ->whereNull('album_id')
@@ -953,17 +958,37 @@ class ProfileController extends Controller
             $user = Auth::user();
 
             // ── Centre users: fetch ALL photos linked to their camping centre ──────
-            // This includes admin-uploaded photos (user_id=NULL) and partner-uploaded
-            // photos (user_id=owner). The authoritative key is camping_centre_id.
+            // Covers three storage formats:
+            //   1. New uploads: camping_centre_id is set (authoritative key)
+            //   2. Legacy uploads: only album_id is set, camping_centre_id is NULL
+            //   3. Admin-uploaded: camping_centre_id set, user_id is NULL
             if ($user->role_id === 3) {
                 $centreIds = $this->centreIdsForUser($user);
 
+                // Load album FIRST — needed to include legacy photos stored by album_id
+                $album = Album::where('user_id', $user->id)
+                    ->where('titre', 'Profile Gallery')
+                    ->first()
+                    ?? Album::where('user_id', $user->id)->latest()->first();
+
                 $photos = $centreIds->isNotEmpty()
-                    ? Photo::whereIn('camping_centre_id', $centreIds)
-                        ->orderBy('order', 'asc')
-                        ->orderBy('created_at', 'desc')
-                        ->get()
-                    : collect();
+                    ? Photo::where(function ($q) use ($centreIds, $album) {
+                        $q->whereIn('camping_centre_id', $centreIds);
+                        // Also surface legacy photos that were uploaded before camping_centre_id
+                        // was introduced — they live in the album but have no centre FK.
+                        if ($album) {
+                            $q->orWhere('album_id', $album->id);
+                        }
+                    })
+                    ->orderBy('order', 'asc')
+                    ->orderBy('created_at', 'desc')
+                    ->get()
+                    : ($album
+                        ? Photo::where('album_id', $album->id)
+                            ->orderBy('order', 'asc')
+                            ->orderBy('created_at', 'desc')
+                            ->get()
+                        : collect());
 
                 $formattedPhotos = $photos->map(fn($p) => [
                     'id'          => $p->id,
@@ -974,11 +999,6 @@ class ProfileController extends Controller
                     'created_at'  => $p->created_at?->format('Y-m-d H:i:s'),
                     'uploaded_by' => $p->user_id ? 'partner' : 'admin',
                 ]);
-
-                // Load existing album for metadata (title/description) if present
-                $album = Album::where('user_id', $user->id)
-                    ->where('titre', 'Profile Gallery')
-                    ->first();
 
                 return response()->json([
                     'success' => true,
