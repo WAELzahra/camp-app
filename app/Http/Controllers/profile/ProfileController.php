@@ -1092,12 +1092,18 @@ class ProfileController extends Controller
                 return response()->json(['success' => false, 'message' => 'No linked centre found'], 404);
             }
 
+            $album = Album::where('user_id', $user->id)->where('titre', 'Profile Gallery')->first()
+                ?? Album::where('user_id', $user->id)->latest()->first();
+
             $photo = Photo::where('id', $photoId)
-                ->whereIn('camping_centre_id', $centreIds)
+                ->where(function ($q) use ($centreIds, $album) {
+                    $q->whereIn('camping_centre_id', $centreIds);
+                    if ($album) { $q->orWhere('album_id', $album->id); }
+                })
                 ->firstOrFail();
 
-            // Use the photo's own centre for any cascading updates
-            $campingCentreId = $photo->camping_centre_id;
+            // Use the photo's own centre for any cascading updates; fall back to first linked centre for legacy photos
+            $campingCentreId = $photo->camping_centre_id ?? $centreIds->first();
 
             DB::beginTransaction();
             try {
@@ -1198,12 +1204,18 @@ class ProfileController extends Controller
                 return response()->json(['success' => false, 'message' => 'No linked centre found'], 404);
             }
 
+            $album = Album::where('user_id', $user->id)->where('titre', 'Profile Gallery')->first()
+                ?? Album::where('user_id', $user->id)->latest()->first();
+
             $photo = Photo::where('id', $photoId)
-                ->whereIn('camping_centre_id', $centreIds)
+                ->where(function ($q) use ($centreIds, $album) {
+                    $q->whereIn('camping_centre_id', $centreIds);
+                    if ($album) { $q->orWhere('album_id', $album->id); }
+                })
                 ->firstOrFail();
 
-            // Operate on the specific centre that owns this photo
-            $campingCentreId = $photo->camping_centre_id;
+            // Operate on the specific centre that owns this photo; fall back to first linked centre for legacy photos
+            $campingCentreId = $photo->camping_centre_id ?? $centreIds->first();
 
             DB::beginTransaction();
             try {
