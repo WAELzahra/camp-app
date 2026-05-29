@@ -282,12 +282,9 @@ Route::get('/roles', function () {
 // ==================== AUTHENTICATED ROUTES (SANCTUM) ====================
 Route::middleware('auth:sanctum')->group(function () {
     
-    // Current User
+    // Current User — returns UserResource (uuid as public ID, no numeric IDs)
     Route::get('/user', function (Request $request) {
-        $user = $request->user();
-        $data = $user->toArray();
-        $data['avatar'] = $user->avatar ? storage_url($user->avatar) : null;
-        return $data;
+        return new \App\Http\Resources\UserResource($request->user()->load('role'));
     });
     Route::post('/logout', [AuthenticatedSessionController::class, 'destroy']);
 
@@ -600,15 +597,18 @@ Route::middleware('auth:sanctum')->group(function () {
 
         return response()->json(['success' => true, 'data' => $txns]);
     });
-    Route::get('/user/{userId}/status', function ($userId) {
+    Route::get('/user/{userId}/status', function ($userId, \Illuminate\Http\Request $request) {
         $user = \App\Models\User::find($userId);
         if (!$user) {
             return response()->json(['error' => 'User not found'], 404);
         }
+        $isOnline = $user->isOnline();
         return response()->json([
-            'online' => $user->isOnline(),
-            'last_seen' => $user->last_login_at,
-            'is_active' => $user->is_active
+            'online'    => $isOnline,
+            // Return a fuzzy "last seen" label rather than the raw timestamp —
+            // the exact last_login_at is private and must not be exposed cross-user.
+            'last_seen' => $isOnline ? null : $user->getOnlineStatusAttribute()['text'],
+            'is_active' => (bool) $user->is_active,
         ]);
     });
     

@@ -311,7 +311,7 @@ class ConversationController extends Controller
                 'content' => 'required_without:attachments|string|max:5000',
                 'reply_to_id' => 'nullable|exists:messages,id',
                 'attachments' => 'nullable|array',
-                'attachments.*' => 'file|mimes:jpeg,png,jpg,gif,pdf,doc,docx|max:25600',
+                'attachments.*' => 'file|mimes:jpeg,png,jpg,gif,pdf,doc,docx|max:5120',
             ]);
 
             $conversation = Conversation::findOrFail($conversationId);

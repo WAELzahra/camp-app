@@ -187,10 +187,10 @@ class VerifyEmailController extends Controller
                     'success' => true,
                     'message' => $result['message'],
                     'user' => [
-                        'id' => $result['user']->id,
-                        'first_name' => $result['user']->first_name,
-                        'last_name' => $result['user']->last_name,
-                        'email' => $result['user']->email,
+                        'uuid'              => $result['user']->uuid,
+                        'first_name'        => $result['user']->first_name,
+                        'last_name'         => $result['user']->last_name,
+                        'email'             => $result['user']->email,
                         'email_verified_at' => $result['user']->email_verified_at,
                     ]
                 ]);
@@ -241,15 +241,14 @@ class VerifyEmailController extends Controller
             
 
             if ($result['success']) {
-                
                 return response()->json([
                     'success' => true,
                     'message' => $result['message'],
                     'user' => [
-                        'id' => $result['user']->id,
-                        'first_name' => $result['user']->first_name,
-                        'last_name' => $result['user']->last_name,
-                        'email' => $result['user']->email,
+                        'uuid'              => $result['user']->uuid,
+                        'first_name'        => $result['user']->first_name,
+                        'last_name'         => $result['user']->last_name,
+                        'email'             => $result['user']->email,
                         'email_verified_at' => $result['user']->email_verified_at,
                     ]
                 ]);
@@ -327,25 +326,26 @@ class VerifyEmailController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to resend verification email. Please try again.',
-                'error' => env('APP_DEBUG') ? $e->getMessage() : null
             ], 500);
         }
     }
 
     /**
-     * Check verification status
+     * Check verification status — authenticated users may only query their own status.
      */
-    public function verificationStatus($id)
+    public function verificationStatus(Request $request, $id)
     {
         try {
-            $user = User::find($id);
-
-            if (!$user) {
+            // Prevent any authenticated user from enumerating other users' status
+            if ((int) $id !== $request->user()->id) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'User not found'
-                ], 404);
+                    'message' => 'You do not have permission to perform this action.',
+                    'error'   => 'forbidden',
+                ], 403);
             }
+
+            $user = $request->user();
 
             $result = $this->emailVerificationService->checkVerificationStatus(
                 $user->id,
@@ -361,10 +361,9 @@ class VerifyEmailController extends Controller
                 'method' => $result['method'] ?? null,
                 'created_at' => $result['created_at'] ?? null,
                 'user' => [
-                    'id' => $user->id,
-                    'email' => $user->email,
-                    'email_verified_at' => $user->email_verified_at,
-                    'is_active' => $user->is_active,
+                    'uuid'               => $user->uuid,
+                    'email_verified_at'  => $user->email_verified_at,
+                    'is_active'          => $user->is_active,
                 ]
             ]);
 

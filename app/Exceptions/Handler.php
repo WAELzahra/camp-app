@@ -53,10 +53,29 @@ class Handler extends ExceptionHandler
     private function renderApiException($request, Throwable $e)
     {
         if ($e instanceof ValidationException) {
+            $errors = $e->errors();
+
+            // Produce the required image-error shape when the only failure is an
+            // image field exceeding the 5 MB limit, so the client gets a clear
+            // { message, field } response rather than a generic validation bag.
+            $imageFields = ['avatar', 'cover_image', 'cin_file', 'photo', 'photos'];
+            foreach ($imageFields as $field) {
+                // Check both singular and array-upload patterns (photos.*)
+                foreach ($errors as $key => $messages) {
+                    $base = explode('.', $key)[0];
+                    if ($base === $field && str_contains(implode(' ', $messages), '5')) {
+                        return response()->json([
+                            'message' => 'Image must be under 5MB.',
+                            'field'   => $field,
+                        ], 422);
+                    }
+                }
+            }
+
             return response()->json([
                 'success' => false,
                 'message' => 'The given data was invalid.',
-                'errors'  => $e->errors(),
+                'errors'  => $errors,
             ], 422);
         }
 

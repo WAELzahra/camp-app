@@ -393,7 +393,7 @@ class EventController extends Controller
             
             // Images
             'images' => 'nullable|array',
-            'images.*' => 'image|mimes:jpeg,png,jpg,gif|max:25600', // 25MB max
+            'images.*' => 'image|mimes:jpeg,png,jpg,gif|max:5120',
             'cover_image_index' => 'nullable|integer|min:0',
         ]);
 
@@ -666,7 +666,7 @@ class EventController extends Controller
 
             // Image management
             'new_images'              => 'nullable|array',
-            'new_images.*'            => 'image|mimes:jpeg,png,jpg,gif|max:25600',
+            'new_images.*'            => 'image|mimes:jpeg,png,jpg,gif|max:5120',
             'cover_image_index'       => 'nullable|integer|min:0',
             'delete_images'           => 'nullable|array',
             'delete_images.*'         => 'integer|exists:photos,id',

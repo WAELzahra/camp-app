@@ -111,7 +111,7 @@ class AuthenticatedSessionController extends Controller
     ]);
 
     return response()->json([
-        'user' => $user
+        'user' => new \App\Http\Resources\UserResource($user->load('role')),
     ]);
 }
 
@@ -168,8 +168,7 @@ class AuthenticatedSessionController extends Controller
             'success' => true,
             'token'   => $token,
             'user'    => [
-                'id'    => $user->id,
-                'name'  => $user->name,
+                'uuid'  => $user->uuid,
                 'email' => $user->email,
                 'role'  => $user->role->name ?? null,
             ],

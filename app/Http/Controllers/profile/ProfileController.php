@@ -829,10 +829,12 @@ class ProfileController extends Controller
         $user = Auth::user();
 
         $request->validate([
-            'photos' => 'required|array|min:1',
-            'photos.*' => 'required|image|mimes:jpeg,png,jpg,gif,webp|max:25600',
-            'album_title' => 'nullable|string|max:255',
+            'photos'            => 'required|array|min:1',
+            'photos.*'          => 'required|image|mimes:jpeg,png,jpg,gif,webp|max:5120',
+            'album_title'       => 'nullable|string|max:255',
             'album_description' => 'nullable|string',
+        ], [
+            'photos.*.max' => 'Each image must be under 5 MB.',
         ]);
 
         // For centre users, stamp the primary (approved-claim) centre on every photo.

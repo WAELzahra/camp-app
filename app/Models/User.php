@@ -6,6 +6,7 @@ use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Str;
 use Laravel\Sanctum\HasApiTokens;
 use App\Models\Favoris;
 
@@ -14,6 +15,7 @@ class User extends Authenticatable implements MustVerifyEmail
     use HasApiTokens, HasFactory, Notifiable;
 
     protected $fillable = [
+        'uuid',
         'first_name',
         'last_name',
         'email',
@@ -36,6 +38,10 @@ class User extends Authenticatable implements MustVerifyEmail
     protected $hidden = [
         'password',
         'remember_token',
+        // Internal numeric IDs — API clients receive uuid instead
+        'id',
+        'role_id',
+        'provider_id',
     ];
 
     protected $casts = [
@@ -45,6 +51,17 @@ class User extends Authenticatable implements MustVerifyEmail
         'password'          => 'hashed',
         'preferences'       => 'array',
     ];
+
+    protected static function boot(): void
+    {
+        parent::boot();
+        // Auto-assign uuid on creation so new rows never arrive without one.
+        static::creating(function (self $user) {
+            if (empty($user->uuid)) {
+                $user->uuid = (string) Str::uuid();
+            }
+        });
+    }
 
     // -----------------------------------------------------------------------
     // Existing relations (unchanged)
