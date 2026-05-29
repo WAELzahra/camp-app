@@ -89,14 +89,15 @@ class SocialAuthController extends Controller
             ]);
         }
 
+        $user->load('role');
         $token = $user->createToken('social-auth')->plainTextToken;
 
         $params = http_build_query([
             'token'       => $token,
             'is_new_user' => $isNewUser ? '1' : '0',
-            'user_id'     => $user->id,
+            'uuid'        => $user->uuid,
             'first_name'  => $user->first_name,
-            'role_id'     => $user->role_id,
+            'role'        => $user->role?->name ?? 'campeur',
         ]);
 
         return redirect($frontendUrl . '/social-callback?' . $params);
@@ -132,7 +133,7 @@ class SocialAuthController extends Controller
         return response()->json([
             'success'   => true,
             'is_active' => $isActive,
-            'user'      => $user->fresh(),
+            'user'      => new \App\Http\Resources\UserResource($user->fresh()->load('role')),
         ]);
     }
 }

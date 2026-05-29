@@ -142,7 +142,7 @@ class RegisteredUserController extends Controller
             return response()->json([
                 'message' => 'Registration successful! Please verify your email.',
                 'user' => [
-                    'id'         => $user->id,
+                    'uuid'       => $user->uuid,
                     'first_name' => $user->first_name,
                     'last_name'  => $user->last_name,
                     'email'      => $user->email,
@@ -156,8 +156,7 @@ class RegisteredUserController extends Controller
             \Log::error($e->getTraceAsString());
 
             return response()->json([
-                'error'   => 'Une erreur est survenue lors de l\'inscription.',
-                'details' => config('app.debug') ? $e->getMessage() : null,
+                'error' => 'Une erreur est survenue lors de l\'inscription.',
             ], 500);
         }
     }

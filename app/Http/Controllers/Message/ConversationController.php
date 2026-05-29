@@ -40,7 +40,7 @@ class ConversationController extends Controller
                       ->whereNull('left_at');
                 })
                 ->with(['participants' => function($q) {
-                    $q->with('user:id,first_name,last_name,avatar')
+                    $q->with('user:id,uuid,first_name,last_name,avatar')
                       ->whereNull('left_at');
                 }])
                 ->with('latestMessage');
@@ -61,7 +61,7 @@ class ConversationController extends Controller
                 
                 // Load sender for latest message if it exists
                 if ($conversation->latestMessage) {
-                    $conversation->latestMessage->load('sender:id,first_name,last_name,avatar');
+                    $conversation->latestMessage->load('sender:id,uuid,first_name,last_name,avatar');
                 }
             }
 
@@ -251,10 +251,10 @@ class ConversationController extends Controller
             }
 
             $messages = Message::where('conversation_id', $conversationId)
-                ->with(['sender:id,first_name,last_name,avatar'])
+                ->with(['sender:id,uuid,first_name,last_name,avatar'])
                 ->with(['attachments'])
                 ->with(['reactions' => function($q) {
-                    $q->with('user:id,first_name,last_name');
+                    $q->with('user:id,uuid,first_name,last_name');
                 }])
                 ->orderBy('created_at', 'desc')
                 ->paginate($request->get('per_page', 30));
@@ -385,7 +385,7 @@ class ConversationController extends Controller
 
             DB::commit();
 
-            $message->load(['sender:id,first_name,last_name,avatar', 'attachments']);
+            $message->load(['sender:id,uuid,first_name,last_name,avatar', 'attachments']);
 
             // Broadcast to other participants
             try {
@@ -637,7 +637,7 @@ class ConversationController extends Controller
                 $q->where('user_id', $groupId);
             })
             ->with(['participants' => function($q) {
-                $q->with('user:id,first_name,last_name,avatar,last_seen_at');
+                $q->with('user:id,uuid,first_name,last_name,avatar,last_seen_at');
             }])
             ->with('latestMessage.sender')
             ->orderBy('last_message_at', 'desc')
@@ -772,7 +772,7 @@ class ConversationController extends Controller
                 $q->where('user_id', $user->id);
             })
             ->with(['participants' => function($q) {
-                $q->with('user:id,first_name,last_name,avatar');
+                $q->with('user:id,uuid,first_name,last_name,avatar');
             }])
             ->with('latestMessage.sender')
             ->orderBy('last_message_at', 'desc')
