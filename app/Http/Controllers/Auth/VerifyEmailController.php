@@ -31,9 +31,10 @@ class VerifyEmailController extends Controller
 
         try {
             $validator = Validator::make($request->all(), [
-                'user_id' => 'required|integer|exists:users,id',
-                'email' => 'required|email',
-                'method' => 'sometimes|in:both,code,link'
+                'user_uuid' => 'required_without:user_id|string|exists:users,uuid',
+                'user_id'   => 'required_without:user_uuid|integer|exists:users,id',
+                'email'     => 'required|email',
+                'method'    => 'sometimes|in:both,code,link',
             ]);
 
             if ($validator->fails()) {
@@ -45,7 +46,9 @@ class VerifyEmailController extends Controller
                 ], 422);
             }
 
-            $user = User::find($request->input('user_id'));
+            $user = $request->input('user_uuid')
+                ? User::where('uuid', $request->input('user_uuid'))->first()
+                : User::find($request->input('user_id'));
             
             if (!$user) {
                 return response()->json([
@@ -220,9 +223,10 @@ class VerifyEmailController extends Controller
     {
         try {
             $validator = Validator::make($request->all(), [
-                'user_id' => 'required|integer',
-                'email' => 'required|email',
-                'code' => 'required|string|size:6'
+                'user_uuid' => 'required_without:user_id|string|exists:users,uuid',
+                'user_id'   => 'required_without:user_uuid|integer',
+                'email'     => 'required|email',
+                'code'      => 'required|string|size:6',
             ]);
 
             if ($validator->fails()) {
@@ -233,8 +237,12 @@ class VerifyEmailController extends Controller
                 ], 422);
             }
 
+            $userId = $request->input('user_uuid')
+                ? User::where('uuid', $request->input('user_uuid'))->value('id')
+                : $request->input('user_id');
+
             $result = $this->emailVerificationService->verifyByCode(
-                $request->input('user_id'),
+                $userId,
                 $request->input('email'),
                 $request->input('code')
             );
@@ -282,8 +290,9 @@ class VerifyEmailController extends Controller
 
         try {
             $validator = Validator::make($request->all(), [
-                'user_id' => 'required|integer',
-                'email' => 'required|email'
+                'user_uuid' => 'required_without:user_id|string|exists:users,uuid',
+                'user_id'   => 'required_without:user_uuid|integer',
+                'email'     => 'required|email',
             ]);
 
             if ($validator->fails()) {
@@ -295,8 +304,12 @@ class VerifyEmailController extends Controller
                 ], 422);
             }
 
+            $userId = $request->input('user_uuid')
+                ? User::where('uuid', $request->input('user_uuid'))->value('id')
+                : $request->input('user_id');
+
             $result = $this->emailVerificationService->resendVerification(
-                $request->input('user_id'),
+                $userId,
                 $request->input('email')
             );
 

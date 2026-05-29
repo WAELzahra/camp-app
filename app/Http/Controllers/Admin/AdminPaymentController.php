@@ -66,7 +66,7 @@ class AdminPaymentController extends Controller
     public function show($id)
     {
         $payment = Payments::with([
-            'user:id,first_name,last_name,email,avatar,phone_number',
+            'user:id,uuid,first_name,last_name,email,avatar,phone_number',
             'event:id,title,price,start_date,description',
             'reservation:id,payment_id,status,nbr_place',
         ])->findOrFail($id);
@@ -75,7 +75,31 @@ class AdminPaymentController extends Controller
 
         return response()->json([
             'success' => true,
-            'data'    => array_merge($payment->toArray(), ['refund_request' => $refund]),
+            'data'    => [
+                'id'                  => $payment->id,
+                'montant'             => $payment->montant,
+                'description'         => $payment->description,
+                'status'              => $payment->status,
+                'commission'          => $payment->commission,
+                'net_revenue'         => $payment->net_revenue,
+                'konnect_session_id'  => $payment->konnect_session_id,
+                'created_at'          => $payment->created_at,
+                'updated_at'          => $payment->updated_at,
+                'user' => $payment->user ? [
+                    'uuid'         => $payment->user->uuid,
+                    'first_name'   => $payment->user->first_name,
+                    'last_name'    => $payment->user->last_name,
+                    'email'        => $payment->user->email,
+                    'phone_number' => $payment->user->phone_number,
+                    'avatar'       => $payment->user->avatar ? storage_url($payment->user->avatar) : null,
+                ] : null,
+                'event'       => $payment->event,
+                'reservation' => $payment->reservation ? [
+                    'status'    => $payment->reservation->status,
+                    'nbr_place' => $payment->reservation->nbr_place,
+                ] : null,
+                'refund_request' => $refund,
+            ],
         ]);
     }
 

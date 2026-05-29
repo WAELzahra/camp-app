@@ -24,6 +24,8 @@ use App\Models\Balance;
 use App\Models\WalletTransaction;
 use App\Models\EventReservationService;
 use App\Services\CommissionService;
+use App\Http\Resources\EventReservationResource;
+use App\Http\Resources\EventResource;
 use Illuminate\Support\Facades\DB;
 
 class EventController extends Controller
@@ -36,7 +38,7 @@ class EventController extends Controller
     public function getGroupEvents($groupId, Request $request)
     {
         $query = Events::where('group_id', $groupId)
-                    ->with(['group', 'group.acceptedSupplierLink.supplier:id,first_name,last_name,avatar,email', 'photos']);
+                    ->with(['group', 'group.acceptedSupplierLink.supplier:id,uuid,first_name,last_name,avatar', 'photos']);
 
         // Optional filters
         if ($request->has('status')) {
@@ -87,7 +89,7 @@ class EventController extends Controller
 
         try {
             $query = Events::where('group_id', $user->id)
-                        ->with(['group', 'group.acceptedSupplierLink.supplier:id,first_name,last_name,avatar,email', 'photos']);
+                        ->with(['group', 'group.acceptedSupplierLink.supplier:id,uuid,first_name,last_name,avatar', 'photos']);
 
             // Optional filters
             if ($request->has('status')) {
@@ -105,24 +107,9 @@ class EventController extends Controller
 
             $events = $query->paginate($request->get('per_page', 15));
 
-            // Transform the photos to include URLs (though the model accessor will handle it)
-            $events->getCollection()->transform(function ($event) {
-                // Add a cover_image property for easy access
-                if ($event->photos && $event->photos->isNotEmpty()) {
-                    $coverPhoto = $event->photos->firstWhere('is_cover', true);
-                    if ($coverPhoto) {
-                        $event->cover_image = $coverPhoto->url;
-                    } else {
-                        $event->cover_image = $event->photos->first()->url;
-                    }
-                }
-                $event->accepted_supplier = $event->group?->acceptedSupplierLink?->supplier ?? null;
-                return $event;
-            });
-
             return response()->json([
                 'success' => true,
-                'data' => $events
+                'data' => EventResource::collection($events),
             ]);
         } catch (\Exception $e) {
             return response()->json([
@@ -137,7 +124,7 @@ class EventController extends Controller
      */
     public function index(Request $request)
     {
-        $query = Events::with(['group', 'group.acceptedSupplierLink.supplier:id,first_name,last_name,avatar,email', 'photos'])
+        $query = Events::with(['group', 'group.acceptedSupplierLink.supplier:id,uuid,first_name,last_name,avatar', 'photos'])
                     ->orderByRaw('ISNULL(start_date) ASC, start_date ASC'); // NULL start_date (custom) at end
 
         // Optional: Basic search - keep this as it's efficient
@@ -160,23 +147,9 @@ class EventController extends Controller
         $perPage = $request->get('per_page', 500);
         $events = $query->paginate($perPage);
 
-        // Add cover_image + accepted_supplier to each event
-        $events->getCollection()->transform(function ($event) {
-            if ($event->photos && $event->photos->isNotEmpty()) {
-                $cover = $event->photos->firstWhere('is_cover', true) ?? $event->photos->first();
-                $event->cover_image = $cover->url ?? (
-                    $cover->path_to_img
-                        ? storage_url($cover->path_to_img)
-                        : null
-                );
-            }
-            $event->accepted_supplier = $event->group?->acceptedSupplierLink?->supplier ?? null;
-            return $event;
-        });
-
         return response()->json([
             'success' => true,
-            'data' => $events
+            'data' => EventResource::collection($events),
         ]);
     }
     /**
@@ -186,17 +159,15 @@ class EventController extends Controller
     {
         // No is_active filter — finished/past events must stay viewable
         // (the list endpoint also has no is_active filter, so they appear there too).
-        $event = Events::with(['group', 'group.acceptedSupplierLink.supplier:id,first_name,last_name,avatar,email', 'photos'])->find($id);
+        $event = Events::with(['group', 'group.acceptedSupplierLink.supplier:id,uuid,first_name,last_name,avatar', 'photos'])->find($id);
 
         if (!$event) {
             return response()->json(['message' => 'Event not found'], 404);
         }
 
-        $event->accepted_supplier = $event->group?->acceptedSupplierLink?->supplier ?? null;
-
         return response()->json([
             'success' => true,
-            'data' => $event
+            'data' => new EventResource($event),
         ]);
     }
 
@@ -211,7 +182,8 @@ class EventController extends Controller
             return response()->json(['message' => 'Please enter a search keyword'], 400);
         }
 
-        $events = Events::where('is_active', true)
+        $events = Events::with(['group', 'group.acceptedSupplierLink.supplier:id,uuid,first_name,last_name,avatar', 'photos'])
+            ->where('is_active', true)
             ->where('status', 'scheduled')
             ->where(function ($query) use ($keyword) {
                 $query->where('title', 'like', "%$keyword%")
@@ -225,7 +197,7 @@ class EventController extends Controller
 
         return response()->json([
             'success' => true,
-            'data' => $events
+            'data' => EventResource::collection($events),
         ]);
     }
 
@@ -820,7 +792,7 @@ class EventController extends Controller
 
         return response()->json([
             'success' => true,
-            'data' => $enriched
+            'data' => EventReservationResource::collection($enriched),
         ]);
     }
     /**

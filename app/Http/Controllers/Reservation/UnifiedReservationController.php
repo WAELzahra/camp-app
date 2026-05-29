@@ -265,17 +265,7 @@ class UnifiedReservationController extends Controller
             'commission_amount'   => $commissionAmt,
             'commission_rate'     => $commissionRate,
             'payment_method'      => $reservation->payment_method ?? 'wallet',
-            'user' => $reservation->user ? [
-                'id' => $reservation->user->id,
-                'first_name' => $reservation->user->first_name,
-                'last_name' => $reservation->user->last_name,
-                'email' => $reservation->user->email,
-                'phone_number' => $reservation->user->phone_number,
-                'ville' => $reservation->user->ville,
-                'address' => $reservation->user->addresse,
-                'avatar' => $reservation->user->avatar ? storage_url($reservation->user->avatar) : null,
-                'created_at' => $reservation->user->created_at,
-            ] : null,
+            'user' => $this->safeUserRef($reservation->user),
             'event' => $event ? [
                 'id'          => $event->id,
                 'title'       => $event->title,
@@ -289,15 +279,10 @@ class UnifiedReservationController extends Controller
                 'start_date'  => $event->start_date ?? null,
                 'end_date'    => $event->end_date ?? null,
             ] : null,
-            'group' => ($event && $event->group) ? [
-                'id'         => $event->group->id,
-                'first_name' => $event->group->first_name,
-                'last_name'  => $event->group->last_name,
-                'email'      => $event->group->email,
-                'phone_number' => $event->group->phone_number,
-                'avatar'     => $event->group->avatar ? storage_url($event->group->avatar) : null,
-                'group_name' => $event->group->profile?->profileGroupe?->nom_groupe ?? null,
-            ] : null,
+            'group' => ($event && $event->group) ? array_merge(
+                $this->safeUserRef($event->group),
+                ['group_name' => $event->group->profile?->profileGroupe?->nom_groupe ?? null]
+            ) : null,
             'location' => $event->address ?? '',
             'created_at' => $reservation->created_at,
             'updated_at' => $reservation->updated_at,
@@ -375,30 +360,13 @@ class UnifiedReservationController extends Controller
             'commission_amount'   => $commissionAmt,
             'commission_rate'     => $commissionRate,
             'payment_method'      => $reservation->payment_method ?? 'wallet',
-            'user' => $reservation->user ? [
-                'id' => $reservation->user->id,
-                'first_name' => $reservation->user->first_name,
-                'last_name' => $reservation->user->last_name,
-                'email' => $reservation->user->email,
-                'phone_number' => $reservation->user->phone_number,
-                'ville' => $reservation->user->ville,
-                'address' => $reservation->user->addresse,
-                'avatar' => $reservation->user->avatar ? storage_url($reservation->user->avatar) : null,
-                'created_at' => $reservation->user->created_at,
-            ] : null,
+            'user' => $this->safeUserRef($reservation->user),
             'supplier' => $reservation->fournisseur ? (function($f) {
                 $pf = $f->profile?->profileFournisseur ?? null;
-                return [
-                    'id'           => $f->id,
-                    'first_name'   => $f->first_name,
-                    'last_name'    => $f->last_name,
-                    'email'        => $f->email,
-                    'phone_number' => $f->phone_number,
-                    'ville'        => $f->ville,
-                    'avatar'       => $f->avatar ? storage_url($f->avatar) : null,
+                return array_merge($this->safeUserRef($f), [
                     'product_category' => $pf?->product_category ?? null,
                     'intervale_prix'   => $pf?->intervale_prix ?? null,
-                ];
+                ]);
             })($reservation->fournisseur) : null,
             'materielle' => $materielle ? [
                 'id' => $materielle->id,
@@ -484,33 +452,23 @@ class UnifiedReservationController extends Controller
                 ? (float) $centreTx->commission_rate
                 : round(CommissionService::calculateForUser('center', 100, $reservation->centre_id ?? 0)['rate'] * 100, 2),
             'nights' => $reservation->nights ?? 1,
-            'user' => $reservation->user ? [
-                'id' => $reservation->user->id,
-                'first_name' => $reservation->user->first_name,
-                'last_name' => $reservation->user->last_name,
-                'email' => $reservation->user->email,
-                'phone_number' => $reservation->user->phone_number,
-                'ville' => $reservation->user->ville,
-                'address' => $reservation->user->addresse,
-                'avatar' => $reservation->user->avatar ? storage_url($reservation->user->avatar) : null,
-                'created_at' => $reservation->user->created_at,
-            ] : null,
+            'user' => $this->safeUserRef($reservation->user),
             'centre' => $reservation->centre ? (function($c) {
                 $pc = $c->profile?->profileCentre ?? null;
                 return [
-                    'id'            => $c->id,
-                    'name'          => $pc?->name ?? $c->first_name . ' ' . $c->last_name,
-                    'ville'         => $c->ville,
-                    'address'       => $c->profile?->address ?? null,
-                    'contact_email' => $pc?->contact_email ?? $c->email,
-                    'contact_phone' => $pc?->contact_phone ?? $c->phone_number,
-                    'manager_name'  => $pc?->manager_name ?? null,
-                    'category'      => $pc?->category ?? null,
-                    'latitude'      => $pc?->latitude ?? null,
-                    'longitude'     => $pc?->longitude ?? null,
-                    'capacite'      => $pc?->capacite ?? null,
+                    'uuid'            => $c->uuid,
+                    'name'            => $pc?->name ?? $c->first_name . ' ' . $c->last_name,
+                    'ville'           => $c->ville,
+                    'address'         => $c->profile?->address ?? null,
+                    'contact_email'   => $pc?->contact_email,
+                    'contact_phone'   => $pc?->contact_phone,
+                    'manager_name'    => $pc?->manager_name ?? null,
+                    'category'        => $pc?->category ?? null,
+                    'latitude'        => $pc?->latitude ?? null,
+                    'longitude'       => $pc?->longitude ?? null,
+                    'capacite'        => $pc?->capacite ?? null,
                     'price_per_night' => $pc?->price_per_night ?? null,
-                    'avatar'        => $c->avatar ? storage_url($c->avatar) : null,
+                    'avatar'          => $c->avatar ? storage_url($c->avatar) : null,
                 ];
             })($reservation->centre) : null,
             'location' => $reservation->centre->ville ?? '',
@@ -559,19 +517,8 @@ class UnifiedReservationController extends Controller
             'status' => 'confirmed', // Guide reservations are confirmed by default
             'status_label' => 'Confirmed',
             'total_price' => $circuit->price ?? 0,
-            'user' => $reservation->user ? [
-                'id' => $reservation->user->id,
-                'first_name' => $reservation->user->first_name,
-                'last_name' => $reservation->user->last_name,
-                'email' => $reservation->user->email,
-                'phone_number' => $reservation->user->phone_number,
-                'ville' => $reservation->user->ville,
-                'address' => $reservation->user->addresse,
-                'avatar' => $reservation->user->avatar ? storage_url($reservation->user->avatar) : null,
-                'created_at' => $reservation->user->created_at,
-            ] : null,
+            'user' => $this->safeUserRef($reservation->user),
             'guide' => $reservation->guide_id ? [
-                'id' => $reservation->guide_id,
                 'name' => 'Guide',
             ] : null,
             'circuit' => $circuit ? [
@@ -593,6 +540,25 @@ class UnifiedReservationController extends Controller
         ];
     }
     
+    /**
+     * Returns a safe, public-facing user reference for embedding in reservation responses.
+     * Strips numeric id, role_id, and all internal/sensitive fields.
+     * Keeps contact info (email, phone) since both parties in a reservation legitimately
+     * need to communicate with each other.
+     */
+    private function safeUserRef(?object $user): ?array
+    {
+        if (!$user) return null;
+        return [
+            'uuid'         => $user->uuid,
+            'first_name'   => $user->first_name,
+            'last_name'    => $user->last_name,
+            'email'        => $user->email,
+            'phone_number' => $user->phone_number,
+            'avatar'       => $user->avatar ? storage_url($user->avatar) : null,
+        ];
+    }
+
     /**
      * Get status counts for filtering
      */

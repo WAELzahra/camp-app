@@ -288,6 +288,24 @@ Route::middleware('auth:sanctum')->group(function () {
     });
     Route::post('/logout', [AuthenticatedSessionController::class, 'destroy']);
 
+    // "me" endpoints — current user's own resources without numeric ID in URL
+    Route::get('/boutiques/me', function (Request $request) {
+        $boutique = \App\Models\Boutiques::where('fournisseur_id', $request->user()->id)->first();
+        return $boutique
+            ? response()->json($boutique)
+            : response()->json(null, 204);
+    });
+    Route::get('/materielles/me', function (Request $request) {
+        $materielles = \App\Models\Materielles::where('fournisseur_id', $request->user()->id)->get();
+        return response()->json(['data' => $materielles]);
+    });
+    Route::get('/groupes/my/co-owners', function (Request $request) {
+        return app(\App\Http\Controllers\Groupe\GroupeCoOwnerController::class)->list(
+            $request,
+            $request->user()->id
+        );
+    });
+
     // ---- Expenses (per-user CRUD) ----
     Route::prefix('my/expenses')->group(function () {
         Route::get('/',          [ExpenseController::class, 'index']);

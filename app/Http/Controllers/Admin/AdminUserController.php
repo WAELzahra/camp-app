@@ -142,7 +142,8 @@ class AdminUserController extends Controller
                         'price_per_night'           => $pc->price_per_night,
                         'category'                  => $pc->category,
                         'disponibilite'             => (bool) $pc->disponibilite,
-                        'legal_document'            => $pc->legal_document,
+                        'has_legal_document'        => (bool) $pc->legal_document,
+                        'legal_document_url'        => $pc->legal_document ? storage_url($pc->legal_document) : null,
                         'document_legal_type'       => $pc->document_legal_type,
                         'document_legal_expiration' => $pc->document_legal_expiration
                             ? $pc->document_legal_expiration->format('Y-m-d') : null,
@@ -162,7 +163,8 @@ class AdminUserController extends Controller
                         'experience'            => $pg->experience,
                         'tarif'                 => $pg->tarif,
                         'zone_travail'          => $pg->zone_travail,
-                        'certificat_path'       => $pg->certificat_path,
+                        'has_certificat'        => (bool) $pg->certificat_path,
+                        'certificat_url'        => $pg->certificat_path ? storage_url($pg->certificat_path) : null,
                         'certificat_type'       => $pg->certificat_type,
                         'certificat_expiration' => $pg->certificat_expiration
                             ? $pg->certificat_expiration->format('Y-m-d') : null,
@@ -172,8 +174,9 @@ class AdminUserController extends Controller
                 if ($user->profile->profileGroupe) {
                     $pg = $user->profile->profileGroupe;
                     $profileExtra['profile_groupe'] = [
-                        'nom_groupe'   => $pg->nom_groupe,
-                        'patente_path' => $pg->patente_path,
+                        'nom_groupe'  => $pg->nom_groupe,
+                        'has_patente' => (bool) $pg->patente_path,
+                        'patente_url' => $pg->patente_path ? storage_url($pg->patente_path) : null,
                     ];
                 }
 
@@ -833,14 +836,12 @@ class AdminUserController extends Controller
         $profileData = null;
         if ($user->profile) {
             $profileData = [
-                'id' => $user->profile->id,
-                'bio' => $user->profile->bio,
+                'bio'         => $user->profile->bio,
                 'cover_image' => $user->profile->cover_image,
-                'type' => $user->profile->type,
-                'activities' => $user->profile->activities,
-                'cin_path' => $user->profile->cin_path,
-                'cin_filename' => $user->profile->cin_filename,
-                'cin_url' => $user->profile->cin_path ? storage_url($user->profile->cin_path) : null,
+                'type'        => $user->profile->type,
+                'activities'  => $user->profile->activities,
+                'has_cin'     => (bool) $user->profile->cin_path,
+                'cin_url'     => $user->profile->cin_path ? storage_url($user->profile->cin_path) : null,
             ];
         }
 
@@ -887,46 +888,40 @@ class AdminUserController extends Controller
         ];
 
         if ($user->profile) {
-            // CIN (dans profile)
+            // CIN
             $documents['cin'] = [
-                'path' => $user->profile->cin_path,
-                'filename' => $user->profile->cin_filename,
-                'url' => $user->profile->cin_path ? storage_url($user->profile->cin_path) : null,
+                'has_cin' => (bool) $user->profile->cin_path,
+                'url'     => $user->profile->cin_path ? storage_url($user->profile->cin_path) : null,
             ];
 
             // Documents guide
             if ($user->profile->profileGuide) {
                 $guide = $user->profile->profileGuide;
                 $documents['guide'] = [
-                    'certificat_path' => $guide->certificat_path,
-                    'certificat_filename' => $guide->certificat_filename,
-                    'certificat_type' => $guide->certificat_type,
+                    'has_certificat'        => (bool) $guide->certificat_path,
+                    'certificat_type'       => $guide->certificat_type,
                     'certificat_expiration' => $guide->certificat_expiration,
-                    'certificat_url' => $guide->certificat_path ? storage_url($guide->certificat_path) : null,
+                    'certificat_url'        => $guide->certificat_path ? storage_url($guide->certificat_path) : null,
                 ];
             }
 
-            // Documents centre — column on profile_centres is `legal_document`
+            // Documents centre
             if ($user->profile->profileCentre) {
                 $centre = $user->profile->profileCentre;
                 $documents['centre'] = [
-                    'document_legal'            => $centre->legal_document,
+                    'has_legal_document'        => (bool) $centre->legal_document,
                     'document_legal_type'       => $centre->document_legal_type,
                     'document_legal_expiration' => $centre->document_legal_expiration,
-                    'document_legal_url'        => $centre->legal_document
-                                                    ? storage_url($centre->legal_document)
-                                                    : null,
+                    'document_legal_url'        => $centre->legal_document ? storage_url($centre->legal_document) : null,
                 ];
             }
 
-            // Documents groupe — only patente_path exists in profile_groupes table
+            // Documents groupe
             if ($user->profile->profileGroupe) {
                 $groupe = $user->profile->profileGroupe;
                 $documents['groupe'] = [
-                    'patente_path' => $groupe->patente_path,
-                    'patente_url'  => $groupe->patente_path
-                                        ? storage_url($groupe->patente_path)
-                                        : null,
+                    'has_patente' => (bool) $groupe->patente_path,
+                    'patente_url' => $groupe->patente_path ? storage_url($groupe->patente_path) : null,
                 ];
             }
 
@@ -934,12 +929,10 @@ class AdminUserController extends Controller
             if ($user->profile->profileFournisseur) {
                 $fournisseur = $user->profile->profileFournisseur;
                 $documents['fournisseur'] = [
-                    'cin_commercant_path' => $fournisseur->cin_commercant_path,
-                    'cin_commercant_filename' => $fournisseur->cin_commercant_filename,
-                    'cin_commercant_url' => $fournisseur->cin_commercant_path ? storage_url($fournisseur->cin_commercant_path) : null,
-                    'registre_commerce_path' => $fournisseur->registre_commerce_path,
-                    'registre_commerce_filename' => $fournisseur->registre_commerce_filename,
-                    'registre_commerce_url' => $fournisseur->registre_commerce_path ? storage_url($fournisseur->registre_commerce_path) : null,
+                    'has_cin_commercant'     => (bool) $fournisseur->cin_commercant_path,
+                    'cin_commercant_url'     => $fournisseur->cin_commercant_path ? storage_url($fournisseur->cin_commercant_path) : null,
+                    'has_registre_commerce'  => (bool) $fournisseur->registre_commerce_path,
+                    'registre_commerce_url'  => $fournisseur->registre_commerce_path ? storage_url($fournisseur->registre_commerce_path) : null,
                 ];
             }
         }

@@ -20,6 +20,9 @@ use Illuminate\Http\Resources\Json\JsonResource;
  */
 abstract class BaseApiResource extends JsonResource
 {
+    // Disable the automatic {"data": {...}} wrapper so responses are
+    // flat objects and the frontend reads response.data directly.
+    public static $wrap = null;
     protected array $internalIdFields = [
         'id',
         'user_id',
@@ -38,6 +41,19 @@ abstract class BaseApiResource extends JsonResource
         'materielle_id',
         'reservation_id',
     ];
+
+    /**
+     * Controls self vs. public view for profile sub-resources.
+     * Default is false (public view). Call withSelf(true) from the controller
+     * when the authenticated user is the profile owner.
+     */
+    protected bool $isSelf = false;
+
+    public function withSelf(bool $isSelf = true): static
+    {
+        $this->isSelf = $isSelf;
+        return $this;
+    }
 
     /**
      * Remove internal ID fields from an array of resource data.
