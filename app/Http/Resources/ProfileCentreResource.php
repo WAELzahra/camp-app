@@ -14,6 +14,7 @@ class ProfileCentreResource extends BaseApiResource
     public function toArray(Request $request): array
     {
         $data = [
+            'id'                         => $this->id,
             'name'                       => $this->name,
             'capacite'                   => $this->capacite,
             'price_per_night'            => $this->price_per_night,
