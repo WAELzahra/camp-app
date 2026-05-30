@@ -61,11 +61,17 @@ class MaterielleController extends Controller
         try {
             $materielle = Materielles::with(['photos', 'category', 'feedbacks', 'fournisseur.profile'])
                 ->find($materielle_id);
-    
+
             if (!$materielle) {
                 return response()->json(['status' => 'error', 'message' => 'Materielle not found.'], 404);
             }
-    
+
+            // Expose uuid and role_id on the fournisseur so the frontend can
+            // determine provider type (supplier vs camper) and build profile links.
+            if ($materielle->fournisseur) {
+                $materielle->fournisseur->makeVisible(['id', 'role_id']);
+            }
+
             return response()->json(['status' => 'success', 'data' => $materielle]);
         } catch (\Exception $e) {
             return response()->json(['status' => 'error', 'message' => 'Unable to retrieve materielle.'], 500);

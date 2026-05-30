@@ -377,10 +377,12 @@ class FeedbackController extends Controller
             'user_id'      => $feedback->user_id,
             'user'         => $feedback->user ? [
                 'id'         => $feedback->user->id,
+                'uuid'       => $feedback->user->uuid,
                 'first_name' => $feedback->user->first_name,
                 'last_name'  => $feedback->user->last_name,
                 'email'      => $feedback->user->email,
-                'avatar'     => $feedback->user->avatar ? storage_url($feedback->user->avatar) : null,                'role_id'    => $feedback->user->role_id,
+                'avatar'     => $feedback->user->avatar ? storage_url($feedback->user->avatar) : null,
+                'role_id'    => $feedback->user->role_id,
                 'ville'      => $feedback->user->ville,
                 'is_active'  => $feedback->user->is_active,
             ] : null,

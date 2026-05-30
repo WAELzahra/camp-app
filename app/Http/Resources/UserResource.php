@@ -33,7 +33,7 @@ class UserResource extends BaseApiResource
             'date_naissance'    => $this->date_naissance,
             'sexe'              => $this->sexe,
             'langue'            => $this->langue,
-            'is_active'         => (bool) $this->is_active,
+            'is_active'         => (int) $this->is_active,
             'first_login'       => (bool) $this->first_login,
             'last_login_at'     => $this->last_login_at,
             'created_at'        => $this->created_at,

@@ -363,10 +363,11 @@ class OrganizerSupplierController extends Controller
     {
         $links = OrganizerSupplierLink::where('organizer_id', $userId)
             ->where('status', 'accepted')
-            ->with(['supplier:id,first_name,last_name,email,avatar'])
+            ->with(['supplier:id,uuid,first_name,last_name,email,avatar'])
             ->get()
             ->map(fn($link) => [
                 'id'     => $link->supplier?->id,
+                'uuid'   => $link->supplier?->uuid,
                 'name'   => trim(($link->supplier?->first_name ?? '') . ' ' . ($link->supplier?->last_name ?? '')),
                 'email'  => $link->supplier?->email,
                 'avatar' => $link->supplier?->avatar,

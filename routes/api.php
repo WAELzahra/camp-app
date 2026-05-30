@@ -169,10 +169,11 @@ Route::middleware('auth:sanctum')->group(function () {
 });
 // -------------------- PUBLIC SHOPS & EQUIPMENT --------------------
 Route::get('/boutiques', [BoutiqueController::class, 'index']);
-Route::get('/boutiques/{fournisseur_id}', [BoutiqueController::class, 'show']);
+Route::get('/boutiques/uuid/{uuid}', [BoutiqueController::class, 'showByUuid']);
+Route::get('/boutiques/{fournisseur_id}', [BoutiqueController::class, 'show'])->where('fournisseur_id', '[0-9]+');
 Route::get('/materielles/categories', [MaterielleController::class, 'categories']);
 Route::get('/materielles/fournisseur/{fournisseur_id}', [MaterielleController::class, 'index']);
-Route::get('/materielles/{materielle_id}', [MaterielleController::class, 'show']);
+Route::get('/materielles/{materielle_id}', [MaterielleController::class, 'show'])->where('materielle_id', '[0-9]+');
 Route::get('/materielles/compare/{id1}/{id2}', [MaterielleController::class, 'compare']);
 Route::get('/materielles', [MaterielleController::class, 'marketplace']);
 

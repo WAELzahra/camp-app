@@ -57,6 +57,18 @@ class BoutiqueController extends Controller
     }
 
     /**
+     * Show a boutique by the supplier's UUID (public, for UUID-based navigation).
+     */
+    public function showByUuid(string $uuid)
+    {
+        $user = \App\Models\User::where('uuid', $uuid)->first();
+        if (!$user) {
+            return response()->json(['status' => 'error', 'message' => 'Supplier not found.'], 404);
+        }
+        return $this->show($user->id);
+    }
+
+    /**
      * Show a boutique by its own ID (for edit screens).
      */
     public function edit(int $boutique_id)

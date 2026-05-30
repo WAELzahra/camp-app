@@ -117,25 +117,32 @@ class ConversationController extends Controller
     {
         $user = Auth::user();
         $request->validate([
-            'user_id' => [
-                'required',
-                'exists:users,id',
-                function ($attribute, $value, $fail) use ($user) {
-                    if ($value == $user->id) {
-                        $fail('You cannot start a conversation with yourself.');
-                    }
-                },
-            ],
-            'initial_message' => 'nullable|string|max:5000'
+            'user_id'         => 'required',
+            'initial_message' => 'nullable|string|max:5000',
         ]);
+
+        // Resolve numeric id or UUID to a target user
+        $rawId      = $request->user_id;
+        $targetUser = is_numeric($rawId)
+            ? \App\Models\User::find((int) $rawId)
+            : \App\Models\User::where('uuid', $rawId)->first();
+
+        if (!$targetUser) {
+            return response()->json(['message' => 'User not found.'], 404);
+        }
+        if ($targetUser->id === $user->id) {
+            return response()->json(['message' => 'You cannot start a conversation with yourself.'], 422);
+        }
+
+        $targetId = $targetUser->id;
 
         // Check if conversation already exists
         $existing = Conversation::where('type', 'direct')
-            ->whereHas('participants', function($q) use ($user, $request) {
+            ->whereHas('participants', function($q) use ($user) {
                 $q->where('user_id', $user->id);
             })
-            ->whereHas('participants', function($q) use ($request) {
-                $q->where('user_id', $request->user_id);
+            ->whereHas('participants', function($q) use ($targetId) {
+                $q->where('user_id', $targetId);
             })
             ->first();
 
@@ -175,7 +182,7 @@ class ConversationController extends Controller
                 ],
                 [
                     'conversation_id' => $conversation->id,
-                    'user_id' => $request->user_id,
+                    'user_id' => $targetId,
                     'role' => 'member',
                     'joined_at' => now(),
                 ]
@@ -199,7 +206,7 @@ class ConversationController extends Controller
 
                 // Create pending status for receiver
                 $message->statuses()->create([
-                    'user_id' => $request->user_id,
+                    'user_id' => $targetId,
                     'delivered_at' => null,
                     'read_at' => null,
                 ]);

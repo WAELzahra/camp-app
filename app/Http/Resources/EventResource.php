@@ -26,6 +26,7 @@ class EventResource extends BaseApiResource
             ?? null;
 
         $acceptedSupplier = $supplierModel ? [
+            'id'         => $supplierModel->id,
             'uuid'       => $supplierModel->uuid,
             'first_name' => $supplierModel->first_name,
             'last_name'  => $supplierModel->last_name,
@@ -37,6 +38,7 @@ class EventResource extends BaseApiResource
         if ($this->relationLoaded('group') && $this->group) {
             $g = $this->group;
             $group = [
+                'id'         => $g->id,
                 'uuid'       => $g->uuid,
                 'first_name' => $g->first_name,
                 'last_name'  => $g->last_name,

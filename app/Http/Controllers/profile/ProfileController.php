@@ -1222,7 +1222,9 @@ class ProfileController extends Controller
 
     public function showById($id)
     {
-        $user = User::findOrFail($id);
+        $user = is_numeric($id)
+            ? User::findOrFail($id)
+            : User::where('uuid', $id)->firstOrFail();
 
         $profile = $user->profile;
         $requesterId = Auth::id();
