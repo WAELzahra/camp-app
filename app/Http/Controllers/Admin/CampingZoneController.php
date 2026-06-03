@@ -152,10 +152,10 @@ class CampingZoneController extends Controller
             $s = trim($request->search);
             $query->where(function ($q) use ($s) {
                 $q->where('nom',         'like', "%{$s}%")
-                  ->orWhere('adresse',   'like', "%{$s}%")
-                  ->orWhere('region',    'like', "%{$s}%")
-                  ->orWhere('commune',   'like', "%{$s}%")
-                  ->orWhere('description', 'like', "%{$s}%");
+                ->orWhere('adresse',   'like', "%{$s}%")
+                ->orWhere('region',    'like', "%{$s}%")
+                ->orWhere('commune',   'like', "%{$s}%")
+                ->orWhere('description', 'like', "%{$s}%");
             });
         }
 
@@ -177,11 +177,27 @@ class CampingZoneController extends Controller
         $perPage   = max(1, min(100, (int) $request->get('per_page', 10)));
         $paginated = $query->orderBy('created_at', 'desc')->paginate($perPage);
 
-        // ── FIX : construction manuelle de la réponse paginée ─────────────────
-        // Laravel's setCollection() peut casser la sérialisation JSON quand
-        // la collection contient des tableaux au lieu d'objets Eloquent.
-        // On sérialise manuellement pour garantir la structure attendue par
-        // le frontend : { success, data: { data: [], current_page, last_page, per_page, total } }
+        // ═══════════════════════════════════════════════════════════════
+        // ADD THIS SECTION - Aggregation counts for all active zones
+        // ═══════════════════════════════════════════════════════════════
+        $counts = [
+            'difficulty' => [
+                'easy'   => CampingZone::where('status', 1)->where('difficulty', 'easy')->count(),
+                'medium' => CampingZone::where('status', 1)->where('difficulty', 'medium')->count(),
+                'hard'   => CampingZone::where('status', 1)->where('difficulty', 'hard')->count(),
+            ],
+            'danger_level' => [
+                'low'      => CampingZone::where('status', 1)->where('danger_level', 'low')->count(),
+                'moderate' => CampingZone::where('status', 1)->where('danger_level', 'moderate')->count(),
+                'high'     => CampingZone::where('status', 1)->where('danger_level', 'high')->count(),
+                'extreme'  => CampingZone::where('status', 1)->where('danger_level', 'extreme')->count(),
+            ],
+            'total' => CampingZone::where('status', 1)->count(),
+        ];
+        // ═══════════════════════════════════════════════════════════════
+        // END OF ADDED SECTION
+        // ═══════════════════════════════════════════════════════════════
+
         return response()->json([
             'success' => true,
             'data'    => [
@@ -193,10 +209,10 @@ class CampingZoneController extends Controller
                                     ->map(fn($zone) => $this->format($zone))
                                     ->values()
                                     ->all(),
+                'counts'       => $counts,  // ← ADD THIS LINE
             ],
         ]);
     }
-
     // ═══════════════════════════════════════════════════════════════════════════
     // GET /admin/zones/stats
     // ═══════════════════════════════════════════════════════════════════════════

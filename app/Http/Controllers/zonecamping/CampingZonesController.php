@@ -37,21 +37,19 @@ class CampingZonesController extends Controller
 
         if (!$isAdmin) {
             $query->where('status', true)
-                  ->where('is_public', true)
-                  ->where('is_closed', false);
+                ->where('is_public', true)
+                ->where('is_closed', false);
         }
 
         if ($request->filled('q')) {
             $term = $request->q;
-            // q filter needs description — use a sub-select to keep it searchable
-            // without pulling description into every row
             $query->addSelect('description')
-                  ->where(function ($q) use ($term) {
-                      $q->where('nom',         'LIKE', "%{$term}%")
+                ->where(function ($q) use ($term) {
+                    $q->where('nom',         'LIKE', "%{$term}%")
                         ->orWhere('city',       'LIKE', "%{$term}%")
                         ->orWhere('region',     'LIKE', "%{$term}%")
                         ->orWhere('description','LIKE', "%{$term}%");
-                  });
+                });
         }
 
         if ($request->filled('region'))     $query->where('region', $request->region);
@@ -74,6 +72,29 @@ class CampingZonesController extends Controller
 
         $zones = $query->paginate($request->get('per_page', 10));
 
+        // ═══════════════════════════════════════════════════════════════
+        // ADD THIS: Aggregation counts for all public active zones
+        // ═══════════════════════════════════════════════════════════════
+        $countsBase = CampingZone::where('status', true)
+            ->where('is_public', true)
+            ->where('is_closed', false);
+
+        $counts = [
+            'difficulty' => [
+                'easy'   => (clone $countsBase)->where('difficulty', 'easy')->count(),
+                'medium' => (clone $countsBase)->where('difficulty', 'medium')->count(),
+                'hard'   => (clone $countsBase)->where('difficulty', 'hard')->count(),
+            ],
+            'danger_level' => [
+                'low'      => (clone $countsBase)->where('danger_level', 'low')->count(),
+                'moderate' => (clone $countsBase)->where('danger_level', 'moderate')->count(),
+                'high'     => (clone $countsBase)->where('danger_level', 'high')->count(),
+                'extreme'  => (clone $countsBase)->where('danger_level', 'extreme')->count(),
+            ],
+            'total' => (clone $countsBase)->count(),
+        ];
+        // ═══════════════════════════════════════════════════════════════
+
         return response()->json([
             'current_page' => $zones->currentPage(),
             'last_page'    => $zones->lastPage(),
@@ -82,6 +103,7 @@ class CampingZonesController extends Controller
             'from'         => $zones->firstItem(),
             'to'           => $zones->lastItem(),
             'data'         => $zones->getCollection()->map(fn($z) => $this->formatZoneList($z)),
+            'counts'       => $counts, 
         ]);
     }
 
