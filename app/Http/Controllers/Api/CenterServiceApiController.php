@@ -317,10 +317,12 @@ class CenterServiceApiController extends Controller
         $partnerNameSet = $partnerResult->map(fn($c) => mb_strtolower(trim($c['name'] ?? '')))
             ->filter()->flip()->toArray();
 
-        // Include ALL active CampingCentre rows not already covered by a ProfileCentre partner.
-        // We no longer restrict to is_partner=false: centres that are marked partner in the
-        // camping_centres table but have no ProfileCentre record must still appear in the list.
+        // Include active CampingCentre rows not already covered by a ProfileCentre partner.
+        // Exclude rows that have a profile_centre_id: those centres belong to a registered
+        // partner and must not appear as standalone non-partner cards (they would show no
+        // price and trigger a broken redirect on the detail page).
         $nonPartnerResult = \App\Models\CampingCentre::where('status', true)
+            ->whereNull('profile_centre_id')
             ->get()
             ->filter(fn($c) => !isset($partnerNameSet[mb_strtolower(trim($c->nom ?? ''))]))
             ->map(fn($c) => [

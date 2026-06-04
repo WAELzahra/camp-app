@@ -91,7 +91,8 @@ class CampingZonesController extends Controller
                 'high'     => (clone $countsBase)->where('danger_level', 'high')->count(),
                 'extreme'  => (clone $countsBase)->where('danger_level', 'extreme')->count(),
             ],
-            'total' => (clone $countsBase)->count(),
+            'total'          => (clone $countsBase)->count(),
+            'centres_count'  => (clone $countsBase)->whereNotNull('centre_id')->distinct('centre_id')->count('centre_id'),
         ];
         // ═══════════════════════════════════════════════════════════════
 
