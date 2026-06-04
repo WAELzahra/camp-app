@@ -66,6 +66,11 @@ class FixCampingZonesSeeder extends Seeder
                 $rules = $this->rulesFromRealData($type, (bool)($item['eau_disponible'] ?? false), (bool)($item['baignade'] ?? false));
                 $dangerLevel = $this->dangerLevel($difficulty, $type);
 
+                // ── AI fields consumed by the trip planner / gear / safety engines ──
+                $terrainType            = $this->terrainTypeFromType($type, $description);
+                $isBeginnerFriendly     = $difficulty === 'easy' && $dangerLevel === 'low';
+                [$minTemp, $maxTemp]    = $this->tempRangeFromTerrain($terrainType);
+
                 $zones[] = [
                     'nom'               => $nom,
                     'city'              => $city,
@@ -96,6 +101,10 @@ class FixCampingZonesSeeder extends Seeder
                     'is_protected_area' => $this->isProtectedArea($nom, $description),
                     'is_closed'         => false,
                     'danger_level'      => $dangerLevel,
+                    'is_beginner_friendly' => $isBeginnerFriendly,
+                    'terrain_type'      => $terrainType,
+                    'min_temp_celsius'  => $minTemp,
+                    'max_temp_celsius'  => $maxTemp,
                     'max_capacity'      => $this->capacityFromType($type, $difficulty),
                     'map_zoom_level'    => $this->zoomFromType($type),
                     'source'            => 'real_json_data',
@@ -146,6 +155,54 @@ class FixCampingZonesSeeder extends Seeder
         };
     }
 
+    /**
+     * Canonical terrain_type consumed by the AI engines.
+     * Enum: forest | mountain | desert | coastal | plain | wetland.
+     */
+    private function terrainTypeFromType(string $type, string $description = ''): string
+    {
+        $mapped = match ($type) {
+            'beach', 'plage', 'foret_plage', 'plage_montagne' => 'coastal',
+            'lake', 'lac'                                      => 'wetland',
+            'forest', 'foret'                                 => 'forest',
+            'mountain', 'montagne'                            => 'mountain',
+            'desert'                                          => 'desert',
+            default                                           => null,
+        };
+        if ($mapped !== null) {
+            return $mapped;
+        }
+
+        // Infer from description when the source type is generic ("nature").
+        $text = Str::lower($description);
+        return match (true) {
+            str_contains($text, 'désert') || str_contains($text, 'desert') || str_contains($text, 'dune') || str_contains($text, 'sahara') => 'desert',
+            str_contains($text, 'plage') || str_contains($text, 'mer') || str_contains($text, 'côt') || str_contains($text, 'cap ')          => 'coastal',
+            str_contains($text, 'montagne') || str_contains($text, 'jebel') || str_contains($text, 'djebel') || str_contains($text, 'sommet') => 'mountain',
+            str_contains($text, 'lac') || str_contains($text, 'barrage') || str_contains($text, 'oued') || str_contains($text, 'zone humide') => 'wetland',
+            str_contains($text, 'forêt') || str_contains($text, 'foret') || str_contains($text, 'bois') || str_contains($text, 'chêne')       => 'forest',
+            default => 'plain',
+        };
+    }
+
+    /**
+     * Indicative seasonal temperature band (°C) per terrain, used as planner
+     * metadata and gear/safety hints.
+     *
+     * @return array{0:int,1:int} [min, max]
+     */
+    private function tempRangeFromTerrain(string $terrainType): array
+    {
+        return match ($terrainType) {
+            'desert'   => [6, 42],
+            'coastal'  => [13, 34],
+            'wetland'  => [8, 32],
+            'forest'   => [3, 29],
+            'mountain' => [0, 26],
+            default    => [7, 36], // plain
+        };
+    }
+
     private function difficultyFromRealValue(?string $difficulteAcces, string $type): string
     {
         $value = Str::lower((string) $difficulteAcces);
@@ -153,7 +210,7 @@ class FixCampingZonesSeeder extends Seeder
         if (str_contains($value, 'facile')) return 'easy';
         if (str_contains($value, 'modérée') || str_contains($value, 'modere') || str_contains($value, 'modéré')) return 'medium';
         if (str_contains($value, 'difficile')) return 'hard';
-        if (str_contains($value, 'expédition') || str_contains($value, 'expedition')) return 'expert';
+        if (str_contains($value, 'expédition') || str_contains($value, 'expedition')) return 'hard';
 
         return in_array($type, ['desert', 'mountain', 'montagne'], true) ? 'medium' : 'easy';
     }
@@ -164,11 +221,10 @@ class FixCampingZonesSeeder extends Seeder
 
         if (str_contains($text, 'barque') || str_contains($text, 'bateau') || str_contains($text, 'boat')) return 'boat';
         if (str_contains($text, 'à pied') || str_contains($text, 'a pied') || str_contains($text, 'marche') || str_contains($text, 'sentier')) return 'trail';
-        if (str_contains($text, '4x4')) return '4x4';
-        if (str_contains($text, 'piste')) return $difficulty === 'hard' || $difficulty === 'expert' ? '4x4' : 'track';
+        if (str_contains($text, '4x4') || str_contains($text, 'piste')) return 'mixed';
         if (str_contains($text, 'route')) return 'road';
 
-        return in_array($type, ['desert'], true) ? '4x4' : 'road';
+        return in_array($type, ['desert'], true) ? 'mixed' : 'road';
     }
 
     private function bestSeasonFromRealValue(?string $value, string $type): array
@@ -230,10 +286,9 @@ class FixCampingZonesSeeder extends Seeder
     private function defaultAccessibility(string $accessType, string $difficulty): string
     {
         return match ($accessType) {
-            'boat' => 'Accès par bateau ou barque locale',
+            'boat'  => 'Accès par bateau ou barque locale',
             'trail' => 'Accès à pied par sentier naturel',
-            '4x4' => 'Accès recommandé en 4x4',
-            'track' => 'Accès par piste',
+            'mixed' => 'Accès par piste ou 4x4 recommandé',
             default => $difficulty === 'easy' ? 'Accès relativement facile' : 'Accès naturel nécessitant prudence',
         };
     }
@@ -256,7 +311,6 @@ class FixCampingZonesSeeder extends Seeder
 
     private function dangerLevel(string $difficulty, string $type): string
     {
-        if ($difficulty === 'expert') return 'high';
         if ($difficulty === 'hard' || $type === 'desert') return 'moderate';
         return 'low';
     }

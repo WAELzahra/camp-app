@@ -45,10 +45,21 @@ return [
         'redirect' => env('FACEBOOK_REDIRECT_URI'),
     ],
     'konnect' => [
-    'key' => env('KONNECT_API_KEY'),
-    'base_url' => env('KONNECT_API_URL'),
-    'callback_url' => env('KONNECT_CALLBACK_URL'),
-],
+        'key'          => env('KONNECT_API_KEY'),
+        'base_url'     => env('KONNECT_API_URL'),
+        'callback_url' => env('KONNECT_CALLBACK_URL'),
+    ],
 
+    'groq' => [
+        'key'      => env('GROQ_API_KEY'),
+        'base_url' => 'https://api.groq.com/openai/v1',
+        'model'    => env('GROQ_MODEL', 'llama-3.3-70b-versatile'),
+    ],
+
+    'openweather' => [
+        'key'      => env('OPENWEATHER_API_KEY'),
+        'base_url' => 'https://api.openweathermap.org/data/2.5',
+        'units'    => 'metric',
+    ],
 
 ];

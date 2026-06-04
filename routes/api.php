@@ -14,6 +14,13 @@ use App\Http\Controllers\Auth\EmailVerificationNotificationController;
 use App\Http\Controllers\Auth\PasswordController;
 use App\Http\Controllers\Auth\VerifyEmailController;
 
+// AI Controllers
+use App\Http\Controllers\AI\AiTripPlannerController;
+use App\Http\Controllers\AI\ExplainabilityController;
+use App\Http\Controllers\AI\SafetyController;
+use App\Http\Controllers\AI\GroupMatchingController;
+use App\Http\Controllers\AI\PricingController;
+
 // Public Controllers
 use App\Http\Controllers\Annonce\AnnonceController;
 use App\Http\Controllers\Boutique\BoutiqueController;
@@ -1291,3 +1298,77 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
         Route::patch('/{popup}/toggle',    [PopupController::class, 'toggle']);
     });
 });
+
+// ==================== AI ROUTES ====================
+Route::middleware(['auth:sanctum', 'throttle:ai'])
+    ->prefix('ai')
+    ->group(function () {
+        Route::post('/trip-planner',                    [AiTripPlannerController::class, 'plan']);
+        Route::post('/trip-planner/group-a',            [AiTripPlannerController::class, 'groupA']);
+        Route::post('/trip-planner/prepare-booking',    [AiTripPlannerController::class, 'prepareBooking']);
+        Route::post('/trip-planner/confirm-booking',    [AiTripPlannerController::class, 'confirmBooking']);
+        Route::get('/status/{jobId}',                   [AiTripPlannerController::class, 'status']);
+        Route::get('/recommendations',                  [AiTripPlannerController::class, 'recommendations']);
+    });
+
+// Weather endpoint — public (no auth required), separate throttle
+Route::middleware(['throttle:weather'])
+    ->get('/ai/weather/{zoneId}', [AiTripPlannerController::class, 'weather'])
+    ->whereNumber('zoneId');
+
+// Gear assistant — essential must be declared BEFORE {zoneId} to avoid routing collision
+Route::middleware(['throttle:ai'])->group(function () {
+    // Static route first — no {param}
+    Route::get('/ai/gear/essential/{terrainType}', [AiTripPlannerController::class, 'essentialGear'])
+        ->where('terrainType', 'forest|mountain|desert|coastal|plain|wetland');
+    // Dynamic zone route second
+    Route::get('/ai/gear/{zoneId}', [AiTripPlannerController::class, 'gear'])
+        ->whereNumber('zoneId');
+});
+
+// Safety — public quick risk (no auth required)
+Route::middleware(['throttle:safety'])
+    ->get('/ai/safety/zone/{zoneId}', [SafetyController::class, 'quickRisk'])
+    ->whereNumber('zoneId');
+
+// Safety — auth required endpoints
+Route::middleware(['auth:sanctum', 'throttle:ai'])
+    ->prefix('ai/safety')
+    ->group(function () {
+        Route::post('/assess',          [SafetyController::class, 'assess']);
+        Route::post('/moderate',        [SafetyController::class, 'moderate']);
+        Route::get('/moderation-stats', [SafetyController::class, 'moderationStats']);
+    });
+
+// Group Matching
+Route::middleware(['auth:sanctum', 'throttle:ai'])
+    ->prefix('ai/groups')
+    ->group(function () {
+        Route::get('/matches',       [GroupMatchingController::class, 'matches']);
+        Route::get('/cluster-stats', [GroupMatchingController::class, 'clusterStats']);
+        Route::post('/recluster',    [GroupMatchingController::class, 'recluster']);
+    });
+
+// Dynamic Pricing Intelligence
+Route::middleware(['auth:sanctum', 'throttle:ai'])
+    ->prefix('ai/pricing')
+    ->group(function () {
+        Route::get('/suggest/{entityType}/{entityId}', [PricingController::class, 'suggest']);
+        Route::get('/market/{entityType}',             [PricingController::class, 'market']);
+        Route::get('/trending-tags',                   [PricingController::class, 'trendingTags']);
+    });
+
+// Explainability — weather is public, rest requires auth
+Route::middleware(['throttle:safety'])
+    ->get('/ai/explain/weather/{zoneId}', [ExplainabilityController::class, 'weather'])
+    ->whereNumber('zoneId');
+
+Route::middleware(['auth:sanctum', 'throttle:ai'])
+    ->prefix('ai/explain')
+    ->group(function () {
+        Route::get('/recommendation/{zoneId}', [ExplainabilityController::class, 'recommendation'])
+            ->whereNumber('zoneId');
+        Route::get('/safety/{zoneId}',         [ExplainabilityController::class, 'safety'])
+            ->whereNumber('zoneId');
+        Route::post('/on-demand',              [ExplainabilityController::class, 'onDemand']);
+    });

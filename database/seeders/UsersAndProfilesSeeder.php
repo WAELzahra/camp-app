@@ -27,7 +27,8 @@ class UsersAndProfilesSeeder extends Seeder
 
         // ── Insert users ──────────────────────────────────────────────────────
         $userRows = array_map(fn($r) => [
-            'name'              => $r['name'],
+            'first_name'        => explode(' ', $r['name'], 2)[0],
+            'last_name'         => explode(' ', $r['name'], 2)[1] ?? '',
             'email'             => $r['email'],
             'email_verified_at' => $now,
             'password'          => $password,

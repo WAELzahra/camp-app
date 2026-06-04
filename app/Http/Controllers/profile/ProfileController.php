@@ -426,6 +426,9 @@ class ProfileController extends Controller
                             ['profile_id' => $profile->id],
                             $campeurData
                         );
+                        // Invalidate the recommendation cache so the next request
+                        // returns freshly scored zones/gear for the updated profile.
+                        \Illuminate\Support\Facades\Cache::forget('recommendations:' . Auth::id());
                     }
                     break;
                     
