@@ -56,37 +56,61 @@ class SocialAuthController extends Controller
     {
         $frontendUrl = config('app.frontend_url', 'http://localhost:5173');
 
-        $user = User::where('email', $providerUser->getEmail())->first();
+        $user      = User::where('email', $providerUser->getEmail())->first();
         $isNewUser = false;
 
         if (!$user) {
-            $nameParts = explode(' ', $providerUser->getName() ?? '', 2);
+            $nameParts = explode(' ', trim($providerUser->getName() ?? ''), 2);
 
             $user = User::create([
                 'first_name'        => $nameParts[0] ?? 'User',
                 'last_name'         => $nameParts[1] ?? '',
                 'email'             => $providerUser->getEmail(),
                 'password'          => bcrypt(Str::random(24)),
-                'role_id'           => 1, // campeur par défaut
+                'role_id'           => 1, // campeur by default — completeRegistration() sets the real role
                 'provider'          => $provider,
                 'provider_id'       => $providerUser->getId(),
                 'email_verified_at' => now(),
-                'is_active'         => true,
+                // Always start INACTIVE. completeRegistration() activates campeurs (role_id=1)
+                // and leaves all other roles inactive pending admin approval.
+                // This prevents centre / supplier / guide accounts from being immediately
+                // active simply because they used social login.
+                'is_active'         => false,
+                'first_login'       => true,
+                'nombre_signalement' => 0,
+            ]);
+
+            // Create the base profile so downstream queries don't hit null-profile errors.
+            \DB::table('profiles')->insert([
+                'user_id'    => $user->id,
+                'type'       => 'campeur',
+                'created_at' => now(),
+                'updated_at' => now(),
             ]);
 
             $isNewUser = true;
 
-            Log::info('New social user created', [
+            Log::info('New social user created (inactive until role confirmed)', [
                 'user_id'  => $user->id,
                 'email'    => $user->email,
                 'provider' => $provider,
             ]);
         } else {
-            $user->update([
-                'provider'           => $user->provider ?? $provider,
-                'provider_id'        => $user->provider_id ?? $providerUser->getId(),
-                'email_verified_at'  => $user->email_verified_at ?? now(),
-            ]);
+            // Existing user: merge provider credentials.
+            $updates = [
+                'provider'          => $user->provider ?? $provider,
+                'provider_id'       => $user->provider_id ?? $providerUser->getId(),
+                'email_verified_at' => $user->email_verified_at ?? now(),
+            ];
+
+            // If a social-registered campeur never completed the role-selection popup
+            // (first_login still true), treat this login as a new-user flow again so
+            // the frontend re-shows the popup and calls completeRegistration().
+            if ($user->first_login && $user->provider) {
+                $isNewUser = true;
+            }
+
+            $user->update($updates);
         }
 
         $user->load('role');
@@ -122,12 +146,13 @@ class SocialAuthController extends Controller
             ], 403);
         }
 
-        // Campeurs (role_id=1) sont activés immédiatement, les autres nécessitent validation
+        // Campeurs (role_id=1) are activated immediately; all other roles wait for admin approval.
         $isActive = $data['role_id'] === 1;
 
         $user->update([
-            'role_id'   => $data['role_id'],
-            'is_active' => $isActive,
+            'role_id'     => $data['role_id'],
+            'is_active'   => $isActive,
+            'first_login' => false, // Role confirmed — don't re-show the popup on next login.
         ]);
 
         return response()->json([

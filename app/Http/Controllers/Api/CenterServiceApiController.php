@@ -90,28 +90,35 @@ class CenterServiceApiController extends Controller
 
             $albumId = $album?->id;
 
-            // Load photos from the Profile Gallery album AND any camping_centre
-            // photos not yet migrated into the album (union via OR condition).
-            $photoQuery = Photo::where('user_id', $userId)
-                ->where(function ($q) use ($albumId, $campingCentreId) {
-                    if ($albumId) {
-                        $q->where('album_id', $albumId);
-                    }
+            // Two precise sources:
+            //   1. Camping-centre photos (by camping_centre_id) — no user_id needed.
+            //   2. Profile Gallery album photos owned by the user.
+            if (!$campingCentreId && !$albumId) {
+                // Nothing to query — no centre row and no gallery album yet.
+                $photos = [];
+            } else {
+                $photoQuery = Photo::where(function ($q) use ($userId, $albumId, $campingCentreId) {
                     if ($campingCentreId) {
-                        $q->orWhere('camping_centre_id', $campingCentreId);
+                        $q->where('camping_centre_id', $campingCentreId);
+                    }
+                    if ($userId && $albumId) {
+                        $q->orWhere(function ($q2) use ($userId, $albumId) {
+                            $q2->where('user_id', $userId)->where('album_id', $albumId);
+                        });
                     }
                 });
 
-            $photos = $photoQuery->get()
-                ->unique('id')
-                ->sortByDesc('is_cover')
-                ->values()
-                ->map(fn($p) => [
-                    'id'       => $p->id,
-                    'url'      => $this->photoUrl($p->path_to_img),
-                    'is_cover' => (bool) $p->is_cover,
-                    'order'    => $p->order ?? 0,
-                ])->toArray();
+                $photos = $photoQuery->get()
+                    ->unique('id')
+                    ->sortByDesc('is_cover')
+                    ->values()
+                    ->map(fn($p) => [
+                        'id'       => $p->id,
+                        'url'      => $this->photoUrl($p->path_to_img),
+                        'is_cover' => (bool) $p->is_cover,
+                        'order'    => $p->order ?? 0,
+                    ])->toArray();
+            }
         }
 
         /* ── Ratings ─────────────────────────────────────────────────── */
@@ -210,14 +217,8 @@ class CenterServiceApiController extends Controller
      * ────────────────────────────────────────────────────────────────── */
     public function centersListSummary()
     {
-        $disabledProfileIds = \App\Models\CampingCentre::whereNotNull('profile_centre_id')
-            ->where('status', false)
-            ->pluck('profile_centre_id')
-            ->toArray();
-
         $centers = ProfileCentre::with(['profile.user', 'availableEquipment'])
             ->available()
-            ->whereNotIn('id', $disabledProfileIds)
             ->whereHas('profile.user', fn($q) => $q->where('is_active', 1))
             ->get()
             ->sortByDesc('price_per_night')

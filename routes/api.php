@@ -1325,6 +1325,7 @@ Route::prefix('annonces')->group(function () {
         Route::patch('/{id}/toggle-partner', [CampingCentreController::class, 'togglePartner']);
         Route::post('/{id}/link-user', [CampingCentreController::class, 'linkUser']);
         Route::post('/{id}/unlink-user', [CampingCentreController::class, 'unlinkUser']);
+        Route::patch('/{id}/profile-centre', [CampingCentreController::class, 'updateProfileCentre']);
         Route::delete('/{id}', [CampingCentreController::class, 'destroy']);
         // Photo management
         Route::post('/{id}/photos', [CampingCentreController::class, 'addPhotos']);
