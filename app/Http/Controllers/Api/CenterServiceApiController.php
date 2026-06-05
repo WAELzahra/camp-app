@@ -41,10 +41,12 @@ class CenterServiceApiController extends Controller
         $userId  = $user?->id;
 
         /* ── Resolve user's linked CampingCentre (for photo fallbacks) ─── */
-        $campingCentreId = null;
-        if ($userId) {
-            $campingCentreId = CampingCentre::where('user_id', $userId)->value('id');
-        }
+        // Use profile_centre_id first — it is a direct 1-to-1 link and always
+        // points to the correct CampingCentre row even when multiple rows share
+        // the same user_id (e.g. after unlink → auto-sync → re-link).
+        // Falling back to user_id would return a random row and miss the photos.
+        $campingCentreId = CampingCentre::where('profile_centre_id', $center->id)->value('id')
+            ?? ($userId ? CampingCentre::where('user_id', $userId)->value('id') : null);
 
         /* ── Cover image ─────────────────────────────────────────────── */
         // Priority: camping_centre photos table (always has correct current paths,
