@@ -110,7 +110,33 @@ class RegisteredUserController extends Controller
                 'updated_at' => now(),
             ]);
 
-            // 3️⃣ Handle supplier invitation token
+            // 3️⃣ For centre role: create ProfileCentre + CampingCentre immediately
+            // so the admin can find and approve the center from the dashboard
+            // without waiting for the auto-sync to run.
+            if ($role->name === 'centre') {
+                $profile = \App\Models\Profile::where('user_id', $user->id)->first();
+
+                $pc = \App\Models\ProfileCentre::create([
+                    'profile_id'    => $profile->id,
+                    'name'          => trim($user->first_name . ' ' . $user->last_name) . ' Center',
+                    'disponibilite' => false,
+                ]);
+
+                \App\Models\CampingCentre::create([
+                    'nom'               => $pc->name,
+                    'type'              => 'centre',
+                    'adresse'           => $validated['adresse'] ?? $user->adresse ?? '',
+                    'lat'               => 0,
+                    'lng'               => 0,
+                    'status'            => false,
+                    'validation_status' => 'pending',
+                    'is_partner'        => true,
+                    'user_id'           => $user->id,
+                    'profile_centre_id' => $pc->id,
+                ]);
+            }
+
+            // 4️⃣ Handle supplier invitation token
             if (!empty($validated['invitation_token']) && $role->name === 'fournisseur') {
                 $invitation = \App\Models\SupplierInvitation::where('token', $validated['invitation_token'])
                     ->where('status', 'pending')

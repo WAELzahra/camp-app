@@ -245,9 +245,7 @@ class CampingCentreController extends Controller
             'photos',
         ])->findOrFail($id);
 
-        $centreData = $centre->toArray();
-
-        $centreData['photos'] = $centre->photos->map(fn($p) => [
+        $photos = $centre->photos->map(fn($p) => [
             'id'       => $p->id,
             'url'      => storage_url($p->path_to_img),
             'path'     => $p->path_to_img,
@@ -255,11 +253,13 @@ class CampingCentreController extends Controller
             'order'    => $p->order,
         ])->values()->toArray();
 
-        // Include services and equipment from the linked ProfileCentre
+        // Build profileCentre payload with camelCase key so the frontend type
+        // (AdminProfileCentre) can access it directly without any transformation.
+        $profileCentrePayload = null;
         if ($centre->profileCentre) {
             $pc = $centre->profileCentre;
 
-            $centreData['profile_centre']['services'] = $pc->centerServices()
+            $services = $pc->centerServices()
                 ->with('serviceCategory')
                 ->orderBy('is_standard', 'desc')
                 ->orderBy('created_at', 'asc')
@@ -274,7 +274,7 @@ class CampingCentreController extends Controller
                     'is_available' => (bool) $s->is_available,
                 ])->values()->toArray();
 
-            $centreData['profile_centre']['equipment'] = $pc->equipment()
+            $equipment = $pc->equipment()
                 ->get()
                 ->map(fn($e) => [
                     'id'           => $e->id,
@@ -282,11 +282,57 @@ class CampingCentreController extends Controller
                     'is_available' => (bool) $e->is_available,
                     'notes'        => $e->notes,
                 ])->values()->toArray();
+
+            $profileCentrePayload = [
+                'id'              => $pc->id,
+                'name'            => $pc->name,
+                'description'     => $pc->profile?->bio ?? null,
+                'price_per_night' => $pc->price_per_night !== null ? (float) $pc->price_per_night : null,
+                'category'        => $pc->category,
+                'capacite'        => $pc->capacite,
+                'disponibilite'   => (bool) $pc->disponibilite,
+                'contact_email'   => $pc->contact_email,
+                'contact_phone'   => $pc->contact_phone,
+                'manager_name'    => $pc->manager_name,
+                'established_date'=> $pc->established_date?->format('Y-m-d'),
+                'latitude'        => $pc->latitude !== null ? (float) $pc->latitude : null,
+                'longitude'       => $pc->longitude !== null ? (float) $pc->longitude : null,
+                'services'        => $services,
+                'equipment'       => $equipment,
+            ];
         }
 
         return response()->json([
             'status' => 'success',
-            'centre' => $centreData,
+            'centre' => [
+                'id'                => $centre->id,
+                'nom'               => $centre->nom,
+                'type'              => $centre->type,
+                'description'       => $centre->description,
+                'adresse'           => $centre->adresse,
+                'telephone'         => $centre->telephone,
+                'lat'               => $centre->lat,
+                'lng'               => $centre->lng,
+                'image'             => $centre->image,
+                'status'            => (bool) $centre->status,
+                'is_partner'        => (bool) $centre->is_partner,
+                'validation_status' => $centre->validation_status,
+                'user_id'           => $centre->user_id,
+                'profile_centre_id' => $centre->profile_centre_id,
+                'created_at'        => $centre->created_at,
+                'updated_at'        => $centre->updated_at,
+                'photos'            => $photos,
+                'user'              => $centre->user ? [
+                    'id'         => $centre->user->id,
+                    'first_name' => $centre->user->first_name,
+                    'last_name'  => $centre->user->last_name,
+                    'email'      => $centre->user->email,
+                    'is_active'  => $centre->user->is_active,
+                    'avatar'     => $centre->user->avatar ? storage_url($centre->user->avatar) : null,
+                ] : null,
+                // camelCase so frontend AdminCentre.profileCentre works without transformation
+                'profileCentre'     => $profileCentrePayload,
+            ],
         ]);
     }
 
