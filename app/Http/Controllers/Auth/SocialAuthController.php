@@ -96,21 +96,13 @@ class SocialAuthController extends Controller
                 'provider' => $provider,
             ]);
         } else {
-            // Existing user: merge provider credentials.
-            $updates = [
+            // Existing user — just merge provider credentials. Never set isNewUser = true here.
+            // The role-selection popup must only appear for brand-new social sign-ups.
+            $user->update([
                 'provider'          => $user->provider ?? $provider,
                 'provider_id'       => $user->provider_id ?? $providerUser->getId(),
                 'email_verified_at' => $user->email_verified_at ?? now(),
-            ];
-
-            // If a social-registered campeur never completed the role-selection popup
-            // (first_login still true), treat this login as a new-user flow again so
-            // the frontend re-shows the popup and calls completeRegistration().
-            if ($user->first_login && $user->provider) {
-                $isNewUser = true;
-            }
-
-            $user->update($updates);
+            ]);
         }
 
         $user->load('role');

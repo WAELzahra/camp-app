@@ -79,8 +79,10 @@ class CampingCentreController extends Controller
                 ]);
             });
 
-        // ── Return all centres (is_partner is now an explicit DB column) ───────
-        $centres = CampingCentre::with(['user', 'profileCentre'])->get();
+        // ── Return only type='centre' rows — excludes hors_centre and anything else ──
+        $centres = CampingCentre::with(['user', 'profileCentre'])
+            ->where('type', 'centre')
+            ->get();
 
         return response()->json([
             'status'  => 'success',
