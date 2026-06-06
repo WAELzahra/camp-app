@@ -37,8 +37,9 @@ class RegisteredUserController extends Controller
             'date_naissance' => ['nullable', 'date'],
             'sexe' => ['nullable', 'string', 'max:10'],
             'langue' => ['nullable', 'string', 'max:50'],
-            'password' => ['required', 'confirmed', Rules\Password::defaults()],
+            'password' => ['required', 'confirmed', Rules\Password::min(8)->mixedCase()->numbers()->symbols()],
             'role' => ['required', 'string', 'exists:roles,name'],
+            'invitation_token' => ['nullable', 'string', 'max:128'],
             
             // Make all these fields nullable instead of required
             'adresse' => ['nullable', 'string', 'max:500'],
@@ -56,7 +57,7 @@ class RegisteredUserController extends Controller
             'interval_prix' => ['nullable', 'string', 'max:100'],
             'product_category' => ['nullable', 'string', 'max:255'],
             'legal_document_file' => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
-            'center_images.*' => ['nullable', 'image', 'mimes:jpg,jpeg,png,gif', 'max:2048'],
+            'center_images.*' => ['nullable', 'image', 'mimes:jpg,jpeg,png,gif', 'max:5120'],
         ]);
 
         if (strtolower($validated['role']) === 'admin') {
@@ -88,40 +89,91 @@ class RegisteredUserController extends Controller
             ]);
 
             // 2️⃣ Créer le profile général
-            $profileId = DB::table('profiles')->insertGetId([
+            // Map role name → profiles.type ENUM value
+            // (roles.name = 'organizer' maps to profiles.type = 'groupe')
+            $profileTypeMap = [
+                'campeur'     => 'campeur',
+                'guide'       => 'guide',
+                'centre'      => 'centre',
+                'fournisseur' => 'fournisseur',
+                'organizer'   => 'groupe',
+                'groupe'      => 'groupe',
+            ];
+            $profileType = $profileTypeMap[$role->name] ?? $role->name;
+
+            DB::table('profiles')->insert([
                 'user_id' => $user->id,
                 'bio' => null,
                 'cover_image' => null,
-                'type' => $role->name,
+                'type' => $profileType,
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
 
+            // 3️⃣ For centre role: create ProfileCentre + CampingCentre immediately
+            // so the admin can find and approve the center from the dashboard
+            // without waiting for the auto-sync to run.
+            if ($role->name === 'centre') {
+                $profile = \App\Models\Profile::where('user_id', $user->id)->first();
+
+                $pc = \App\Models\ProfileCentre::create([
+                    'profile_id'    => $profile->id,
+                    'name'          => trim($user->first_name . ' ' . $user->last_name) . ' Center',
+                    'disponibilite' => false,
+                ]);
+
+                \App\Models\CampingCentre::create([
+                    'nom'               => $pc->name,
+                    'type'              => 'centre',
+                    'adresse'           => $validated['adresse'] ?? $user->adresse ?? '',
+                    'lat'               => 0,
+                    'lng'               => 0,
+                    'status'            => false,
+                    'validation_status' => 'pending',
+                    'is_partner'        => true,
+                    'user_id'           => $user->id,
+                    'profile_centre_id' => $pc->id,
+                ]);
+            }
+
+            // 4️⃣ Handle supplier invitation token
+            if (!empty($validated['invitation_token']) && $role->name === 'fournisseur') {
+                $invitation = \App\Models\SupplierInvitation::where('token', $validated['invitation_token'])
+                    ->where('status', 'pending')
+                    ->where('email', $validated['email'])
+                    ->first();
+
+                if ($invitation && !\Carbon\Carbon::parse($invitation->expires_at)->isPast()) {
+                    $invitation->update([
+                        'status'        => 'registered',
+                        'registered_at' => now(),
+                        'supplier_id'   => $user->id,
+                    ]);
+
+                    \App\Models\OrganizerSupplierLink::create([
+                        'organizer_id' => $invitation->organizer_id,
+                        'supplier_id'  => $user->id,
+                        'status'       => 'accepted',
+                        'responded_at' => now(),
+                    ]);
+                }
+            }
+
             DB::commit();
 
-            $message = $isActive
-                ? 'Inscription réussie ! Vous pouvez maintenant vous connecter.'
-                : 'Inscription réussie ! Veuillez attendre l\'activation par un administrateur.';
             $verificationService = new \App\Services\EmailVerificationService('both');
             $verificationService->sendVerification($user, 'both');
             event(new UserRegistered($user));
 
-        // Return the user data so frontend can display it
-        return response()->json([
-            'message' => 'Registration successful! Please verify your email.',
-            'user' => [
-                'id' => $user->id,
-                'first_name' => $user->first_name,
-                'last_name' => $user->last_name,
-                'email' => $user->email,
-            ],
-            'requires_verification' => true,
-        ], 201);
             return response()->json([
-                'message' => $isActive
-                    ? 'Inscription réussie ! Vous pouvez maintenant vous connecter.'
-                    : 'Inscription réussie ! Veuillez attendre l\'activation par un administrateur.',
-                'user' => $user
+                'message' => 'Registration successful! Please verify your email.',
+                'user' => [
+                    'uuid'       => $user->uuid,
+                    'first_name' => $user->first_name,
+                    'last_name'  => $user->last_name,
+                    'email'      => $user->email,
+                ],
+                'requires_verification' => true,
             ], 201);
 
         } catch (\Exception $e) {
@@ -131,7 +183,6 @@ class RegisteredUserController extends Controller
 
             return response()->json([
                 'error' => 'Une erreur est survenue lors de l\'inscription.',
-                'details' => config('app.debug') ? $e->getMessage() : null
             ], 500);
         }
     }

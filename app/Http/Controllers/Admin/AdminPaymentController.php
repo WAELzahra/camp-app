@@ -66,7 +66,7 @@ class AdminPaymentController extends Controller
     public function show($id)
     {
         $payment = Payments::with([
-            'user:id,first_name,last_name,email,avatar,phone_number',
+            'user:id,uuid,first_name,last_name,email,avatar,phone_number',
             'event:id,title,price,start_date,description',
             'reservation:id,payment_id,status,nbr_place',
         ])->findOrFail($id);
@@ -75,7 +75,31 @@ class AdminPaymentController extends Controller
 
         return response()->json([
             'success' => true,
-            'data'    => array_merge($payment->toArray(), ['refund_request' => $refund]),
+            'data'    => [
+                'id'                  => $payment->id,
+                'montant'             => $payment->montant,
+                'description'         => $payment->description,
+                'status'              => $payment->status,
+                'commission'          => $payment->commission,
+                'net_revenue'         => $payment->net_revenue,
+                'konnect_session_id'  => $payment->konnect_session_id,
+                'created_at'          => $payment->created_at,
+                'updated_at'          => $payment->updated_at,
+                'user' => $payment->user ? [
+                    'uuid'         => $payment->user->uuid,
+                    'first_name'   => $payment->user->first_name,
+                    'last_name'    => $payment->user->last_name,
+                    'email'        => $payment->user->email,
+                    'phone_number' => $payment->user->phone_number,
+                    'avatar'       => $payment->user->avatar ? storage_url($payment->user->avatar) : null,
+                ] : null,
+                'event'       => $payment->event,
+                'reservation' => $payment->reservation ? [
+                    'status'    => $payment->reservation->status,
+                    'nbr_place' => $payment->reservation->nbr_place,
+                ] : null,
+                'refund_request' => $refund,
+            ],
         ]);
     }
 
@@ -361,7 +385,7 @@ class AdminPaymentController extends Controller
     public function adjustBalance(Request $request, $userId)
     {
         $request->validate([
-            'montant'   => 'required|numeric',
+            'montant'   => 'required|numeric|min:0.01',
             'type'      => 'required|in:credit,debit',
             'note'      => 'nullable|string|max:500',
             'password'  => 'required|string',
@@ -372,14 +396,38 @@ class AdminPaymentController extends Controller
         }
 
         $balance = Balance::forUser($userId);
+        $amount  = round((float) $request->montant, 2);
+        $adminId = \Illuminate\Support\Facades\Auth::id();
+        $note    = $request->note ?: 'Ajustement manuel admin';
 
-        if ($request->type === 'credit') {
-            $balance->crediter($request->montant);
-        } else {
-            if ($balance->solde_disponible < $request->montant) {
-                return response()->json(['success' => false, 'message' => 'Solde insuffisant.'], 400);
+        if ($request->type === 'debit' && $balance->solde_disponible < $amount) {
+            return response()->json(['success' => false, 'message' => 'Solde insuffisant.'], 400);
+        }
+
+        \Illuminate\Support\Facades\DB::beginTransaction();
+        try {
+            if ($request->type === 'credit') {
+                $balance->crediter($amount);
+                \App\Models\WalletTransaction::logCredit(
+                    $userId, 'admin_credit',
+                    $amount, 0, 0, $amount,
+                    'admin_adjustment', null,
+                    $note, $adminId
+                );
+            } else {
+                $balance->debiter($amount);
+                \App\Models\WalletTransaction::logDebit(
+                    $userId, 'admin_debit',
+                    $amount,
+                    'admin_adjustment', null,
+                    $note, $adminId
+                );
             }
-            $balance->debiter($request->montant);
+            \Illuminate\Support\Facades\DB::commit();
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\DB::rollBack();
+            \Log::error('adjustBalance failed', ['error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'message' => 'Erreur lors de l\'ajustement.'], 500);
         }
 
         return response()->json([

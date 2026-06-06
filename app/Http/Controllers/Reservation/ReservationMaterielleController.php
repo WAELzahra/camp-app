@@ -65,9 +65,9 @@ class ReservationMaterielleController extends Controller
         }
 
         $receiverType = $user->role_id === 4 ? 'supplier' : 'camper';
-        $mapped = $reservations->map(function ($r) use ($receiverType) {
+        $mapped = $reservations->map(function ($r) use ($receiverType, $user) {
             $base = max(0, round((float) $r->montant_total - (float) ($r->platform_fee_amount ?? 0), 2));
-            $calc = CommissionService::calculate($receiverType, $base);
+            $calc = CommissionService::calculateForUser($receiverType, $base, $user->id);
             $r->commission_rate   = round($calc['rate'] * 100, 2);
             $r->commission_amount = $calc['commission'];
             $r->net_revenue       = $calc['net_revenue'];
@@ -268,7 +268,7 @@ class ReservationMaterielleController extends Controller
             ], 201);
         } catch (\Throwable $e) {
             DB::rollBack();
-            return response()->json(['status' => 'error', 'message' => 'An error occurred: ' . $e->getMessage()], 500);
+            return response()->json(['status' => 'error', 'message' => 'An unexpected error occurred. Please try again.'], 500);
         }
     }
     // -------------------------------------------------------------------------
@@ -323,7 +323,7 @@ class ReservationMaterielleController extends Controller
                 $platformFeeAmt  = (float) ($reservation->platform_fee_amount ?? 0);
                 $gross           = (float) $reservation->montant_total;
                 $base            = max(0, round($gross - $platformFeeAmt, 2));
-                $calc            = CommissionService::calculate($receiverType, $base);
+                $calc            = CommissionService::calculateForUser($receiverType, $base, $reservation->fournisseur_id);
 
                 // Release camper's escrowed funds (debit already happened at store())
                 Balance::forUser($reservation->user_id)->releaseEscrow($gross);
@@ -360,23 +360,32 @@ class ReservationMaterielleController extends Controller
             }
 
             DB::commit();
-
-            \Log::info('Reservation confirmed, sending email', [
-                'camper_email' => $reservation->user->email,
-                'pin_length'   => strlen($rawPin),
-            ]);
-
-            Mail::to($reservation->user->email)->send(new ReservationConfirmedToCamper($reservation, $rawPin));
-
-            return response()->json([
-                'message'     => 'Reservation confirmed. PIN has been sent to the camper by email.',
-                'reservation' => $reservation,
-            ]);
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             DB::rollBack();
             \Log::error('Confirm failed', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
-            return response()->json(['message' => 'Error confirming reservation: ' . $e->getMessage()], 500);
+            return response()->json(['message' => 'An unexpected error occurred. Please try again.'], 500);
         }
+
+        // Mail is sent outside the transaction — a mail failure must not roll back a committed reservation.
+        try {
+            \Log::info('Reservation confirmed, sending PIN email', [
+                'reservation_id' => $reservation->id,
+                'camper_email'   => $reservation->user->email,
+            ]);
+            Mail::to($reservation->user->email)->send(new ReservationConfirmedToCamper($reservation, $rawPin));
+        } catch (\Throwable $mailErr) {
+            \Log::error('PIN email failed — reservation confirmed but camper not notified', [
+                'reservation_id' => $reservation->id,
+                'camper_email'   => $reservation->user->email,
+                'error'          => $mailErr->getMessage(),
+            ]);
+            // Don't return 500 — the reservation IS confirmed. Admin can generate an emergency PIN if needed.
+        }
+
+        return response()->json([
+            'message'     => 'Reservation confirmed. PIN has been sent to the camper by email.',
+            'reservation' => $reservation,
+        ]);
     }
     public function reject(int $id)
     {
@@ -472,7 +481,7 @@ class ReservationMaterielleController extends Controller
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['message' => 'Error: ' . $e->getMessage()], 500);
+            return response()->json(['message' => 'An unexpected error occurred. Please try again.'], 500);
         }
     }
 
@@ -499,13 +508,22 @@ class ReservationMaterielleController extends Controller
 
                 // If confirmed: supplier was credited at confirmation — claw it back
                 if ($originalStatus === 'confirmed') {
+                    // Use stored net_amount for exact clawback (prevents mismatch if rate changed)
+                    $origTx = WalletTransaction::where('user_id', $reservation->fournisseur_id)
+                        ->where('type', 'credit')
+                        ->where('category', 'reservation_income')
+                        ->where('reference_type', 'materiel_reservation')
+                        ->where('reference_id', $reservation->id)
+                        ->first();
+                    $base = max(0, round($gross - (float) ($reservation->platform_fee_amount ?? 0), 2));
                     $fournisseur  = Auth::user();
                     $receiverType = $fournisseur->role_id === 4 ? 'supplier' : 'camper';
-                    $base = max(0, round($gross - (float) ($reservation->platform_fee_amount ?? 0), 2));
-                    $calc = CommissionService::calculate($receiverType, $base);
-                    Balance::forUser($reservation->fournisseur_id)->debiter($calc['net_revenue']);
+                    $netToClawback = $origTx
+                        ? (float) $origTx->net_amount
+                        : CommissionService::calculateForUser($receiverType, $base, $reservation->fournisseur_id)['net_revenue'];
+                    Balance::forUser($reservation->fournisseur_id)->debiter($netToClawback);
                     WalletTransaction::logDebit(
-                        $reservation->fournisseur_id, 'refund_out', $calc['net_revenue'],
+                        $reservation->fournisseur_id, 'refund_out', $netToClawback,
                         'materiel_reservation', $reservation->id,
                         "Remboursement annulation confirmée — réservation #{$reservation->id}",
                         $reservation->user_id
@@ -543,7 +561,7 @@ class ReservationMaterielleController extends Controller
             return response()->json(['message' => 'Reservation canceled.', 'reservation' => $reservation]);
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['message' => 'Error: ' . $e->getMessage()], 500);
+            return response()->json(['message' => 'An unexpected error occurred. Please try again.'], 500);
         }
     }
 
@@ -585,15 +603,23 @@ class ReservationMaterielleController extends Controller
                     $refundAmt = $feeCalc ? $feeCalc['refund_amount'] : $gross;
                     $feeDesc   = $feeCalc ? $feeCalc['tier_label']    : 'Full refund';
 
-                    // Claw back from supplier (debit what they received at confirmation)
+                    // Claw back from supplier exactly what they received (use stored net_amount)
+                    $origTx = \App\Models\WalletTransaction::where('user_id', $reservation->fournisseur_id)
+                        ->where('type', 'credit')
+                        ->where('category', 'reservation_income')
+                        ->where('reference_type', 'materiel_reservation')
+                        ->where('reference_id', $reservation->id)
+                        ->first();
                     $reservation->load('fournisseur');
                     $receiverType = ($reservation->fournisseur && $reservation->fournisseur->role_id === 4)
                         ? 'supplier' : 'camper';
                     $base = max(0, round($gross - (float) ($reservation->platform_fee_amount ?? 0), 2));
-                    $calc = \App\Services\CommissionService::calculate($receiverType, $base);
-                    Balance::forUser($reservation->fournisseur_id)->debiter($calc['net_revenue']);
+                    $netToClawback = $origTx
+                        ? (float) $origTx->net_amount
+                        : \App\Services\CommissionService::calculateForUser($receiverType, $base, $reservation->fournisseur_id)['net_revenue'];
+                    Balance::forUser($reservation->fournisseur_id)->debiter($netToClawback);
                     \App\Models\WalletTransaction::logDebit(
-                        $reservation->fournisseur_id, 'refund_out', $calc['net_revenue'],
+                        $reservation->fournisseur_id, 'refund_out', $netToClawback,
                         'materiel_reservation', $reservation->id,
                         "Remboursement annulation camper — {$feeDesc} — #{$reservation->id}",
                         $reservation->user_id
@@ -658,7 +684,7 @@ class ReservationMaterielleController extends Controller
             return response()->json(['message' => 'Reservation canceled successfully.', 'reservation' => $reservation]);
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['message' => 'Error: ' . $e->getMessage()], 500);
+            return response()->json(['message' => 'An unexpected error occurred. Please try again.'], 500);
         }
     }
 
@@ -701,7 +727,7 @@ class ReservationMaterielleController extends Controller
             return response()->json(['message' => count($overdue) . ' expired reservation(s) marked as disputed.']);
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['message' => 'Error: ' . $e->getMessage()], 500);
+            return response()->json(['message' => 'An unexpected error occurred. Please try again.'], 500);
         }
     }
 }

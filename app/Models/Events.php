@@ -83,6 +83,11 @@ class Events extends Model
         return $this->hasMany(Reservations_events::class, 'event_id');
     }
 
+    public function services()
+    {
+        return $this->hasMany(EventService::class, 'event_id')->where('is_active', true);
+    }
+
     /**
      * Get all photos for this event - FIXED: use Photo model (singular)
      */
@@ -140,34 +145,38 @@ class Events extends Model
 }
 
     /**
-     * Check if event is fully booked
+     * Check if event is fully booked (events with no capacity are never fully booked)
      */
     public function isFullyBooked(): bool
     {
+        if ($this->remaining_spots === null) return false;
         return $this->remaining_spots <= 0;
     }
 
     /**
-     * Check if event has started
+     * Check if event has started (custom events with no date are treated as started)
      */
     public function hasStarted(): bool
     {
+        if (!$this->start_date) return true;
         return now()->greaterThanOrEqualTo($this->start_date);
     }
 
     /**
-     * Check if event has ended
+     * Check if event has ended (custom events with no end date never expire)
      */
     public function hasEnded(): bool
     {
+        if (!$this->end_date) return false;
         return now()->greaterThan($this->end_date);
     }
 
     /**
-     * Get event duration in days
+     * Get event duration in days (0 for events without dates)
      */
     public function getDurationInDays(): int
     {
+        if (!$this->start_date || !$this->end_date) return 0;
         return $this->start_date->diffInDays($this->end_date) + 1;
     }
 
@@ -213,11 +222,14 @@ class Events extends Model
     }
 
     /**
-     * Scope for events with available spots
+     * Scope for events with available spots (null capacity = unlimited = always available)
      */
     public function scopeWithAvailableSpots($query)
     {
-        return $query->where('remaining_spots', '>', 0);
+        return $query->where(function ($q) {
+            $q->whereNull('remaining_spots')
+              ->orWhere('remaining_spots', '>', 0);
+        });
     }
 
     /**

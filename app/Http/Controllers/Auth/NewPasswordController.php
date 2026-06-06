@@ -7,6 +7,7 @@ use App\Services\PasswordResetService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Log;
+use Laravel\Sanctum\PersonalAccessToken;
 
 class NewPasswordController extends Controller
 {
@@ -36,19 +37,38 @@ class NewPasswordController extends Controller
             ], 422);
         }
 
+        // If the request carries a valid Sanctum token, the email must belong to that user.
+        $bearerToken = $request->bearerToken();
+        if ($bearerToken) {
+            $accessToken = PersonalAccessToken::findToken($bearerToken);
+            if ($accessToken) {
+                $tokenOwnerEmail = $accessToken->tokenable?->email;
+                if ($tokenOwnerEmail && strtolower($tokenOwnerEmail) !== strtolower($request->email)) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'You can only reset your own account password.',
+                    ], 403);
+                }
+            }
+        }
+
         try {
             $result = $this->passwordResetService->createResetRequest($request->email);
             return response()->json($result, $result['success'] ? 200 : 422);
 
-        } catch (\Exception $e) {
-            Log::error('Failed to send reset email: ' . $e->getMessage());
+        } catch (\Throwable $e) {
+            Log::error('Failed to send reset email', [
+                'exception' => get_class($e),
+                'message'   => $e->getMessage(),
+                'email'     => $request->input('email'),
+            ]);
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to send reset email. Please try again.'
             ], 500);
         }
     }
-    
+
     /**
      * Verify reset code
      */
@@ -58,7 +78,7 @@ class NewPasswordController extends Controller
             'email' => 'required|email',
             'code' => 'required|string|size:6'
         ]);
-        
+
         if ($validator->fails()) {
             return response()->json([
                 'success' => false,
@@ -66,24 +86,27 @@ class NewPasswordController extends Controller
                 'errors' => $validator->errors()
             ], 422);
         }
-        
+
         try {
             $result = $this->passwordResetService->verifyResetCode(
                 $request->email,
                 $request->code
             );
-            
+
             return response()->json($result);
-            
-        } catch (\Exception $e) {
-            Log::error('Failed to verify reset code: ' . $e->getMessage());
+
+        } catch (\Throwable $e) {
+            Log::error('Failed to verify reset code', [
+                'exception' => get_class($e),
+                'message'   => $e->getMessage(),
+            ]);
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to verify code. Please try again.'
             ], 500);
         }
     }
-    
+
     /**
      * Reset password after code verification
      */
@@ -94,7 +117,7 @@ class NewPasswordController extends Controller
             'code' => 'required|string|size:6',
             'password' => 'required|string|min:8|confirmed'
         ]);
-        
+
         if ($validator->fails()) {
             return response()->json([
                 'success' => false,
@@ -102,18 +125,35 @@ class NewPasswordController extends Controller
                 'errors' => $validator->errors()
             ], 422);
         }
-        
+
+        $bearerToken = $request->bearerToken();
+        if ($bearerToken) {
+            $accessToken = PersonalAccessToken::findToken($bearerToken);
+            if ($accessToken) {
+                $tokenOwnerEmail = $accessToken->tokenable?->email;
+                if ($tokenOwnerEmail && strtolower($tokenOwnerEmail) !== strtolower($request->email)) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'You can only reset your own account password.',
+                    ], 403);
+                }
+            }
+        }
+
         try {
             $result = $this->passwordResetService->resetPassword(
                 $request->email,
                 $request->code,
                 $request->password
             );
-            
+
             return response()->json($result);
-            
-        } catch (\Exception $e) {
-            Log::error('Failed to reset password: ' . $e->getMessage());
+
+        } catch (\Throwable $e) {
+            Log::error('Failed to reset password', [
+                'exception' => get_class($e),
+                'message'   => $e->getMessage(),
+            ]);
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to reset password. Please try again.'

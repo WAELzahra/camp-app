@@ -12,7 +12,11 @@ class BroadcastServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        if (config('broadcasting.default') === 'null') {
+            return;
+        }
 
+        Broadcast::routes();
         require base_path('routes/channels.php');
     }
 }

@@ -37,7 +37,7 @@ class ProfileGuide extends Model
      */
     public function getCertificatUrlAttribute(): ?string
     {
-        return $this->certificat_path ? asset('storage/' . $this->certificat_path) : null;
+        return $this->certificat_path ? storage_url($this->certificat_path) : null;
     }
 
     /**

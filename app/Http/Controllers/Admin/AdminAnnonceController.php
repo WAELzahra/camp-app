@@ -119,7 +119,7 @@ class AdminAnnonceController extends Controller
             'status'      => 'nullable|in:pending,approved,rejected',
             'user_id'     => 'nullable|exists:users,id',
             'photos'      => 'nullable|array',
-            'photos.*'    => 'image|mimes:jpeg,png,jpg,gif|max:2048',
+            'photos.*'    => 'image|mimes:jpeg,png,jpg,gif|max:5120',
         ]);
 
         if ($validator->fails()) {
@@ -177,7 +177,7 @@ class AdminAnnonceController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['success' => false, 'message' => 'Erreur lors de la création', 'error' => $e->getMessage()], 500);
+            return response()->json(['success' => false, 'message' => 'Erreur lors de la création', 'error' => 'server_error'], 500);
         }
     }
 
@@ -263,7 +263,7 @@ class AdminAnnonceController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['success' => false, 'message' => 'Erreur lors de la mise à jour', 'error' => $e->getMessage()], 500);
+            return response()->json(['success' => false, 'message' => 'Erreur lors de la mise à jour', 'error' => 'server_error'], 500);
         }
     }
 
@@ -428,7 +428,7 @@ class AdminAnnonceController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['success' => false, 'message' => 'Erreur lors du traitement', 'error' => $e->getMessage()], 500);
+            return response()->json(['success' => false, 'message' => 'Erreur lors du traitement', 'error' => 'server_error'], 500);
         }
     }
 
@@ -458,7 +458,7 @@ class AdminAnnonceController extends Controller
             ],
             'by_user_role' => [
                 'campeur'     => Annonce::whereHas('user', fn ($q) => $q->whereHas('role', fn ($r) => $r->where('name', 'campeur')))->count(),
-                'groupe'      => Annonce::whereHas('user', fn ($q) => $q->whereHas('role', fn ($r) => $r->where('name', 'groupe')))->count(),
+                'groupe'      => Annonce::whereHas('user', fn ($q) => $q->where('role_id', 2))->count(),
                 'fournisseur' => Annonce::whereHas('user', fn ($q) => $q->whereHas('role', fn ($r) => $r->where('name', 'fournisseur')))->count(),
                 'admin'       => Annonce::whereHas('user', fn ($q) => $q->whereHas('role', fn ($r) => $r->where('name', 'admin')))->count(),
             ],
@@ -578,7 +578,7 @@ class AdminAnnonceController extends Controller
             'photos' => $annonce->photos->map(function ($photo) {
                 return [
                     'id'       => $photo->id,
-                    'url'      => asset('storage/' . $photo->path_to_img),  // ← toujours défini
+                    'url'      => storage_url($photo->path_to_img),  // ← toujours défini
                     'is_cover' => (bool) ($photo->is_cover ?? false),
                 ];
             })->values()->toArray(),

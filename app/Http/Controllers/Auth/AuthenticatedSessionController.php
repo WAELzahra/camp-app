@@ -87,6 +87,11 @@ class AuthenticatedSessionController extends Controller
     $credentials = $request->only('email', 'password');
 
     if (!Auth::attempt($credentials)) {
+        Log::channel('security')->warning('Failed login attempt', [
+            'email' => $request->input('email'),
+            'ip'    => $request->ip(),
+            'ua'    => $request->userAgent(),
+        ]);
         return response()->json(['message' => 'Invalid credentials'], 401);
     }
 
@@ -99,8 +104,14 @@ class AuthenticatedSessionController extends Controller
     $user->last_login_at = now();
     $user->save();
 
+    Log::channel('security')->info('Successful login', [
+        'user_id' => $user->id,
+        'email'   => $user->email,
+        'ip'      => $request->ip(),
+    ]);
+
     return response()->json([
-        'user' => $user
+        'user' => new \App\Http\Resources\UserResource($user->load('role')),
     ]);
 }
 
@@ -132,5 +143,35 @@ class AuthenticatedSessionController extends Controller
     public function apiLogin(Request $request)
     {
         return $this->store($request);
+    }
+
+    /**
+     * Connexion Postman/API — retourne un token Sanctum Bearer.
+     */
+    public function tokenLogin(Request $request)
+    {
+        $credentials = $request->validate([
+            'email'    => 'required|email',
+            'password' => 'required|string',
+        ]);
+
+        if (!Auth::attempt($credentials)) {
+            return response()->json(['success' => false, 'message' => 'Identifiants incorrects'], 401);
+        }
+
+        $user = Auth::user();
+        $user->load('role');
+
+        $token = $user->createToken('postman-token')->plainTextToken;
+
+        return response()->json([
+            'success' => true,
+            'token'   => $token,
+            'user'    => [
+                'uuid'  => $user->uuid,
+                'email' => $user->email,
+                'role'  => $user->role->name ?? null,
+            ],
+        ]);
     }
 }

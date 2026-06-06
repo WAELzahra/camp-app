@@ -54,7 +54,7 @@ class GroupeCoOwnerController extends Controller
                 'first_name' => $u->first_name,
                 'last_name'  => $u->last_name,
                 'email'      => $u->email,
-                'avatar'     => $u->avatar ? asset('storage/' . $u->avatar) : null,
+                'avatar'     => $u->avatar ? storage_url($u->avatar) : null,
             ]);
 
         return response()->json(['data' => $users]);
@@ -79,7 +79,7 @@ class GroupeCoOwnerController extends Controller
                 'first_name' => $u->first_name,
                 'last_name'  => $u->last_name,
                 'email'      => $u->email,
-                'avatar'     => $u->avatar ? asset('storage/' . $u->avatar) : null,
+                'avatar'     => $u->avatar ? storage_url($u->avatar) : null,
             ]);
 
         return response()->json(['data' => $coOwners]);
@@ -121,7 +121,7 @@ class GroupeCoOwnerController extends Controller
                 'first_name' => $target->first_name,
                 'last_name'  => $target->last_name,
                 'email'      => $target->email,
-                'avatar'     => $target->avatar ? asset('storage/' . $target->avatar) : null,
+                'avatar'     => $target->avatar ? storage_url($target->avatar) : null,
             ],
         ]);
     }

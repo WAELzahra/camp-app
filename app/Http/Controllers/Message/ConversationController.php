@@ -40,7 +40,7 @@ class ConversationController extends Controller
                       ->whereNull('left_at');
                 })
                 ->with(['participants' => function($q) {
-                    $q->with('user:id,first_name,last_name,avatar')
+                    $q->with('user:id,uuid,first_name,last_name,avatar')
                       ->whereNull('left_at');
                 }])
                 ->with('latestMessage');
@@ -61,7 +61,7 @@ class ConversationController extends Controller
                 
                 // Load sender for latest message if it exists
                 if ($conversation->latestMessage) {
-                    $conversation->latestMessage->load('sender:id,first_name,last_name,avatar');
+                    $conversation->latestMessage->load('sender:id,uuid,first_name,last_name,avatar');
                 }
             }
 
@@ -117,25 +117,32 @@ class ConversationController extends Controller
     {
         $user = Auth::user();
         $request->validate([
-            'user_id' => [
-                'required',
-                'exists:users,id',
-                function ($attribute, $value, $fail) use ($user) {
-                    if ($value == $user->id) {
-                        $fail('You cannot start a conversation with yourself.');
-                    }
-                },
-            ],
-            'initial_message' => 'nullable|string|max:5000'
+            'user_id'         => 'required',
+            'initial_message' => 'nullable|string|max:5000',
         ]);
+
+        // Resolve numeric id or UUID to a target user
+        $rawId      = $request->user_id;
+        $targetUser = is_numeric($rawId)
+            ? \App\Models\User::find((int) $rawId)
+            : \App\Models\User::where('uuid', $rawId)->first();
+
+        if (!$targetUser) {
+            return response()->json(['message' => 'User not found.'], 404);
+        }
+        if ($targetUser->id === $user->id) {
+            return response()->json(['message' => 'You cannot start a conversation with yourself.'], 422);
+        }
+
+        $targetId = $targetUser->id;
 
         // Check if conversation already exists
         $existing = Conversation::where('type', 'direct')
-            ->whereHas('participants', function($q) use ($user, $request) {
+            ->whereHas('participants', function($q) use ($user) {
                 $q->where('user_id', $user->id);
             })
-            ->whereHas('participants', function($q) use ($request) {
-                $q->where('user_id', $request->user_id);
+            ->whereHas('participants', function($q) use ($targetId) {
+                $q->where('user_id', $targetId);
             })
             ->first();
 
@@ -175,7 +182,7 @@ class ConversationController extends Controller
                 ],
                 [
                     'conversation_id' => $conversation->id,
-                    'user_id' => $request->user_id,
+                    'user_id' => $targetId,
                     'role' => 'member',
                     'joined_at' => now(),
                 ]
@@ -199,7 +206,7 @@ class ConversationController extends Controller
 
                 // Create pending status for receiver
                 $message->statuses()->create([
-                    'user_id' => $request->user_id,
+                    'user_id' => $targetId,
                     'delivered_at' => null,
                     'read_at' => null,
                 ]);
@@ -222,7 +229,7 @@ class ConversationController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to start conversation',
-                'error' => $e->getMessage()
+                'error' => 'server_error'
             ], 500);
         }
     }
@@ -251,10 +258,10 @@ class ConversationController extends Controller
             }
 
             $messages = Message::where('conversation_id', $conversationId)
-                ->with(['sender:id,first_name,last_name,avatar'])
+                ->with(['sender:id,uuid,first_name,last_name,avatar'])
                 ->with(['attachments'])
                 ->with(['reactions' => function($q) {
-                    $q->with('user:id,first_name,last_name');
+                    $q->with('user:id,uuid,first_name,last_name');
                 }])
                 ->orderBy('created_at', 'desc')
                 ->paginate($request->get('per_page', 30));
@@ -311,7 +318,7 @@ class ConversationController extends Controller
                 'content' => 'required_without:attachments|string|max:5000',
                 'reply_to_id' => 'nullable|exists:messages,id',
                 'attachments' => 'nullable|array',
-                'attachments.*' => 'file|mimes:jpeg,png,jpg,gif,pdf,doc,docx|max:25600',
+                'attachments.*' => 'file|mimes:jpeg,png,jpg,gif,pdf,doc,docx|max:5120',
             ]);
 
             $conversation = Conversation::findOrFail($conversationId);
@@ -385,7 +392,7 @@ class ConversationController extends Controller
 
             DB::commit();
 
-            $message->load(['sender:id,first_name,last_name,avatar', 'attachments']);
+            $message->load(['sender:id,uuid,first_name,last_name,avatar', 'attachments']);
 
             // Broadcast to other participants
             try {
@@ -637,7 +644,7 @@ class ConversationController extends Controller
                 $q->where('user_id', $groupId);
             })
             ->with(['participants' => function($q) {
-                $q->with('user:id,first_name,last_name,avatar,last_seen_at');
+                $q->with('user:id,uuid,first_name,last_name,avatar,last_seen_at');
             }])
             ->with('latestMessage.sender')
             ->orderBy('last_message_at', 'desc')
@@ -747,7 +754,7 @@ class ConversationController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to start conversation',
-                'error' => $e->getMessage()
+                'error' => 'server_error'
             ], 500);
         }
     }
@@ -772,7 +779,7 @@ class ConversationController extends Controller
                 $q->where('user_id', $user->id);
             })
             ->with(['participants' => function($q) {
-                $q->with('user:id,first_name,last_name,avatar');
+                $q->with('user:id,uuid,first_name,last_name,avatar');
             }])
             ->with('latestMessage.sender')
             ->orderBy('last_message_at', 'desc')

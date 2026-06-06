@@ -33,6 +33,8 @@ class Reservations_materielles extends Model
         'status',
         'pin_code',             // stored as bcrypt hash
         'pin_used_at',
+        'admin_pin_code',       // admin emergency override, bcrypt hash
+        'admin_pin_used_at',
         // Payment
         'payment_id',
         'payment_method',
@@ -53,6 +55,7 @@ class Reservations_materielles extends Model
         'retrieved_at'        => 'datetime',
         'returned_at'         => 'datetime',
         'pin_used_at'         => 'datetime',
+        'admin_pin_used_at'   => 'datetime',
         'montant_total'       => 'float',
         'frais_livraison'     => 'float',
         'platform_fee_amount' => 'float',
@@ -63,8 +66,9 @@ class Reservations_materielles extends Model
      * Fields that should never appear in API responses.
      */
     protected $hidden = [
-        'pin_code', // hashed — never expose
-        'cin_camper', // sensitive legal data
+        'pin_code',       // hashed — never expose
+        'admin_pin_code', // hashed — never expose
+        'cin_camper',     // sensitive legal data
     ];
 
     // -----------------------------------------------------------------------
@@ -125,19 +129,38 @@ class Reservations_materielles extends Model
     }
 
     /**
+     * Generate a random 6-digit admin emergency override PIN.
+     * Stored as a bcrypt hash. Raw value is returned once — never stored plaintext.
+     */
+    public function generateAdminPin(): string
+    {
+        $raw = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+        $this->admin_pin_code = Hash::make($raw);
+        $this->save();
+        return $raw;
+    }
+
+    /**
      * Verify a PIN submitted by the supplier.
-     * Returns true if correct, and marks the PIN as used.
+     * Checks the regular camper PIN first, then the admin emergency override PIN.
+     * Returns true if either matches and hasn't been used yet.
      */
     public function verifyPin(string $raw): bool
     {
-        if (!$this->pin_code || $this->pin_used_at) {
-            return false; // already used or not generated
-        }
-
-        if (Hash::check($raw, $this->pin_code)) {
+        // Check regular camper PIN
+        if ($this->pin_code && !$this->pin_used_at && Hash::check($raw, $this->pin_code)) {
             $this->pin_used_at  = now();
             $this->retrieved_at = now();
             $this->status       = 'retrieved';
+            $this->save();
+            return true;
+        }
+
+        // Check admin emergency override PIN
+        if ($this->admin_pin_code && !$this->admin_pin_used_at && Hash::check($raw, $this->admin_pin_code)) {
+            $this->admin_pin_used_at = now();
+            $this->retrieved_at      = now();
+            $this->status            = 'retrieved';
             $this->save();
             return true;
         }

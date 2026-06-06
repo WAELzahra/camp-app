@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 // routes/api.php
 
 use Illuminate\Http\Request;
@@ -9,6 +9,7 @@ use App\Http\Controllers\Controller;
 // Authentication Controllers
 use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
+use App\Http\Controllers\Auth\SocialAuthController;
 use App\Http\Controllers\Auth\NewPasswordController;
 use App\Http\Controllers\Auth\EmailVerificationNotificationController;
 use App\Http\Controllers\Auth\PasswordController;
@@ -102,18 +103,26 @@ Route::get('/csrf-token', function () {
     return response()->json(['csrf_token' => csrf_token()]);
 });
 
-Route::post('/register', [RegisteredUserController::class, 'store']);
-Route::post('/login', [AuthenticatedSessionController::class, 'store'])->name('login');
-Route::post('/forgot-password', [NewPasswordController::class, 'sendResetEmail']);
-Route::post('/reset-password', [NewPasswordController::class, 'resetPassword']);
-Route::post('/verify-password', [NewPasswordController::class, 'verifyResetCode']);
+// -------------------- SOCIAL AUTH (Google / Facebook) --------------------
+Route::get('/auth/google/redirect',  [SocialAuthController::class, 'redirectToGoogle'])->name('google.redirect');
+Route::get('/auth/google/callback',  [SocialAuthController::class, 'handleGoogleCallback'])->name('google.callback');
+Route::get('/auth/facebook/redirect',[SocialAuthController::class, 'redirectToFacebook'])->name('facebook.redirect');
+Route::get('/auth/facebook/callback',[SocialAuthController::class, 'handleFacebookCallback'])->name('facebook.callback');
+Route::middleware('auth:sanctum')->post('/auth/social/complete-registration', [SocialAuthController::class, 'completeRegistration']);
+
+Route::middleware('throttle:register')->post('/register', [RegisteredUserController::class, 'store']);
+Route::middleware('throttle:login')->post('/login', [AuthenticatedSessionController::class, 'store'])->name('login');
+Route::post('/token-login', [AuthenticatedSessionController::class, 'tokenLogin']);
+Route::middleware('throttle:password-reset')->post('/forgot-password', [NewPasswordController::class, 'sendResetEmail']);
+Route::middleware('throttle:password-reset')->post('/reset-password', [NewPasswordController::class, 'resetPassword']);
+Route::middleware('throttle:password-reset')->post('/verify-password', [NewPasswordController::class, 'verifyResetCode']);
 
 // Email Verification
-Route::post('/send-verification', [VerifyEmailController::class, 'sendVerification']);
-Route::post('/verify-by-token', [VerifyEmailController::class, 'verifyByToken']);
-Route::post('/verify-by-code', [VerifyEmailController::class, 'verifyByCode']);
-Route::post('/resend-verification', [VerifyEmailController::class, 'resendVerification']);
-Route::get('/verification-status/{id}', [VerifyEmailController::class, 'verificationStatus']);
+Route::middleware('throttle:verification')->post('/send-verification', [VerifyEmailController::class, 'sendVerification']);
+Route::middleware('throttle:verification')->post('/verify-by-token', [VerifyEmailController::class, 'verifyByToken']);
+Route::middleware('throttle:verification')->post('/verify-by-code', [VerifyEmailController::class, 'verifyByCode']);
+Route::middleware('throttle:verification')->post('/resend-verification', [VerifyEmailController::class, 'resendVerification']);
+Route::middleware('auth:sanctum')->get('/verification-status/{id}', [VerifyEmailController::class, 'verificationStatus']);
 
 // Email Verification Signed Route
 Route::middleware('signed')->get('/email/verify/{id}/{hash}', function (EmailVerificationRequest $request) {
@@ -167,12 +176,19 @@ Route::middleware('auth:sanctum')->group(function () {
 });
 // -------------------- PUBLIC SHOPS & EQUIPMENT --------------------
 Route::get('/boutiques', [BoutiqueController::class, 'index']);
-Route::get('/boutiques/{fournisseur_id}', [BoutiqueController::class, 'show']);
+Route::get('/boutiques/uuid/{uuid}', [BoutiqueController::class, 'showByUuid']);
+Route::get('/boutiques/{fournisseur_id}', [BoutiqueController::class, 'show'])->where('fournisseur_id', '[0-9]+');
 Route::get('/materielles/categories', [MaterielleController::class, 'categories']);
 Route::get('/materielles/fournisseur/{fournisseur_id}', [MaterielleController::class, 'index']);
-Route::get('/materielles/{materielle_id}', [MaterielleController::class, 'show']);
+Route::get('/materielles/{materielle_id}', [MaterielleController::class, 'show'])->where('materielle_id', '[0-9]+');
 Route::get('/materielles/compare/{id1}/{id2}', [MaterielleController::class, 'compare']);
 Route::get('/materielles', [MaterielleController::class, 'marketplace']);
+
+// ── Supplier invitation token validation (public — no auth) ──────────────────
+Route::get('/supplier-invitation/{token}', [\App\Http\Controllers\Organizer\OrganizerSupplierController::class, 'validateInvitationToken']);
+
+// ── Public: accepted suppliers for a given organizer ────────────────────────
+Route::get('/groups/{userId}/accepted-suppliers', [\App\Http\Controllers\Organizer\OrganizerSupplierController::class, 'publicAcceptedSuppliers']);
 
 // -------------------- PUBLIC EVENTS (UNIQUEMENT GET - POUR LES VISITEURS) --------------------
 Route::prefix('events')->group(function () {
@@ -182,6 +198,7 @@ Route::prefix('events')->group(function () {
     Route::get('/my-events', [EventController::class, 'myEvents']);
     Route::get('/{id}/share-links', [EventController::class, 'getEventShareLinks'])->where('id', '[0-9]+');
     Route::get('/{id}/copy-link', [EventController::class, 'getEventCopyLink'])->where('id', '[0-9]+');
+    Route::get('/{eventId}/services', [\App\Http\Controllers\Event\EventServiceController::class, 'index'])->where('eventId', '[0-9]+');
     Route::get('/{id}', [EventController::class, 'getEventDetails'])->where('id', '[0-9]+');
 });
 
@@ -201,6 +218,7 @@ Route::prefix('zones')->group(function () {
     Route::get('/top-by-season', [CampingZonesController::class, 'topZonesBySeason']);
     Route::get('/recommend', [CampingZonesController::class, 'recommendZones']);
     Route::get('/exclude-non-relevant', [CampingZonesController::class, 'excludeNonRelevantZones']);
+    Route::get('/registered-map', [CampingZonesController::class, 'registeredZonesMap']);
     Route::get('/{id}', [CampingZonesController::class, 'show']);
     Route::get('/{id}/validate-coordinates', [CampingZonesController::class, 'validateCoordinates']);
     Route::get('/{id}/stats', [CampingZonesController::class, 'zoneStats']);
@@ -227,7 +245,7 @@ Route::prefix('public')->group(function () {
 
 // -------------------- PUBLIC CENTER SERVICES API --------------------
 Route::prefix('centers')->group(function () {
-    Route::get('/services', [CenterServiceApiController::class, 'centersWithServices']);
+    Route::get('/list', [CenterServiceApiController::class, 'centersListSummary']);
     Route::get('/{center}/services', [CenterServiceApiController::class, 'centerServices']);
     Route::get('/service-categories', [CenterServiceApiController::class, 'serviceCategories']);
     Route::post('/calculate-price', [CenterServiceApiController::class, 'calculatePrice']);
@@ -245,15 +263,16 @@ Route::prefix('profile')->group(function () {
     Route::get('/public/{id}', [ProfileController::class, 'showById']);
 });
 
-// -------------------- PUBLIC USER VERIFICATION --------------------
-Route::get('/user/{id}/verification-status', function ($id) {
-    $user = \App\Models\User::find($id);
-    if (!$user) {
-        return response()->json(['error' => 'User not found'], 404);
+// -------------------- USER VERIFICATION STATUS (auth required) --------------------
+// Moved behind auth to prevent email enumeration via public user ID lookup.
+Route::middleware('auth:sanctum')->get('/user/{id}/verification-status', function ($id, \Illuminate\Http\Request $request) {
+    // Users may only check their own verification status
+    if ((int) $id !== $request->user()->id) {
+        return response()->json(['error' => 'Forbidden'], 403);
     }
+    $user = $request->user();
     return response()->json([
         'verified' => $user->hasVerifiedEmail(),
-        'email' => $user->email,
     ]);
 });
 
@@ -271,9 +290,29 @@ Route::get('/roles', function () {
 // ==================== AUTHENTICATED ROUTES (SANCTUM) ====================
 Route::middleware('auth:sanctum')->group(function () {
     
-    // Current User
-    Route::get('/user', fn(Request $request) => $request->user());
+    // Current User — returns UserResource (uuid as public ID, no numeric IDs)
+    Route::get('/user', function (Request $request) {
+        return new \App\Http\Resources\UserResource($request->user()->load('role'));
+    });
     Route::post('/logout', [AuthenticatedSessionController::class, 'destroy']);
+
+    // "me" endpoints — current user's own resources without numeric ID in URL
+    Route::get('/boutiques/me', function (Request $request) {
+        $boutique = \App\Models\Boutiques::where('fournisseur_id', $request->user()->id)->first();
+        return $boutique
+            ? response()->json($boutique)
+            : response()->json(null, 204);
+    });
+    Route::get('/materielles/me', function (Request $request) {
+        $materielles = \App\Models\Materielles::where('fournisseur_id', $request->user()->id)->get();
+        return response()->json(['data' => $materielles]);
+    });
+    Route::get('/groupes/my/co-owners', function (Request $request) {
+        return app(\App\Http\Controllers\Groupe\GroupeCoOwnerController::class)->list(
+            $request,
+            $request->user()->id
+        );
+    });
 
     // ---- Expenses (per-user CRUD) ----
     Route::prefix('my/expenses')->group(function () {
@@ -289,6 +328,107 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/my/balance', function () {
         $balance = \App\Models\Balance::forUser(auth()->id());
         return response()->json(['success' => true, 'data' => $balance]);
+    });
+
+    // ---- Escrow breakdown (camper: per-reservation held-funds detail) ----
+    Route::get('/my/escrow-breakdown', function () {
+        $uid   = auth()->id();
+        $items = [];
+
+        // Events pending validation/payment via wallet
+        $eventReservations = \App\Models\Reservations_events::with('event')
+            ->where('user_id', $uid)
+            ->whereIn('status', ['en_attente_validation', 'en_attente_paiement'])
+            ->where('payment_method', 'wallet')
+            ->get();
+
+        foreach ($eventReservations as $r) {
+            $event = $r->event;
+            if (!$event) continue;
+
+            $netBase        = round(($r->nbr_place * $event->price) - ($r->discount_amount ?? 0), 2);
+            $servicesTotal  = round(\App\Models\EventReservationService::where('event_reservation_id', $r->id)->sum('subtotal'), 2);
+            $platformFeeAmt = round((float) ($r->platform_fee_amount ?? 0), 2);
+            $lockedAmt      = round($netBase + $servicesTotal + $platformFeeAmt, 2);
+
+            if ($lockedAmt <= 0) continue;
+
+            $items[] = [
+                'type'          => 'event',
+                'id'            => $r->id,
+                'title'         => $event->title,
+                'status'        => $r->status,
+                'date'          => $r->created_at,
+                'locked_amount' => $lockedAmt,
+                'breakdown'     => [
+                    'base'     => $netBase,
+                    'services' => $servicesTotal,
+                    'fee'      => $platformFeeAmt,
+                ],
+            ];
+        }
+
+        // Centre reservations pending approval via wallet
+        $centreReservations = \App\Models\Reservations_centre::where('user_id', $uid)
+            ->where('status', 'pending')
+            ->where('payment_method', 'wallet')
+            ->get();
+
+        foreach ($centreReservations as $r) {
+            $profile    = \App\Models\Profile::where('user_id', $r->centre_id)->first();
+            $centreName = $profile?->profileCentre?->name ?? 'Centre';
+
+            $lockedAmt      = round((float) ($r->total_price ?? 0), 2);
+            $platformFeeAmt = round((float) ($r->platform_fee_amount ?? 0), 2);
+            $base           = round($lockedAmt - $platformFeeAmt, 2);
+
+            if ($lockedAmt <= 0) continue;
+
+            $items[] = [
+                'type'          => 'centre',
+                'id'            => $r->id,
+                'title'         => $centreName,
+                'status'        => $r->status,
+                'date'          => $r->created_at,
+                'locked_amount' => $lockedAmt,
+                'breakdown'     => [
+                    'base' => $base,
+                    'fee'  => $platformFeeAmt,
+                ],
+            ];
+        }
+
+        // Material reservations pending confirmation via wallet
+        $materialReservations = \App\Models\Reservations_materielles::with('materielle')
+            ->where('user_id', $uid)
+            ->where('status', 'pending')
+            ->where('payment_method', 'wallet')
+            ->get();
+
+        foreach ($materialReservations as $r) {
+            $lockedAmt      = round((float) ($r->montant_total ?? 0), 2);
+            $platformFeeAmt = round((float) ($r->platform_fee_amount ?? 0), 2);
+            $base           = round($lockedAmt - $platformFeeAmt, 2);
+
+            if ($lockedAmt <= 0) continue;
+
+            $items[] = [
+                'type'          => 'material',
+                'id'            => $r->id,
+                'title'         => $r->materielle?->nom ?? 'Matériel',
+                'status'        => $r->status,
+                'date'          => $r->created_at,
+                'locked_amount' => $lockedAmt,
+                'breakdown'     => [
+                    'base' => $base,
+                    'fee'  => $platformFeeAmt,
+                ],
+            ];
+        }
+
+        usort($items, fn ($a, $b) => strcmp((string) $b['date'], (string) $a['date']));
+
+        return response()->json(['success' => true, 'data' => $items]);
     });
 
     // ---- Withdrawal request (user submits) ----
@@ -483,15 +623,18 @@ Route::middleware('auth:sanctum')->group(function () {
 
         return response()->json(['success' => true, 'data' => $txns]);
     });
-    Route::get('/user/{userId}/status', function ($userId) {
+    Route::get('/user/{userId}/status', function ($userId, \Illuminate\Http\Request $request) {
         $user = \App\Models\User::find($userId);
         if (!$user) {
             return response()->json(['error' => 'User not found'], 404);
         }
+        $isOnline = $user->isOnline();
         return response()->json([
-            'online' => $user->isOnline(),
-            'last_seen' => $user->last_login_at,
-            'is_active' => $user->is_active
+            'online'    => $isOnline,
+            // Return a fuzzy "last seen" label rather than the raw timestamp —
+            // the exact last_login_at is private and must not be exposed cross-user.
+            'last_seen' => $isOnline ? null : $user->getOnlineStatusAttribute()['text'],
+            'is_active' => (bool) $user->is_active,
         ]);
     });
     
@@ -640,12 +783,19 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/my-interest-ids',         [EventInterestController::class, 'myInterestIds']);
         Route::get('/{id}/interest/check',     [EventInterestController::class, 'check']);
         
+        // Public: get available equipment from organizer's suppliers for a specific event
+        Route::get('/{eventId}/materials', [\App\Http\Controllers\Organizer\OrganizerSupplierController::class, 'eventMaterials']);
+
         Route::middleware(['group', 'require.active'])->group(function () {
             Route::post('/', [EventController::class, 'store']);
             Route::put('/{id}', [EventController::class, 'update']);
             Route::delete('/{id}', [EventController::class, 'destroy']);
             Route::patch('/participants/{id}/status', [EventController::class, 'updateStatus']);
             Route::post('/{id}/invite', [EventController::class, 'sendInvites']);
+            // Event services CRUD
+            Route::post('/{eventId}/services', [\App\Http\Controllers\Event\EventServiceController::class, 'store']);
+            Route::put('/{eventId}/services/{serviceId}', [\App\Http\Controllers\Event\EventServiceController::class, 'update']);
+            Route::delete('/{eventId}/services/{serviceId}', [\App\Http\Controllers\Event\EventServiceController::class, 'destroy']);
         });
     });
     
@@ -698,6 +848,26 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/co-owners/{userId}',            [GroupeCoOwnerController::class, 'remove']);
     });
     
+    // ── Organizer ↔ Supplier Association ─────────────────────────────────────
+    Route::prefix('organizer')->middleware(['organizer', 'require.active'])->group(function () {
+        // Organizer manages their supplier network
+        Route::get('/suppliers',                        [\App\Http\Controllers\Organizer\OrganizerSupplierController::class, 'mySuppliers']);
+        Route::get('/suppliers/accepted',               [\App\Http\Controllers\Organizer\OrganizerSupplierController::class, 'myAcceptedSuppliers']);
+        Route::get('/suppliers/search',                 [\App\Http\Controllers\Organizer\OrganizerSupplierController::class, 'searchSuppliers']);
+        Route::post('/suppliers/request',               [\App\Http\Controllers\Organizer\OrganizerSupplierController::class, 'requestLink']);
+        Route::post('/suppliers/invite',                [\App\Http\Controllers\Organizer\OrganizerSupplierController::class, 'inviteSupplier']);
+        Route::delete('/suppliers/link/{linkId}',       [\App\Http\Controllers\Organizer\OrganizerSupplierController::class, 'cancelLink']);
+        Route::get('/suppliers/{supplierId}/materials', [\App\Http\Controllers\Organizer\OrganizerSupplierController::class, 'supplierMaterials']);
+        Route::get('/materials',                        [\App\Http\Controllers\Organizer\OrganizerSupplierController::class, 'allAssociatedMaterials']);
+    });
+
+    // Supplier responds to organizer association requests
+    Route::prefix('supplier')->middleware(['fournisseur', 'require.active'])->group(function () {
+        Route::get('/association-requests',             [\App\Http\Controllers\Organizer\OrganizerSupplierController::class, 'myRequests']);
+        Route::patch('/association-requests/{linkId}/accept', [\App\Http\Controllers\Organizer\OrganizerSupplierController::class, 'acceptRequest']);
+        Route::patch('/association-requests/{linkId}/reject', [\App\Http\Controllers\Organizer\OrganizerSupplierController::class, 'rejectRequest']);
+    });
+
     // Group Reservation Management — requires approved account
     Route::prefix('group/reservations')->middleware(['require.active'])->group(function () {
         Route::get('/', [ReservationEventController::class, 'toutesMesReservations']);
@@ -1005,7 +1175,8 @@ Route::prefix('annonces')->group(function () {
         Route::post('/bulk-action', [AdminReservationsController::class, 'bulkAction']);
         Route::get('/export', [AdminReservationsController::class, 'export']);
         Route::post('/materielle/check-availability/{materialId}', [AdminReservationsController::class, 'checkMaterialAvailability']);
-        
+        Route::post('/materielle/{id}/generate-master-pin', [AdminReservationsController::class, 'generateMasterPin']);
+
         Route::prefix('{type}')->whereIn('type', ['center', 'events', 'materielle', 'guides'])->group(function () {
             Route::post('/', [AdminReservationsController::class, 'store']);
             Route::get('/{id}', [AdminReservationsController::class, 'show']);
@@ -1115,6 +1286,18 @@ Route::prefix('annonces')->group(function () {
         Route::put('/commissions',   [\App\Http\Controllers\Admin\AdminSettingsController::class, 'updateCommissions']);
     });
 
+    // -------------------- CUSTOM COMMISSION RULES --------------------
+    Route::prefix('custom-commissions')->group(function () {
+        Route::get('/',                         [\App\Http\Controllers\Admin\AdminCustomCommissionController::class, 'index']);
+        Route::post('/',                        [\App\Http\Controllers\Admin\AdminCustomCommissionController::class, 'store']);
+        Route::get('/users/search',             [\App\Http\Controllers\Admin\AdminCustomCommissionController::class, 'searchUsers']);
+        Route::get('/{id}',                     [\App\Http\Controllers\Admin\AdminCustomCommissionController::class, 'show']);
+        Route::put('/{id}',                     [\App\Http\Controllers\Admin\AdminCustomCommissionController::class, 'update']);
+        Route::delete('/{id}',                  [\App\Http\Controllers\Admin\AdminCustomCommissionController::class, 'destroy']);
+        Route::post('/{id}/users',              [\App\Http\Controllers\Admin\AdminCustomCommissionController::class, 'addUser']);
+        Route::delete('/{id}/users/{userId}',   [\App\Http\Controllers\Admin\AdminCustomCommissionController::class, 'removeUser']);
+    });
+
     // -------------------- ZONE REPORTS --------------------
     Route::prefix('signals')->group(function () {
         Route::get('/', [SignaleZoneController::class, 'indexAll']);
@@ -1145,9 +1328,11 @@ Route::prefix('annonces')->group(function () {
         Route::get('/{id}', [CampingCentreController::class, 'show']);
         Route::put('/{id}', [CampingCentreController::class, 'update']);
         Route::post('/{id}/assign-zones', [CampingCentreController::class, 'assignZones']);
-        Route::patch('/{id}/toggle-status', [CampingCentreController::class, 'toggleStatus']);
+        Route::patch('/{id}/toggle-status',  [CampingCentreController::class, 'toggleStatus']);
+        Route::patch('/{id}/toggle-partner', [CampingCentreController::class, 'togglePartner']);
         Route::post('/{id}/link-user', [CampingCentreController::class, 'linkUser']);
         Route::post('/{id}/unlink-user', [CampingCentreController::class, 'unlinkUser']);
+        Route::patch('/{id}/profile-centre', [CampingCentreController::class, 'updateProfileCentre']);
         Route::delete('/{id}', [CampingCentreController::class, 'destroy']);
         // Photo management
         Route::post('/{id}/photos', [CampingCentreController::class, 'addPhotos']);
@@ -1254,6 +1439,14 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     // Admin wallet
     Route::get('/wallet/summary',      [\App\Http\Controllers\Admin\AdminWalletController::class, 'summary']);
     Route::get('/wallet/transactions', [\App\Http\Controllers\Admin\AdminWalletController::class, 'transactions']);
+
+    // User financial tracker
+    Route::get('/track/search',        [\App\Http\Controllers\Admin\AdminUserTrackController::class, 'search']);
+    Route::get('/track/{userId}',      [\App\Http\Controllers\Admin\AdminUserTrackController::class, 'audit']);
+
+    // Admin balance adjustments (solde historique)
+    Route::get('/balance-history',     [\App\Http\Controllers\Admin\AdminUserTrackController::class, 'balanceHistory']);
+    Route::post('/balance-adjust',     [\App\Http\Controllers\Admin\AdminUserTrackController::class, 'balanceAdjust']);
 });
 
 // ==================== PROMO CODE ROUTES ====================

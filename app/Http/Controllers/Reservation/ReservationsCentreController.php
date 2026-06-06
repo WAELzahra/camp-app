@@ -514,7 +514,17 @@ class ReservationsCentreController extends Controller
             $gross       = (float) $reservation->total_price;
             $platformFee = (float) ($reservation->platform_fee_amount ?? 0);
             $base        = max(0, round($gross - $platformFee, 2));
-            $calc        = CommissionService::calculate('center', $base);
+            // Use stored net_amount from the original credit transaction to guarantee
+            // the clawback matches exactly what was credited, even if the commission rate changed.
+            $originalCreditTx = WalletTransaction::where('user_id', $reservation->centre_id)
+                ->where('type', 'credit')
+                ->where('category', 'reservation_income')
+                ->where('reference_type', 'centre_reservation')
+                ->where('reference_id', $reservation->id)
+                ->first();
+            $netToClawback = $originalCreditTx
+                ? (float) $originalCreditTx->net_amount
+                : CommissionService::calculateForUser('center', $base, $reservation->centre_id)['net_revenue'];
 
             DB::beginTransaction();
             try {
@@ -527,10 +537,10 @@ class ReservationsCentreController extends Controller
                 ReservationServiceItem::where('reservation_id', $reservation->id)
                     ->update(['status' => 'canceled', 'rejected_by' => $canceledBy, 'rejected_at' => $cancellationDate]);
 
-                // Clawback what the centre received
-                Balance::forUser($reservation->centre_id)->debiter($calc['net_revenue']);
+                // Clawback what the centre received (exact amount from original transaction)
+                Balance::forUser($reservation->centre_id)->debiter($netToClawback);
                 WalletTransaction::logDebit(
-                    $reservation->centre_id, 'refund_out', $calc['net_revenue'],
+                    $reservation->centre_id, 'refund_out', $netToClawback,
                     'centre_reservation', $reservation->id,
                     "Remboursement annulation centre #{$reservation->id}",
                     $reservation->user_id
@@ -580,7 +590,16 @@ class ReservationsCentreController extends Controller
             $gross       = (float) $reservation->total_price;
             $platformFee = (float) ($reservation->platform_fee_amount ?? 0);
             $base        = max(0, round($gross - $platformFee, 2));
-            $calc        = CommissionService::calculate('center', $base);
+            // Clawback must match what was originally credited to the centre.
+            $originalCreditTx = WalletTransaction::where('user_id', $reservation->centre_id)
+                ->where('type', 'credit')
+                ->where('category', 'reservation_income')
+                ->where('reference_type', 'centre_reservation')
+                ->where('reference_id', $reservation->id)
+                ->first();
+            $netToClawback = $originalCreditTx
+                ? (float) $originalCreditTx->net_amount
+                : CommissionService::calculateForUser('center', $base, $reservation->centre_id)['net_revenue'];
 
             $startDate = Carbon::parse($reservation->date_debut);
             $feeCalc   = CancellationPolicyService::preview('centre', $startDate, $gross, (int) $reservation->centre_id, Carbon::parse($reservation->created_at));
@@ -602,9 +621,9 @@ class ReservationsCentreController extends Controller
                     ->update(['status' => 'canceled', 'rejected_by' => $canceledBy, 'rejected_at' => $cancellationDate]);
 
                 // Claw back from centre exactly what they received at approval
-                Balance::forUser($reservation->centre_id)->debiter($calc['net_revenue']);
+                Balance::forUser($reservation->centre_id)->debiter($netToClawback);
                 WalletTransaction::logDebit(
-                    $reservation->centre_id, 'refund_out', $calc['net_revenue'],
+                    $reservation->centre_id, 'refund_out', $netToClawback,
                     'centre_reservation', $reservation->id,
                     "Remboursement annulation camper — {$feeDesc} — #{$reservation->id}",
                     $reservation->user_id
@@ -811,7 +830,7 @@ class ReservationsCentreController extends Controller
                 $gross       = (float) $reservation->total_price;
                 $platformFee = (float) ($reservation->platform_fee_amount ?? 0);
                 $base        = max(0, round($gross - $platformFee, 2));
-                $calc        = CommissionService::calculate('center', $base);
+                $calc        = CommissionService::calculateForUser('center', $base, $reservation->centre_id);
                 $commAmt     = $calc['commission'];
                 $net         = $calc['net_revenue'];
                 $commPct     = round($calc['rate'] * 100, 2);
@@ -989,7 +1008,7 @@ class ReservationsCentreController extends Controller
 
         } catch (\Throwable $e) {
             DB::rollBack();
-            return response()->json(['message' => 'Error: ' . $e->getMessage()], 500);
+            return response()->json(['message' => 'An unexpected error occurred. Please try again.'], 500);
         }
     }
 
@@ -1053,7 +1072,7 @@ class ReservationsCentreController extends Controller
             $newTotal    = (float) $reservation->total_price;
             $platformFee = (float) ($reservation->platform_fee_amount ?? 0);
             $base        = max(0, round($newTotal - $platformFee, 2));
-            $calc        = CommissionService::calculate('center', $base);
+            $calc        = CommissionService::calculateForUser('center', $base, $reservation->centre_id);
 
             // Find original escrowed amount
             $escrowTx       = WalletTransaction::where('user_id', $reservation->user_id)

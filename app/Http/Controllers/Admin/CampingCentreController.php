@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\CampingCentre;
 use App\Models\Camping_zones;
+use App\Models\CentreClaim;
 use App\Models\Photo;
 use App\Models\Profile;
 use App\Models\ProfileCentre;
@@ -27,11 +28,15 @@ class CampingCentreController extends Controller
     public function index()
     {
         // ── Auto-sync ACTIVE registered centre users that have no camping_centre yet ──
-        $linkedUserIds = CampingCentre::whereNotNull('user_id')->pluck('user_id');
+        // Skip users with a pending claim — their camping_centre will be created properly
+        // when the claim is approved, avoiding duplicate entries in the admin list.
+        $linkedUserIds       = CampingCentre::whereNotNull('user_id')->pluck('user_id');
+        $pendingClaimUserIds = CentreClaim::where('status', 'pending')->pluck('user_id');
 
         User::where('role_id', 3)
             ->where('is_active', 1)
             ->whereNotIn('id', $linkedUserIds)
+            ->whereNotIn('id', $pendingClaimUserIds)
             ->with(['profile'])
             ->get()
             ->each(function (User $user) {
@@ -68,19 +73,16 @@ class CampingCentreController extends Controller
                     'lng'               => (float) ($pc->longitude ?? 0),
                     'status'            => (bool) ($pc->disponibilite ?? false),
                     'validation_status' => 'approved',
+                    'is_partner'        => true,
                     'user_id'           => $user->id,
-                    'profile_centre_id' => $pc->id,  // ✅ This is now guaranteed to belong to the user
+                    'profile_centre_id' => $pc->id,
                 ]);
             });
 
-        // ── Return all centres with is_partner flag ──────────────────────────
-        $centres = CampingCentre::with(['zones', 'user', 'profileCentre'])
-            ->get()
-            ->map(function (CampingCentre $c) {
-                $c->is_partner = (! is_null($c->user_id) || ! is_null($c->profile_centre_id))
-                                && ($c->user?->is_active == 1);
-                return $c;
-            });
+        // ── Return only type='centre' rows — excludes hors_centre and anything else ──
+        $centres = CampingCentre::with(['user', 'profileCentre'])
+            ->where('type', 'centre')
+            ->get();
 
         return response()->json([
             'status'  => 'success',
@@ -96,27 +98,30 @@ class CampingCentreController extends Controller
         $request->validate([
             'nom'               => 'required|string|max:255',
             'adresse'           => 'required|string|max:255',
+            'telephone'         => 'nullable|string|max:20',
             'lat'               => 'required|numeric',
             'lng'               => 'required|numeric',
             'type'              => 'nullable|string',
             'description'       => 'nullable|string',
             'status'            => 'nullable|boolean',
+            'is_partner'        => 'nullable|boolean',
             'validation_status' => 'nullable|in:pending,approved,rejected',
             'user_id'           => 'nullable|exists:users,id',
-            // Photos : tableau de fichiers images
             'photos'            => 'nullable|array',
-            'photos.*'          => 'file|image|max:4096',
+            'photos.*'          => 'file|image|max:5120',
             'cover_index'       => 'nullable|integer|min:0',
         ]);
 
         $centre = CampingCentre::create([
             'nom'               => $request->nom,
             'adresse'           => $request->adresse,
+            'telephone'         => $request->telephone ?? null,
             'lat'               => $request->lat,
             'lng'               => $request->lng,
             'type'              => $request->type ?? 'centre',
             'description'       => $request->description,
             'status'            => $request->boolean('status', false),
+            'is_partner'        => $request->boolean('is_partner', false),
             'validation_status' => $request->input('validation_status', 'pending'),
             'user_id'           => $request->user_id ?? null,
         ]);
@@ -158,12 +163,14 @@ class CampingCentreController extends Controller
     $data = $request->validate([
         'nom'               => 'sometimes|string|max:255',
         'adresse'           => 'sometimes|string|max:255',
+        'telephone'         => 'nullable|string|max:20',
         'lat'               => 'sometimes|numeric',
         'lng'               => 'sometimes|numeric',
         'type'              => 'sometimes|string',
-        'image'             => 'nullable|image|max:2048',
+        'image'             => 'nullable|image|max:5120',
         'description'       => 'nullable|string',
         'status'            => 'sometimes|boolean',
+        'is_partner'        => 'sometimes|boolean',
         'validation_status' => 'nullable|in:pending,approved,rejected',
     ]);
 
@@ -233,25 +240,169 @@ class CampingCentreController extends Controller
     public function show($id)
     {
         $centre = CampingCentre::with([
-            'user.profile',         // user inscrit
-            'profileCentre',        // infos supplémentaires
-            'zones',                // zones associées
-            'photos',               // photos du centre
+            'user.profile',
+            'profileCentre',
+            'photos',
         ])->findOrFail($id);
 
-        $centreData = $centre->toArray();
-        $centreData['photos'] = $centre->photos->map(fn($p) => [
+        $photos = $centre->photos->map(fn($p) => [
             'id'       => $p->id,
-            'url'      => asset('storage/' . $p->path_to_img),
+            'url'      => storage_url($p->path_to_img),
             'path'     => $p->path_to_img,
             'is_cover' => (bool) $p->is_cover,
             'order'    => $p->order,
         ])->values()->toArray();
 
+        // Build profileCentre payload with camelCase key so the frontend type
+        // (AdminProfileCentre) can access it directly without any transformation.
+        $profileCentrePayload = null;
+        if ($centre->profileCentre) {
+            $pc = $centre->profileCentre;
+
+            $services = $pc->centerServices()
+                ->with('serviceCategory')
+                ->orderBy('is_standard', 'desc')
+                ->orderBy('created_at', 'asc')
+                ->get()
+                ->map(fn($s) => [
+                    'id'           => $s->id,
+                    'name'         => $s->name ?? $s->serviceCategory?->name ?? 'Service',
+                    'description'  => $s->description ?? $s->serviceCategory?->description ?? '',
+                    'price'        => (float) $s->price,
+                    'unit'         => $s->unit ?? $s->serviceCategory?->unit ?? '',
+                    'is_standard'  => (bool) $s->is_standard,
+                    'is_available' => (bool) $s->is_available,
+                ])->values()->toArray();
+
+            $equipment = $pc->equipment()
+                ->get()
+                ->map(fn($e) => [
+                    'id'           => $e->id,
+                    'type'         => $e->type,
+                    'is_available' => (bool) $e->is_available,
+                    'notes'        => $e->notes,
+                ])->values()->toArray();
+
+            $profileCentrePayload = [
+                'id'              => $pc->id,
+                'name'            => $pc->name,
+                'description'     => $pc->profile?->bio ?? null,
+                'price_per_night' => $pc->price_per_night !== null ? (float) $pc->price_per_night : null,
+                'category'        => $pc->category,
+                'capacite'        => $pc->capacite,
+                'disponibilite'   => (bool) $pc->disponibilite,
+                'contact_email'   => $pc->contact_email,
+                'contact_phone'   => $pc->contact_phone,
+                'manager_name'    => $pc->manager_name,
+                'established_date'=> $pc->established_date?->format('Y-m-d'),
+                'latitude'        => $pc->latitude !== null ? (float) $pc->latitude : null,
+                'longitude'       => $pc->longitude !== null ? (float) $pc->longitude : null,
+                'services'        => $services,
+                'equipment'       => $equipment,
+            ];
+        }
+
         return response()->json([
             'status' => 'success',
-            'centre' => $centreData,
+            'centre' => [
+                'id'                => $centre->id,
+                'nom'               => $centre->nom,
+                'type'              => $centre->type,
+                'description'       => $centre->description,
+                'adresse'           => $centre->adresse,
+                'telephone'         => $centre->telephone,
+                'lat'               => $centre->lat,
+                'lng'               => $centre->lng,
+                'image'             => $centre->image,
+                'status'            => (bool) $centre->status,
+                'is_partner'        => (bool) $centre->is_partner,
+                'validation_status' => $centre->validation_status,
+                'user_id'           => $centre->user_id,
+                'profile_centre_id' => $centre->profile_centre_id,
+                'created_at'        => $centre->created_at,
+                'updated_at'        => $centre->updated_at,
+                'photos'            => $photos,
+                'user'              => $centre->user ? [
+                    'id'         => $centre->user->id,
+                    'first_name' => $centre->user->first_name,
+                    'last_name'  => $centre->user->last_name,
+                    'email'      => $centre->user->email,
+                    'is_active'  => $centre->user->is_active,
+                    'avatar'     => $centre->user->avatar ? storage_url($centre->user->avatar) : null,
+                ] : null,
+                // camelCase so frontend AdminCentre.profileCentre works without transformation
+                'profileCentre'     => $profileCentrePayload,
+            ],
         ]);
+    }
+
+    /**
+     * PATCH /admin/centres/{id}/profile-centre
+     * Update ProfileCentre fields (price, category, capacity, contacts)
+     * and bulk-update service availability/prices.
+     */
+    public function updateProfileCentre(Request $request, $id)
+    {
+        $centre = CampingCentre::with('profileCentre')->findOrFail($id);
+
+        if (!$centre->profileCentre) {
+            return response()->json(['message' => 'No ProfileCentre linked to this centre.'], 422);
+        }
+
+        $validated = $request->validate([
+            'price_per_night' => 'nullable|numeric|min:0',
+            'category'        => 'nullable|string|max:100',
+            'capacite'        => 'nullable|integer|min:0',
+            'contact_email'   => 'nullable|email|max:255',
+            'contact_phone'   => 'nullable|string|max:50',
+            'manager_name'    => 'nullable|string|max:255',
+            'disponibilite'   => 'nullable|boolean',
+            'services'        => 'nullable|array',
+            'services.*.id'           => 'required|integer',
+            'services.*.price'        => 'required|numeric|min:0',
+            'services.*.is_available' => 'required|boolean',
+            'equipment'       => 'nullable|array',
+            'equipment.*.id'           => 'required|integer',
+            'equipment.*.is_available' => 'required|boolean',
+        ]);
+
+        $pc = $centre->profileCentre;
+
+        $pcFields = collect($validated)->only([
+            'price_per_night', 'category', 'capacite',
+            'contact_email', 'contact_phone', 'manager_name', 'disponibilite',
+        ])->filter(fn($v) => !is_null($v))->toArray();
+
+        if (!empty($pcFields)) {
+            $pc->update($pcFields);
+        }
+
+        // Sync CampingCentre.status with disponibilite if it changed
+        if (isset($validated['disponibilite'])) {
+            $centre->update(['status' => (bool) $validated['disponibilite']]);
+        }
+
+        // Bulk-update service prices and availability
+        if (!empty($validated['services'])) {
+            foreach ($validated['services'] as $svc) {
+                \App\Models\ProfileCenterService::where('profile_center_id', $pc->id)
+                    ->where('id', $svc['id'])
+                    ->update([
+                        'price'        => $svc['price'],
+                        'is_available' => $svc['is_available'],
+                    ]);
+            }
+        }
+
+        // Bulk-update equipment availability
+        if (!empty($validated['equipment'])) {
+            foreach ($validated['equipment'] as $eq) {
+                \App\Models\ProfileCenterEquipment::where('profile_center_id', $eq['id'])
+                    ->update(['is_available' => $eq['is_available']]);
+            }
+        }
+
+        return response()->json(['status' => 'success', 'message' => 'Centre profile updated.']);
     }
 
     /**
@@ -260,7 +411,7 @@ class CampingCentreController extends Controller
     public function registeredCentres()
     {
         $centres = CampingCentre::whereNotNull('user_id')
-            ->with(['user.profile', 'profileCentre', 'zones'])
+            ->with(['user.profile', 'profileCentre'])
             ->get();
 
         return response()->json([
@@ -283,6 +434,18 @@ class CampingCentreController extends Controller
 
 
     // Activation / désactivation d’un centre
+    public function togglePartner($id)
+    {
+        $centre = CampingCentre::findOrFail($id);
+        $centre->is_partner = ! $centre->is_partner;
+        $centre->save();
+
+        return response()->json([
+            'message'    => $centre->is_partner ? 'Centre marqué comme partenaire' : 'Statut partenaire retiré',
+            'is_partner' => $centre->is_partner,
+        ]);
+    }
+
     public function toggleStatus(Request $request, $id)
     {
         $centre = CampingCentre::findOrFail($id);
@@ -296,6 +459,19 @@ class CampingCentreController extends Controller
         }
 
         $centre->save();
+
+        // Keep ProfileCentre.disponibilite in sync so the center appears
+        // (or disappears) in the public list immediately after approval.
+        if ($centre->profile_centre_id) {
+            \App\Models\ProfileCentre::where('id', $centre->profile_centre_id)
+                ->update(['disponibilite' => $centre->status]);
+        }
+
+        // Also activate the linked user so they pass the is_active=1 filter
+        if ($centre->status && $centre->user_id) {
+            \App\Models\User::where('id', $centre->user_id)
+                ->update(['is_active' => 1]);
+        }
 
         return response()->json([
             'message' => $centre->status ? 'Centre rendu public' : 'Centre rendu privé',
@@ -320,7 +496,7 @@ class CampingCentreController extends Controller
             $query->where('status', $request->status);
         }
 
-        return response()->json($query->with('zones')->paginate(10));
+        return response()->json($query->paginate(10));
     }
 
     // centres à proximité
@@ -398,10 +574,15 @@ class CampingCentreController extends Controller
         $centre = CampingCentre::findOrFail($id);
         $centre->update(['user_id' => null, 'validation_status' => 'pending']);
 
+        // Clear user_id from centre photos so re-linking a new user
+        // stamps the correct owner and they become visible again.
+        Photo::where('camping_centre_id', $centre->id)
+            ->update(['user_id' => null]);
+
         return response()->json([
             'status'  => 'success',
             'message' => 'Utilisateur dissocié du centre.',
-            'centre'  => $centre->fresh(['zones', 'photos']),
+            'centre'  => $centre->fresh(['photos']),
         ]);
     }
 
@@ -413,7 +594,7 @@ class CampingCentreController extends Controller
     {
         $request->validate([
             'photos'      => 'required|array',
-            'photos.*'    => 'file|image|max:4096',
+            'photos.*'    => 'file|image|max:5120',
             'cover_index' => 'nullable|integer',
         ]);
 
@@ -423,7 +604,7 @@ class CampingCentreController extends Controller
         $hasImage   = !is_null($centre->image);
 
         foreach ($request->file('photos') as $index => $file) {
-            $path    = $file->store('centres/photos', 'public');
+            $path    = $file->store('centre_photos/' . $centre->id, 'public');
             $isCover = ($index === $coverIndex);
 
             Photo::create([
@@ -431,6 +612,8 @@ class CampingCentreController extends Controller
                 'camping_centre_id' => $centre->id,
                 'is_cover'          => $isCover,
                 'order'             => $offset + $index,
+                // Stamp the linked user so the photo appears in the cover map immediately.
+                'user_id'           => $centre->user_id,
             ]);
 
             if ($isCover) {
@@ -452,7 +635,7 @@ class CampingCentreController extends Controller
             'status' => 'success',
             'photos' => $centre->fresh('photos')->photos->map(fn($p) => [
                 'id'         => $p->id,
-                'url'        => asset('storage/' . $p->path_to_img),
+                'url'        => storage_url($p->path_to_img),
                 'path'       => $p->path_to_img,
                 'is_cover'   => (bool) $p->is_cover,
                 'order'      => $p->order,
@@ -531,10 +714,15 @@ class CampingCentreController extends Controller
         $centre->validation_status = 'approved';
         $centre->save();
 
+        // 5. Stamp the linked user onto all centre photos so they are visible
+        //    in both the public list (cover photo map) and the detail gallery.
+        Photo::where('camping_centre_id', $centre->id)
+            ->update(['user_id' => $user->id]);
+
         return response()->json([
             'status'  => 'success',
             'message' => 'Centre lié au profil utilisateur avec succès.',
-            'centre'  => $centre->fresh(['user', 'profileCentre', 'zones', 'photos']),
+            'centre'  => $centre->fresh(['user', 'profileCentre', 'photos']),
         ]);
     }
 

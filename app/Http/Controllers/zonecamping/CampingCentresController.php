@@ -40,6 +40,7 @@ class CampingCentresController extends Controller
         $data = $centres->map(function ($centre) {
             $userId = $centre->profile?->user_id;
             $photos = [];
+            $coverImage = null;
             if ($userId) {
                 // Always fetch by camping_centre_id — user_id is only metadata (who uploaded).
                 $campingCentreId = \App\Models\CampingCentre::where('user_id', $userId)->value('id');
@@ -47,9 +48,19 @@ class CampingCentresController extends Controller
                     $photos = Photo::where('camping_centre_id', $campingCentreId)
                         ->limit(5)
                         ->pluck('path_to_img')
-                        ->map(fn($p) => asset('storage/' . $p))
+                        ->map(fn($p) => storage_url($p))
                         ->values()
                         ->toArray();
+
+                    // Cover image: prioritise the marked cover photo, fall back to user avatar
+                    $coverPath = Photo::where('camping_centre_id', $campingCentreId)
+                        ->where('is_cover', true)
+                        ->value('path_to_img');
+                    $coverImage = $coverPath
+                        ? storage_url($coverPath)
+                        : ($centre->profile?->user?->avatar
+                            ? storage_url($centre->profile->user->avatar)
+                            : null);
                 }
             }
 
@@ -60,6 +71,7 @@ class CampingCentresController extends Controller
                 'latitude'    => (float) $centre->latitude,
                 'longitude'   => (float) $centre->longitude,
                 'photos'      => $photos,
+                'cover_image' => $coverImage,
                 'price'       => $centre->price_per_night,
                 'category'    => $centre->category,
                 'capacity'    => $centre->capacite,
@@ -78,11 +90,10 @@ class CampingCentresController extends Controller
         $centre = CampingCentre::with(['zones', 'profileCentre', 'user.profile', 'photos'])->findOrFail($id);
 
         $pc        = $centre->profileCentre;
-        $isPartner = (! is_null($centre->user_id) || ! is_null($centre->profile_centre_id))
-                     && ($centre->user?->is_active == 1);
+        $isPartner = (bool) $centre->is_partner;
 
         $buildUrl = fn(?string $path): ?string =>
-            $path ? (filter_var($path, FILTER_VALIDATE_URL) ? $path : url('storage/' . $path)) : null;
+            $path ? (filter_var($path, FILTER_VALIDATE_URL) ? $path : storage_url($path)) : null;
 
         $coverImage = $buildUrl($centre->image);
 
@@ -98,6 +109,11 @@ class CampingCentresController extends Controller
             'is_cover' => (bool) $p->is_cover,
         ])->filter(fn($p) => $p['url'])->values();
 
+        // If photos table is empty but the centre has a main image, include it
+        if ($photos->isEmpty() && $coverImage) {
+            $photos = collect([['id' => null, 'url' => $coverImage, 'is_cover' => true]]);
+        }
+
         return response()->json([
             'status' => 'success',
             'data'   => [
@@ -109,13 +125,15 @@ class CampingCentresController extends Controller
                 'disponibilite'    => $pc ? (bool) $pc->disponibilite : true,
                 'latitude'         => $centre->lat  ? (string) $centre->lat  : null,
                 'longitude'        => $centre->lng  ? (string) $centre->lng  : null,
+                'telephone'        => $centre->telephone,
                 'contact_email'    => $pc?->contact_email,
                 'contact_phone'    => $pc?->contact_phone,
                 'manager_name'     => $pc?->manager_name,
                 'average_rating'   => null,
                 'review_count'     => 0,
-                'is_partner'       => $isPartner,
-                '_source'          => 'camping',
+                'is_partner'         => $isPartner,
+                'profile_centre_id'  => $centre->profile_centre_id,
+                '_source'            => 'camping',
                 'profile' => [
                     'bio'         => $centre->description,
                     'city'        => $centre->user?->profile?->city ?? null,

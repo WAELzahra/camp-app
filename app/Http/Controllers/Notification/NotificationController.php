@@ -216,7 +216,7 @@ class NotificationController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to update preferences',
-                'error' => $e->getMessage()
+                'error' => 'server_error'
             ], 500);
         }
     }

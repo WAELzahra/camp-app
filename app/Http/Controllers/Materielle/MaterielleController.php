@@ -61,11 +61,17 @@ class MaterielleController extends Controller
         try {
             $materielle = Materielles::with(['photos', 'category', 'feedbacks', 'fournisseur.profile'])
                 ->find($materielle_id);
-    
+
             if (!$materielle) {
                 return response()->json(['status' => 'error', 'message' => 'Materielle not found.'], 404);
             }
-    
+
+            // Expose uuid and role_id on the fournisseur so the frontend can
+            // determine provider type (supplier vs camper) and build profile links.
+            if ($materielle->fournisseur) {
+                $materielle->fournisseur->makeVisible(['id', 'role_id']);
+            }
+
             return response()->json(['status' => 'success', 'data' => $materielle]);
         } catch (\Exception $e) {
             return response()->json(['status' => 'error', 'message' => 'Unable to retrieve materielle.'], 500);
@@ -146,7 +152,7 @@ class MaterielleController extends Controller
             'quantite_dispo'       => 'required|integer|min:0',
             'livraison_disponible' => 'boolean',
             'frais_livraison'      => 'nullable|numeric|min:0',
-            'image'                => 'required|image|mimes:jpeg,png,jpg,webp|max:4096',
+            'image'                => 'required|image|mimes:jpeg,png,jpg,webp|max:5120',
         ]);
 
         $isRentable = $request->boolean('is_rentable', true);
@@ -225,7 +231,7 @@ class MaterielleController extends Controller
             DB::rollBack();
             return response()->json([
                 'status'  => 'error',
-                'message' => 'Failed to store materielle: ' . $e->getMessage(),
+                'message' => 'Unable to save the equipment. Please try again.',
             ], 500);
         }
     }
@@ -351,7 +357,7 @@ class MaterielleController extends Controller
             DB::rollBack();
             return response()->json([
                 'status'  => 'error',
-                'message' => 'Update failed: ' . $e->getMessage(),
+                'message' => 'Unable to update the equipment. Please try again.',
             ], 500);
         }
     }
@@ -390,7 +396,7 @@ class MaterielleController extends Controller
             DB::rollBack();
             return response()->json([
                 'status'  => 'error',
-                'message' => 'Failed to delete materielle: ' . $e->getMessage(),
+                'message' => 'Unable to delete the equipment. Please try again.',
             ], 500);
         }
     }
@@ -525,7 +531,7 @@ class MaterielleController extends Controller
                 'livraison_disponible' => $m->livraison_disponible,
                 'frais_livraison'      => $m->frais_livraison,
                 'status'               => $m->status,
-                'cover_image'          => $cover ? asset('storage/' . $cover->path_to_img) : null,
+                'cover_image'          => $cover ? storage_url($cover->path_to_img) : null,
                 'category'             => $m->category ? [
                     'id'  => $m->category->id,
                     'nom' => $m->category->nom,

@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem \"C:\\\\laragon\\\\www\\\\camp-app\\\\app\\\\Http\\\\Controllers\" -Filter \"*.php\")",
+      "Bash(Select-Object -ExpandProperty Name)",
+      "Bash(ls -1 \"C:\\\\Users\\\\deadx\\\\OneDrive\\\\Desktop\\\\TunisiaCamp\\\\Camp-app-front\\\\src\\\\types\" 2>/dev/null | head -30)",
+      "Read(//c/Users/deadx/OneDrive/Desktop/TunisiaCamp/Camp-app-front/src/types/**)",
+      "Read(//c/Users/deadx/OneDrive/Desktop/TunisiaCamp/Camp-app-front/**)",
+      "Bash(Get-ChildItem \"C:\\\\laragon\\\\www\\\\camp-app\\\\database\\\\migrations\\\\\" | Sort-Object Name | Select-Object -Last 20 | Select-Object Name)",
+      "PowerShell(\\(Get-Content \"C:\\\\Users\\\\deadx\\\\OneDrive\\\\Desktop\\\\TunisiaCamp\\\\Camp-app-front\\\\src\\\\pages\\\\\\(protected\\)\\\\Profile_settings\\\\EditProfile\\\\tabs\\\\ProfileTab.tsx\"\\).Count)",
+      "Bash(php artisan *)",
+      "Bash(npx tsc *)",
+      "Bash(node -e \"const p=require\\('./node_modules/@types/react/package.json'\\); console.log\\('@types/react', p.version\\)\")",
+      "Bash(npx vite *)",
+      "Bash(npm install *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(composer update *)",
+      "Bash(composer require *)",
+      "Bash(composer dump-autoload *)",
+      "Bash(Get-ChildItem -Force -Recurse -Directory)",
+      "Bash(Select-Object -First 20 FullName)",
+      "Bash(git commit -m 'fix: return full storage URLs for avatar in API responses *)",
+      "Bash(git commit -m 'debug: enable R2 throw and catch avatar upload errors to surface R2 issue *)"
+    ]
+  }
+}

@@ -74,7 +74,7 @@ class Profile extends Model
      */
     public function getCinUrlAttribute(): ?string
     {
-        return $this->cin_path ? asset('storage/' . $this->cin_path) : null;
+        return $this->cin_path ? storage_url($this->cin_path) : null;
     }
 
     /**

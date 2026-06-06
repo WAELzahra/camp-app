@@ -31,9 +31,10 @@ class VerifyEmailController extends Controller
 
         try {
             $validator = Validator::make($request->all(), [
-                'user_id' => 'required|integer|exists:users,id',
-                'email' => 'required|email',
-                'method' => 'sometimes|in:both,code,link'
+                'user_uuid' => 'required_without:user_id|string|exists:users,uuid',
+                'user_id'   => 'required_without:user_uuid|integer|exists:users,id',
+                'email'     => 'required|email',
+                'method'    => 'sometimes|in:both,code,link',
             ]);
 
             if ($validator->fails()) {
@@ -45,7 +46,9 @@ class VerifyEmailController extends Controller
                 ], 422);
             }
 
-            $user = User::find($request->input('user_id'));
+            $user = $request->input('user_uuid')
+                ? User::where('uuid', $request->input('user_uuid'))->first()
+                : User::find($request->input('user_id'));
             
             if (!$user) {
                 return response()->json([
@@ -78,8 +81,6 @@ class VerifyEmailController extends Controller
                 'user_id' => $user->id,
                 'email' => $user->email,
                 'verification_id' => $verification->id,
-                'token' => $verification->token,
-                'code' => $verification->code
             ]);
 
             return response()->json([
@@ -89,10 +90,6 @@ class VerifyEmailController extends Controller
                     'id' => $verification->id,
                     'method' => $verification->method,
                     'expires_at' => $verification->expires_at->format('Y-m-d H:i:s'),
-                    'code' => $verification->code,
-                    'token' => $verification->token,
-                    'verification_link' => url('/api/verify-by-token?token=' . $verification->token),
-                    'frontend_url' => config('app.frontend_url') . '/verify-email?token=' . $verification->token
                 ]
             ]);
 
@@ -104,8 +101,7 @@ class VerifyEmailController extends Controller
 
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to send verification email: ' . ($e->getMessage()),
-                'error' => env('APP_DEBUG') ? $e->getMessage() : null
+                'message' => 'Failed to send verification email. Please try again.',
             ], 500);
         }
     }
@@ -194,10 +190,10 @@ class VerifyEmailController extends Controller
                     'success' => true,
                     'message' => $result['message'],
                     'user' => [
-                        'id' => $result['user']->id,
-                        'first_name' => $result['user']->first_name,
-                        'last_name' => $result['user']->last_name,
-                        'email' => $result['user']->email,
+                        'uuid'              => $result['user']->uuid,
+                        'first_name'        => $result['user']->first_name,
+                        'last_name'         => $result['user']->last_name,
+                        'email'             => $result['user']->email,
                         'email_verified_at' => $result['user']->email_verified_at,
                     ]
                 ]);
@@ -227,9 +223,10 @@ class VerifyEmailController extends Controller
     {
         try {
             $validator = Validator::make($request->all(), [
-                'user_id' => 'required|integer',
-                'email' => 'required|email',
-                'code' => 'required|string|size:6'
+                'user_uuid' => 'required_without:user_id|string|exists:users,uuid',
+                'user_id'   => 'required_without:user_uuid|integer',
+                'email'     => 'required|email',
+                'code'      => 'required|string|size:6',
             ]);
 
             if ($validator->fails()) {
@@ -240,23 +237,26 @@ class VerifyEmailController extends Controller
                 ], 422);
             }
 
+            $userId = $request->input('user_uuid')
+                ? User::where('uuid', $request->input('user_uuid'))->value('id')
+                : $request->input('user_id');
+
             $result = $this->emailVerificationService->verifyByCode(
-                $request->input('user_id'),
+                $userId,
                 $request->input('email'),
                 $request->input('code')
             );
             
 
             if ($result['success']) {
-                
                 return response()->json([
                     'success' => true,
                     'message' => $result['message'],
                     'user' => [
-                        'id' => $result['user']->id,
-                        'first_name' => $result['user']->first_name,
-                        'last_name' => $result['user']->last_name,
-                        'email' => $result['user']->email,
+                        'uuid'              => $result['user']->uuid,
+                        'first_name'        => $result['user']->first_name,
+                        'last_name'         => $result['user']->last_name,
+                        'email'             => $result['user']->email,
                         'email_verified_at' => $result['user']->email_verified_at,
                     ]
                 ]);
@@ -276,7 +276,6 @@ class VerifyEmailController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Verification failed. Please try again.',
-                'error' => env('APP_DEBUG') ? $e->getMessage() : null
             ], 500);
         }
     }
@@ -291,8 +290,9 @@ class VerifyEmailController extends Controller
 
         try {
             $validator = Validator::make($request->all(), [
-                'user_id' => 'required|integer',
-                'email' => 'required|email'
+                'user_uuid' => 'required_without:user_id|string|exists:users,uuid',
+                'user_id'   => 'required_without:user_uuid|integer',
+                'email'     => 'required|email',
             ]);
 
             if ($validator->fails()) {
@@ -304,8 +304,12 @@ class VerifyEmailController extends Controller
                 ], 422);
             }
 
+            $userId = $request->input('user_uuid')
+                ? User::where('uuid', $request->input('user_uuid'))->value('id')
+                : $request->input('user_id');
+
             $result = $this->emailVerificationService->resendVerification(
-                $request->input('user_id'),
+                $userId,
                 $request->input('email')
             );
 
@@ -335,25 +339,26 @@ class VerifyEmailController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to resend verification email. Please try again.',
-                'error' => env('APP_DEBUG') ? $e->getMessage() : null
             ], 500);
         }
     }
 
     /**
-     * Check verification status
+     * Check verification status — authenticated users may only query their own status.
      */
-    public function verificationStatus($id)
+    public function verificationStatus(Request $request, $id)
     {
         try {
-            $user = User::find($id);
-
-            if (!$user) {
+            // Prevent any authenticated user from enumerating other users' status
+            if ((int) $id !== $request->user()->id) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'User not found'
-                ], 404);
+                    'message' => 'You do not have permission to perform this action.',
+                    'error'   => 'forbidden',
+                ], 403);
             }
+
+            $user = $request->user();
 
             $result = $this->emailVerificationService->checkVerificationStatus(
                 $user->id,
@@ -369,10 +374,9 @@ class VerifyEmailController extends Controller
                 'method' => $result['method'] ?? null,
                 'created_at' => $result['created_at'] ?? null,
                 'user' => [
-                    'id' => $user->id,
-                    'email' => $user->email,
-                    'email_verified_at' => $user->email_verified_at,
-                    'is_active' => $user->is_active,
+                    'uuid'               => $user->uuid,
+                    'email_verified_at'  => $user->email_verified_at,
+                    'is_active'          => $user->is_active,
                 ]
             ]);
 

@@ -22,7 +22,10 @@ use App\Notifications\EventInviteNotification;
 use App\Events\NewNotificationCreated;
 use App\Models\Balance;
 use App\Models\WalletTransaction;
+use App\Models\EventReservationService;
 use App\Services\CommissionService;
+use App\Http\Resources\EventReservationResource;
+use App\Http\Resources\EventResource;
 use Illuminate\Support\Facades\DB;
 
 class EventController extends Controller
@@ -35,7 +38,7 @@ class EventController extends Controller
     public function getGroupEvents($groupId, Request $request)
     {
         $query = Events::where('group_id', $groupId)
-                    ->with(['group', 'photos']);
+                    ->with(['group', 'group.acceptedSupplierLink.supplier:id,uuid,first_name,last_name,avatar', 'photos']);
 
         // Optional filters
         if ($request->has('status')) {
@@ -52,6 +55,10 @@ class EventController extends Controller
         $query->orderBy($sortBy, $sortOrder);
 
         $events = $query->paginate($request->get('per_page', 15));
+        $events->getCollection()->transform(function ($event) {
+            $event->accepted_supplier = $event->group?->acceptedSupplierLink?->supplier ?? null;
+            return $event;
+        });
 
         return response()->json([
             'success' => true,
@@ -82,7 +89,7 @@ class EventController extends Controller
 
         try {
             $query = Events::where('group_id', $user->id)
-                        ->with(['group', 'photos']);
+                        ->with(['group', 'group.acceptedSupplierLink.supplier:id,uuid,first_name,last_name,avatar', 'photos']);
 
             // Optional filters
             if ($request->has('status')) {
@@ -100,23 +107,9 @@ class EventController extends Controller
 
             $events = $query->paginate($request->get('per_page', 15));
 
-            // Transform the photos to include URLs (though the model accessor will handle it)
-            $events->getCollection()->transform(function ($event) {
-                // Add a cover_image property for easy access
-                if ($event->photos && $event->photos->isNotEmpty()) {
-                    $coverPhoto = $event->photos->firstWhere('is_cover', true);
-                    if ($coverPhoto) {
-                        $event->cover_image = $coverPhoto->url; // This will use the accessor
-                    } else {
-                        $event->cover_image = $event->photos->first()->url; // This will use the accessor
-                    }
-                }
-                return $event;
-            });
-
             return response()->json([
                 'success' => true,
-                'data' => $events
+                'data' => EventResource::collection($events),
             ]);
         } catch (\Exception $e) {
             return response()->json([
@@ -131,8 +124,8 @@ class EventController extends Controller
      */
     public function index(Request $request)
     {
-        $query = Events::with(['group', 'photos'])
-                    ->orderBy('start_date', 'asc'); // Order by start date
+        $query = Events::with(['group', 'group.acceptedSupplierLink.supplier:id,uuid,first_name,last_name,avatar', 'photos'])
+                    ->orderByRaw('ISNULL(start_date) ASC, start_date ASC'); // NULL start_date (custom) at end
 
         // Optional: Basic search - keep this as it's efficient
         if ($request->has('q')) {
@@ -154,22 +147,9 @@ class EventController extends Controller
         $perPage = $request->get('per_page', 500);
         $events = $query->paginate($perPage);
 
-        // Add cover_image to each event
-        $events->getCollection()->transform(function ($event) {
-            if ($event->photos && $event->photos->isNotEmpty()) {
-                $cover = $event->photos->firstWhere('is_cover', true) ?? $event->photos->first();
-                $event->cover_image = $cover->url ?? (
-                    $cover->path_to_img
-                        ? url('storage/' . $cover->path_to_img)
-                        : null
-                );
-            }
-            return $event;
-        });
-
         return response()->json([
             'success' => true,
-            'data' => $events
+            'data' => EventResource::collection($events),
         ]);
     }
     /**
@@ -177,9 +157,9 @@ class EventController extends Controller
      */
     public function getEventDetails($id)
     {
-        $event = Events::where('is_active', true)
-                      ->with(['group', 'photos'])
-                      ->find($id);
+        // No is_active filter — finished/past events must stay viewable
+        // (the list endpoint also has no is_active filter, so they appear there too).
+        $event = Events::with(['group', 'group.acceptedSupplierLink.supplier:id,uuid,first_name,last_name,avatar', 'photos'])->find($id);
 
         if (!$event) {
             return response()->json(['message' => 'Event not found'], 404);
@@ -187,7 +167,7 @@ class EventController extends Controller
 
         return response()->json([
             'success' => true,
-            'data' => $event
+            'data' => new EventResource($event),
         ]);
     }
 
@@ -202,7 +182,8 @@ class EventController extends Controller
             return response()->json(['message' => 'Please enter a search keyword'], 400);
         }
 
-        $events = Events::where('is_active', true)
+        $events = Events::with(['group', 'group.acceptedSupplierLink.supplier:id,uuid,first_name,last_name,avatar', 'photos'])
+            ->where('is_active', true)
             ->where('status', 'scheduled')
             ->where(function ($query) use ($keyword) {
                 $query->where('title', 'like', "%$keyword%")
@@ -216,7 +197,7 @@ class EventController extends Controller
 
         return response()->json([
             'success' => true,
-            'data' => $events
+            'data' => EventResource::collection($events),
         ]);
     }
 
@@ -345,11 +326,11 @@ class EventController extends Controller
             // Event fields
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
-            'event_type' => 'required|in:camping,hiking,voyage',
-            'start_date' => 'required|date',
-            'end_date' => 'required|date|after_or_equal:start_date',
-            'capacity' => 'required|integer|min:1',
-            'price' => 'required|numeric|min:0',
+            'event_type' => 'required|in:camping,hiking,voyage,custom',
+            'start_date' => 'nullable|date|required_unless:event_type,custom',
+            'end_date'   => 'nullable|date|required_unless:event_type,custom|after_or_equal:start_date',
+            'capacity'   => 'nullable|integer|min:1',
+            'price'      => 'required|numeric|min:0',
             
             // Camping specific fields
             'camping_duration' => 'nullable|integer|min:1',
@@ -384,7 +365,7 @@ class EventController extends Controller
             
             // Images
             'images' => 'nullable|array',
-            'images.*' => 'image|mimes:jpeg,png,jpg,gif|max:25600', // 25MB max
+            'images.*' => 'image|mimes:jpeg,png,jpg,gif|max:5120',
             'cover_image_index' => 'nullable|integer|min:0',
         ]);
 
@@ -393,12 +374,12 @@ class EventController extends Controller
             'group_id' => $user->id,
             'title' => $validated['title'],
             'description' => $validated['description'] ?? null,
-            'event_type' => $validated['event_type'],
-            'start_date' => $validated['start_date'],
-            'end_date' => $validated['end_date'],
-            'capacity' => $validated['capacity'],
-            'price' => $validated['price'],
-            'remaining_spots' => $validated['capacity'],
+            'event_type'      => $validated['event_type'],
+            'start_date'      => $validated['start_date'] ?? null,
+            'end_date'        => $validated['end_date']   ?? null,
+            'capacity'        => $validated['capacity']   ?? null,
+            'price'           => $validated['price'],
+            'remaining_spots' => $validated['capacity']   ?? null,
             'camping_duration' => $validated['camping_duration'] ?? null,
             'camping_gear' => $validated['camping_gear'] ?? null,
             'is_group_travel' => $request->boolean('is_group_travel', false),
@@ -442,11 +423,34 @@ class EventController extends Controller
             }
         }
 
+        // Handle services sent as JSON string in FormData
+        if ($request->filled('services')) {
+            $servicesData = is_string($request->services)
+                ? json_decode($request->services, true)
+                : $request->services;
+
+            if (is_array($servicesData)) {
+                foreach ($servicesData as $svc) {
+                    if (!empty($svc['name']) && isset($svc['price'])) {
+                        \App\Models\EventService::create([
+                            'event_id'     => $event->id,
+                            'name'         => $svc['name'],
+                            'description'  => $svc['description'] ?? null,
+                            'price'        => (float) $svc['price'],
+                            'pricing_unit' => $svc['pricing_unit'] ?? 'per person',
+                            'max_quantity' => isset($svc['max_quantity']) ? (int) $svc['max_quantity'] : null,
+                            'is_active'    => true,
+                        ]);
+                    }
+                }
+            }
+        }
+
         // Notify followers
         $this->notifyFollowers($user->id, $event);
 
         // Load the photos relationship
-        $event->load('photos');
+        $event->load('photos', 'services');
 
         return response()->json([
             'success' => true,
@@ -591,9 +595,10 @@ class EventController extends Controller
         $validated = $request->validate([
             'title'                   => 'sometimes|string|max:255',
             'description'             => 'nullable|string',
-            'start_date'              => 'sometimes|date',
-            'end_date'                => 'sometimes|date|after_or_equal:start_date',
-            'capacity'                => 'sometimes|integer|min:1',
+            'event_type'              => 'sometimes|in:camping,hiking,voyage,custom',
+            'start_date'              => 'nullable|date',
+            'end_date'                => 'nullable|date|after_or_equal:start_date',
+            'capacity'                => 'nullable|integer|min:1',
             'price'                   => 'sometimes|numeric|min:0',
 
             // Camping
@@ -633,7 +638,7 @@ class EventController extends Controller
 
             // Image management
             'new_images'              => 'nullable|array',
-            'new_images.*'            => 'image|mimes:jpeg,png,jpg,gif|max:25600',
+            'new_images.*'            => 'image|mimes:jpeg,png,jpg,gif|max:5120',
             'cover_image_index'       => 'nullable|integer|min:0',
             'delete_images'           => 'nullable|array',
             'delete_images.*'         => 'integer|exists:photos,id',
@@ -767,11 +772,27 @@ class EventController extends Controller
             $query->where('status', $status);
         }
 
-        $participants = $query->get();
+        $participants = $query->with('services')->get();
+
+        // Enrich each participant with commission fields using the group's custom rate
+        $enriched = $participants->map(function ($p) use ($event) {
+            $servicesTotal = round($p->services->sum('subtotal'), 2);
+            $base = max(0, round(
+                ($p->nbr_place * (float) $event->price) + $servicesTotal - (float) ($p->discount_amount ?? 0),
+                2
+            ));
+            $calc = CommissionService::calculateForUser('group', $base, $event->group_id);
+            $p->commission_rate   = round($calc['rate'] * 100, 2);
+            $p->commission_amount = $calc['commission'];
+            $p->net_revenue       = $calc['net_revenue'];
+            $p->base_amount       = $base;
+            $p->services_total    = $servicesTotal;
+            return $p;
+        });
 
         return response()->json([
             'success' => true,
-            'data' => $participants
+            'data' => EventReservationResource::collection($enriched),
         ]);
     }
     /**
@@ -804,8 +825,9 @@ class EventController extends Controller
                        ->where('group_id', $user->id)
                        ->firstOrFail();
 
-        $newStatus = $request->status;
-        $netBase   = round(($reservation->nbr_place * $event->price) - ($reservation->discount_amount ?? 0), 2);
+        $newStatus     = $request->status;
+        $netBase       = round(($reservation->nbr_place * $event->price) - ($reservation->discount_amount ?? 0), 2);
+        $servicesTotal = round(EventReservationService::where('event_reservation_id', $reservation->id)->sum('subtotal'), 2);
 
         // ── Case 1: Group cancels a CONFIRMED (already paid) reservation → full refund ──
         if ($reservation->payment_method === 'wallet'
@@ -814,14 +836,23 @@ class EventController extends Controller
 
             DB::beginTransaction();
             try {
-                $feeData    = CommissionService::addServiceFee($netBase);
+                $feeData    = CommissionService::addServiceFee($netBase + $servicesTotal);
                 $totalToPay = round($feeData['total'], 2);
-                $orgCalc    = CommissionService::calculate('group', $netBase);
+                // Use stored net_amount for exact clawback (prevents mismatch if rate changed)
+                $origTx = \App\Models\WalletTransaction::where('user_id', $reservation->group_id)
+                    ->where('type', 'credit')
+                    ->where('category', 'reservation_income')
+                    ->where('reference_type', 'event_reservation')
+                    ->where('reference_id', $reservation->id)
+                    ->first();
+                $netToClawback = $origTx
+                    ? (float) $origTx->net_amount
+                    : CommissionService::calculateForUser('group', $netBase + $servicesTotal, $reservation->group_id)['net_revenue'];
 
-                // Clawback from organizer what they received
-                Balance::forUser($reservation->group_id)->debiter($orgCalc['net_revenue']);
+                // Clawback from organizer exactly what they received
+                Balance::forUser($reservation->group_id)->debiter($netToClawback);
                 WalletTransaction::logDebit(
-                    $reservation->group_id, 'refund_out', $orgCalc['net_revenue'],
+                    $reservation->group_id, 'refund_out', $netToClawback,
                     'event_reservation', $reservation->id,
                     "Remboursement annulation organisateur : {$event->title}",
                     $reservation->user_id
@@ -856,19 +887,18 @@ class EventController extends Controller
                 // Release escrow and pay organizer — camper was already charged at booking
                 DB::beginTransaction();
                 try {
-                    $platformFeeAmt  = round((float) ($reservation->platform_fee_amount ?? 0), 2);
-                    $feeData         = CommissionService::addServiceFee($netBase);
-                    $totalToPay      = round($feeData['total'], 2);
+                    $platformFeeAmt = round((float) ($reservation->platform_fee_amount ?? 0), 2);
+                    // Release the full escrowed amount: base + services + stored platform fee
+                    $totalToRelease = round($netBase + $servicesTotal + $platformFeeAmt, 2);
+                    Balance::forUser($reservation->user_id)->releaseEscrow($totalToRelease);
 
-                    // Release camper escrow (solde_en_attente → 0, solde_disponible unchanged)
-                    Balance::forUser($reservation->user_id)->releaseEscrow($totalToPay);
-
-                    // Credit organizer minus commission
-                    $orgCalc = CommissionService::calculate('group', $netBase);
+                    // Credit organizer for event base + services revenue, minus commission
+                    $orgBase = $netBase + $servicesTotal;
+                    $orgCalc = CommissionService::calculateForUser('group', $orgBase, $reservation->group_id);
                     Balance::forUser($reservation->group_id)->crediter($orgCalc['net_revenue']);
                     WalletTransaction::logCredit(
                         $reservation->group_id, 'reservation_income',
-                        $netBase,
+                        $orgBase,
                         round($orgCalc['rate'] * 100, 2),
                         $orgCalc['commission'],
                         $orgCalc['net_revenue'],
@@ -906,7 +936,7 @@ class EventController extends Controller
                 // Refund escrowed funds — funds were locked at booking, return them now
                 DB::beginTransaction();
                 try {
-                    $feeData    = CommissionService::addServiceFee($netBase);
+                    $feeData    = CommissionService::addServiceFee($netBase + $servicesTotal);
                     $totalToPay = round($feeData['total'], 2);
                     Balance::forUser($reservation->user_id)->refundEscrow($totalToPay);
                     WalletTransaction::logCredit(

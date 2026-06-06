@@ -71,7 +71,7 @@ class ProfileCentre extends Model
     {
         return $this->belongsToMany(ServiceCategory::class, 'profile_center_services', 'profile_center_id', 'service_category_id')
                     ->using(ProfileCenterService::class)
-                    ->withPivot('price', 'unit', 'description', 'is_available', 'nbr_place', 'is_standard')
+                    ->withPivot('id', 'price', 'unit', 'description', 'is_available', 'min_quantity', 'max_quantity', 'is_standard')
                     ->withTimestamps();
     }
 
@@ -221,7 +221,7 @@ class ProfileCentre extends Model
      */
     public function getLegalDocumentUrlAttribute(): ?string
     {
-        return $this->legal_document ? asset('storage/' . $this->legal_document) : null;
+        return $this->legal_document ? storage_url($this->legal_document) : null;
     }
 
     /**

@@ -129,7 +129,7 @@ class AdminEventController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['success' => false, 'message' => 'Erreur: ' . $e->getMessage()], 500);
+            return response()->json(['success' => false, 'message' => 'An unexpected error occurred. Please try again.'], 500);
         }
     }
 
@@ -200,7 +200,7 @@ class AdminEventController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['success' => false, 'message' => 'Erreur: ' . $e->getMessage()], 500);
+            return response()->json(['success' => false, 'message' => 'An unexpected error occurred. Please try again.'], 500);
         }
     }
 
@@ -281,7 +281,7 @@ class AdminEventController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['success' => false, 'message' => 'Erreur: ' . $e->getMessage()], 500);
+            return response()->json(['success' => false, 'message' => 'An unexpected error occurred. Please try again.'], 500);
         }
     }
 
@@ -307,7 +307,7 @@ class AdminEventController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['success' => false, 'message' => 'Erreur: ' . $e->getMessage()], 500);
+            return response()->json(['success' => false, 'message' => 'An unexpected error occurred. Please try again.'], 500);
         }
     }
 
@@ -337,9 +337,32 @@ class AdminEventController extends Controller
 
         $reservations = $query->latest()->paginate($request->get('per_page', 15));
 
+        $items = collect($reservations->items())->map(fn($r) => [
+            'id'             => $r->id,
+            'status'         => $r->status,
+            'nbr_place'      => $r->nbr_place,
+            'payment_method' => $r->payment_method,
+            'total_price'    => $r->total_price ?? null,
+            'discount_amount'=> $r->discount_amount,
+            'created_at'     => $r->created_at,
+            'updated_at'     => $r->updated_at,
+            'user' => $r->user ? [
+                'uuid'         => $r->user->uuid,
+                'first_name'   => $r->user->first_name,
+                'last_name'    => $r->user->last_name,
+                'email'        => $r->user->email,
+                'phone_number' => $r->user->phone_number,
+                'avatar'       => $r->user->avatar ? storage_url($r->user->avatar) : null,
+            ] : null,
+            'payment' => $r->payment ? [
+                'status'  => $r->payment->status,
+                'montant' => $r->payment->montant,
+            ] : null,
+        ]);
+
         return response()->json([
             'success' => true,
-            'data'    => $reservations->items(),
+            'data'    => $items,
             'meta'    => [
                 'current_page' => $reservations->currentPage(),
                 'total'        => $reservations->total(),
@@ -431,7 +454,7 @@ class AdminEventController extends Controller
      */
     public function getGroups(Request $request)
     {
-        $groups = User::whereHas('role', fn($q) => $q->where('name', 'groupe'))
+        $groups = User::where('role_id', 2)
             ->when($request->search, function ($query, $search) {
                 $query->where('first_name', 'like', "%{$search}%")
                       ->orWhere('last_name', 'like', "%{$search}%")

@@ -18,6 +18,13 @@ use Illuminate\Support\Facades\Validator;
 use App\Models\Photo;
 use App\Models\User;
 use App\Http\Controllers\Controller;
+use App\Http\Resources\ProfileUserResource;
+use App\Http\Resources\ProfileBaseResource;
+use App\Http\Resources\ProfileCampeurResource;
+use App\Http\Resources\ProfileGroupeResource;
+use App\Http\Resources\ProfileGuideResource;
+use App\Http\Resources\ProfileCentreResource;
+use App\Http\Resources\ProfileFournisseurResource;
 use App\Models\CentreClaim;
 use App\Models\ProfileCampeur;
 use Illuminate\Support\Facades\DB;
@@ -132,7 +139,7 @@ class ProfileController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to update center',
-                'error' => $e->getMessage()
+                'error' => 'server_error'
             ], 500);
         }
     }
@@ -178,7 +185,7 @@ class ProfileController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to change password',
-                'error' => $e->getMessage()
+                'error' => 'server_error'
             ], 500);
         }
     }
@@ -188,7 +195,6 @@ class ProfileController extends Controller
         $user = Auth::user();
         $profile = $user->profile;
 
-        // If profile doesn't exist, create it
         if (!$profile) {
             $profile = Profile::create([
                 'user_id' => $user->id,
@@ -197,138 +203,18 @@ class ProfileController extends Controller
         }
 
         $data = [
-            'user' => [
-                'id' => $user->id,
-                'first_name' => $user->first_name,
-                'last_name' => $user->last_name,
-                'email' => $user->email,
-                'phone_number' => $user->phone_number,
-                'ville' => $user->ville,
-                'date_naissance' => $user->date_naissance,
-                'sexe' => $user->sexe,
-                'langue' => $user->langue,
-                'avatar' => $user->avatar,
-                'role_id' => $user->role_id,
-            ],
-            'profile' => $profile,
-            'details' => null,
+            'user'    => new ProfileUserResource($user),
+            'profile' => new ProfileBaseResource($profile),
+            'details' => $this->buildDetailsResource($profile, true),
         ];
 
-        switch ($profile->type) {
-            case 'guide':
-                $data['details'] = $profile->profileGuide ?? new ProfileGuide(['profile_id' => $profile->id]);
-                break;
-            case 'centre':
-                $data['details'] = $profile->profileCentre ?? new ProfileCentre(['profile_id' => $profile->id]);
-                break;
-            case 'campeur':
-                $data['details'] = $profile->profileCampeur
-                    ?? ProfileCampeur::firstOrCreate(['profile_id' => $profile->id]);
-                break;
-            case 'groupe':
-                $data['details'] = $profile->profileGroupe ?? new ProfileGroupe(['profile_id' => $profile->id]);
-                
-                // Include group feedbacks
-                $feedbacks = \App\Models\Feedbacks::with('user')
-                    ->where('target_id', $user->id)
-                    ->where('type', 'groupe')
-                    ->where('status', 'approved')
-                    ->latest()
-                    ->take(5)
-                    ->get();
-
-                $average = \App\Models\Feedbacks::where('target_id', $user->id)
-                    ->where('type', 'groupe')
-                    ->where('status', 'approved')
-                    ->avg('note');
-
-                $count = \App\Models\Feedbacks::where('target_id', $user->id)
-                    ->where('type', 'groupe')
-                    ->where('status', 'approved')
-                    ->count();
-
-                $data['feedback_summary'] = [
-                    'average_note' => round($average, 2),
-                    'feedback_count' => $count,
-                    'latest_feedbacks' => $feedbacks,
-                ];
-                break;
-            case 'fournisseur':
-                $data['details'] = $profile->profileFournisseur ?? new ProfileFournisseur(['profile_id' => $profile->id]);
-                break;
-            default: // campeur
-                $data['details'] = null;
+        if ($profile->type === 'groupe') {
+            $data['feedback_summary'] = $this->buildFeedbackSummary($user->id, 'groupe');
         }
 
-        // Cover image full URL
-        if ($profile->cover_image) {
-            $data['cover_image_url'] = asset('storage/' . ltrim($profile->cover_image, '/'));
-        }
-
-        // Profile gallery photos
-        if ($user->role_id === 3) {
-            // Centre users: return all photos from ALL linked centres
-            $centreIds = $this->centreIdsForUser($user);
-            if ($centreIds->isNotEmpty()) {
-                $data['photos'] = \App\Models\Photo::whereIn('camping_centre_id', $centreIds)
-                    ->orderBy('order', 'asc')
-                    ->orderBy('created_at', 'desc')
-                    ->get()
-                    ->map(fn($p) => [
-                        'id'       => $p->id,
-                        'url'      => asset('storage/' . $p->path_to_img),
-                        'is_cover' => (bool) $p->is_cover,
-                        'order'    => $p->order,
-                    ])->values();
-            }
-        } else {
-            $galleryAlbum = \App\Models\Album::with(['photos' => function ($q) {
-                $q->orderBy('order', 'asc')->orderBy('created_at', 'desc');
-            }])
-                ->where('user_id', $user->id)
-                ->where('titre', 'Profile Gallery')
-                ->first();
-
-            if ($galleryAlbum) {
-                $data['photos'] = $galleryAlbum->photos->map(fn($p) => [
-                    'id'       => $p->id,
-                    'url'      => asset('storage/' . $p->path_to_img),
-                    'is_cover' => (bool) $p->is_cover,
-                    'order'    => $p->order,
-                ])->values();
-            }
-        }
-
-        // Past events (confirmed/attended)
-        $data['past_events'] = \App\Models\Reservations_events::where('user_id', $user->id)
-            ->whereIn('status', ['confirmed', 'completed', 'attended'])
-            ->with('event')
-            ->get()
-            ->filter(fn($r) => $r->event && $r->event->start_date)
-            ->sortByDesc(fn($r) => $r->event->start_date)
-            ->take(8)
-            ->map(fn($r) => [
-                'id'       => $r->event->id,
-                'title'    => $r->event->title,
-                'date'     => $r->event->start_date,
-                'location' => $r->event->address ?? null,
-            ])->values();
-
-        // Visited camping centers (unique, most recent first)
-        $data['visited_centres'] = \App\Models\Reservations_centre::where('user_id', $user->id)
-            ->whereIn('status', ['confirmed', 'completed'])
-            ->with('centre')
-            ->get()
-            ->filter(fn($r) => $r->centre)
-            ->sortByDesc('date_debut')
-            ->unique('centre_id')
-            ->take(8)
-            ->map(fn($r) => [
-                'id'       => $r->centre->id,
-                'name'     => $r->centre->name,
-                'location' => $r->centre->ville ?? null,
-                'date'     => $r->date_debut,
-            ])->values();
+        $data['photos']          = $this->buildPhotos($user);
+        $data['past_events']     = $this->buildPastEvents($user->id);
+        $data['visited_centres'] = $this->buildVisitedCentres($user->id);
 
         return response()->json($data);
     }
@@ -716,10 +602,13 @@ class ProfileController extends Controller
             
             \Log::info('Profile updated successfully for user: ' . $user->id);
             
+            $user->refresh();
+            $profile->refresh();
+
             return response()->json([
                 'message' => 'Profile updated successfully',
-                'user' => $user->fresh(),
-                'profile' => $profile->fresh(),
+                'user'    => new ProfileUserResource($user),
+                'profile' => new ProfileBaseResource($profile),
             ]);
             
         } catch (\Exception $e) {
@@ -730,7 +619,7 @@ class ProfileController extends Controller
             
             return response()->json([
                 'message' => 'Failed to update profile',
-                'error' => $e->getMessage(),
+                'error' => 'server_error',
             ], 500);
         } finally {
             \Log::info('=== PROFILE UPDATE END ===');
@@ -741,26 +630,31 @@ class ProfileController extends Controller
     public function updateAvatar(Request $request)
     {
         $request->validate([
-            'avatar' => 'required|image|mimes:jpeg,png,jpg,webp|max:2048',
+            'avatar' => 'required|image|mimes:jpeg,png,jpg,webp|max:5120',
         ]);
 
         $user = Auth::user();
 
-        // Delete old avatar if exists
-        if ($user->avatar && Storage::disk('public')->exists($user->avatar)) {
-            Storage::disk('public')->delete($user->avatar);
+        try {
+            // Delete old avatar if exists
+            if ($user->avatar && !filter_var($user->avatar, FILTER_VALIDATE_URL)) {
+                Storage::disk('public')->delete($user->avatar);
+            }
+
+            $avatarPath = $request->file('avatar')->store('avatars', 'public');
+
+            $user->update(['avatar' => $avatarPath]);
+
+            return response()->json([
+                'message' => 'Avatar updated successfully.',
+                'avatar_url' => storage_url($avatarPath),
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Avatar upload failed.',
+                'error' => 'server_error',
+            ], 500);
         }
-
-        // Store new file
-        $avatarPath = $request->file('avatar')->store('avatars', 'public');
-        
-        // Update avatar field
-        $user->update(['avatar' => $avatarPath]);
-
-        return response()->json([
-            'message' => 'Avatar updated successfully.',
-            'avatar_url' => asset('storage/' . $avatarPath),
-        ]);
     }
 
     public function updateInfo(Request $request)
@@ -802,7 +696,7 @@ class ProfileController extends Controller
                     'id' => $album->id,
                     'title' => $album->titre,
                     'description' => $album->description,
-                    'cover_image' => $album->path_to_img ? asset('storage/' . $album->path_to_img) : null,
+                    'cover_image' => $album->path_to_img ? storage_url($album->path_to_img) : null,
                     'photo_count' => $album->photos()->count(),
                     'created_at' => $album->created_at ? $album->created_at->format('Y-m-d H:i:s') : null,
                 ],
@@ -814,7 +708,7 @@ class ProfileController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to update album info',
-                'error' => $e->getMessage(),
+                'error' => 'server_error',
                 'trace' => config('app.debug') ? $e->getTraceAsString() : null
             ], 500);
         }
@@ -827,10 +721,12 @@ class ProfileController extends Controller
         $user = Auth::user();
 
         $request->validate([
-            'photos' => 'required|array|min:1',
-            'photos.*' => 'required|image|mimes:jpeg,png,jpg,gif,webp|max:25600',
-            'album_title' => 'nullable|string|max:255',
+            'photos'            => 'required|array|min:1',
+            'photos.*'          => 'required|image|mimes:jpeg,png,jpg,gif,webp|max:5120',
+            'album_title'       => 'nullable|string|max:255',
             'album_description' => 'nullable|string',
+        ], [
+            'photos.*.max' => 'Each image must be under 5 MB.',
         ]);
 
         // For centre users, stamp the primary (approved-claim) centre on every photo.
@@ -842,36 +738,42 @@ class ProfileController extends Controller
         DB::beginTransaction();
 
         try {
-            $albumTitle = $request->input('album_title', 'Profile Gallery');
             $albumDescription = $request->input('album_description', null);
 
-            $album = Album::firstOrCreate(
-                [
-                    'user_id' => $user->id,
-                    'titre' => 'Profile Gallery',
-                ],
-                [
-                    'titre' => $albumTitle,
-                    'description' => $albumDescription,
-                ]
-            );
+            // Find the album using the same robust lookup as getProfilePhotos:
+            // prefer 'Profile Gallery', fall back to any album for this user.
+            // This guarantees the upload always targets the same album that the
+            // load path will query, regardless of whether the user renamed it.
+            $album = Album::where('user_id', $user->id)
+                ->where('titre', 'Profile Gallery')
+                ->first()
+                ?? Album::where('user_id', $user->id)->latest()->first();
 
-            $updateData = [
-                'titre' => $albumTitle,
-                'updated_at' => now(),
-            ];
-
-            if ($request->has('album_description')) {
-                $updateData['description'] = $albumDescription;
+            if (!$album) {
+                // First-ever upload — create the canonical album.
+                $album = Album::create([
+                    'user_id'     => $user->id,
+                    'titre'       => 'Profile Gallery',
+                    'description' => $albumDescription ?? 'User profile gallery images',
+                ]);
             }
 
-            $album->update($updateData);
+            // Only update the description if explicitly provided; never rename the
+            // album during an upload (title changes go through updateAlbumInfo).
+            if ($request->has('album_description')) {
+                $album->update(['description' => $albumDescription, 'updated_at' => now()]);
+            }
 
-            // For centre users: migrate any camping_centre photos that are not yet
-            // in this album into it now, preserving their existing is_cover flags.
-            // This must happen BEFORE the new-upload cover check so we don't
-            // accidentally make a fresh upload the cover when one already exists.
+            // For centre users: bidirectional migration so both query paths stay consistent.
+            // Must happen BEFORE the new-upload cover check.
             if ($campingCentreId) {
+                // Stamp camping_centre_id on legacy photos that only have album_id (old format).
+                Photo::where('user_id', $user->id)
+                    ->where('album_id', $album->id)
+                    ->whereNull('camping_centre_id')
+                    ->update(['camping_centre_id' => $campingCentreId]);
+
+                // Pull admin/partner photos that have camping_centre_id but no album_id.
                 Photo::where('camping_centre_id', $campingCentreId)
                     ->where('user_id', $user->id)
                     ->whereNull('album_id')
@@ -886,7 +788,8 @@ class ProfileController extends Controller
                 $extension = $photo->getClientOriginalExtension();
                 $filename = $originalName . '_' . time() . '_' . uniqid() . '.' . $extension;
 
-                $path = $photo->storeAs('profile_photos', $filename, 'public');
+                $storageDir = $campingCentreId ? 'centre_photos/' . $campingCentreId : 'profile_photos';
+                $path = $photo->storeAs($storageDir, $filename, 'public');
 
                 $photoRecord = Photo::create([
                     'path_to_img'       => $path,
@@ -902,7 +805,7 @@ class ProfileController extends Controller
                 $uploadedPhotos[] = [
                     'id' => $photoRecord->id,
                     'path' => $path,
-                    'url' => asset('storage/' . $path),
+                    'url' => storage_url($path),
                     'is_cover' => $photoRecord->is_cover,
                     'order' => $photoRecord->order,
                 ];
@@ -924,7 +827,7 @@ class ProfileController extends Controller
                     'id' => $album->id,
                     'title' => $album->titre,
                     'description' => $album->description,
-                    'cover_image' => $album->path_to_img ? asset('storage/' . $album->path_to_img) : null,
+                    'cover_image' => $album->path_to_img ? storage_url($album->path_to_img) : null,
                     'photo_count' => $album->photos()->count(),
                 ],
                 'photos' => $uploadedPhotos,
@@ -938,7 +841,7 @@ class ProfileController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to upload photos',
-                'error' => $e->getMessage(),
+                'error' => 'server_error',
             ], 500);
         }
     }
@@ -949,21 +852,41 @@ class ProfileController extends Controller
             $user = Auth::user();
 
             // ── Centre users: fetch ALL photos linked to their camping centre ──────
-            // This includes admin-uploaded photos (user_id=NULL) and partner-uploaded
-            // photos (user_id=owner). The authoritative key is camping_centre_id.
+            // Covers three storage formats:
+            //   1. New uploads: camping_centre_id is set (authoritative key)
+            //   2. Legacy uploads: only album_id is set, camping_centre_id is NULL
+            //   3. Admin-uploaded: camping_centre_id set, user_id is NULL
             if ($user->role_id === 3) {
                 $centreIds = $this->centreIdsForUser($user);
 
+                // Load album FIRST — needed to include legacy photos stored by album_id
+                $album = Album::where('user_id', $user->id)
+                    ->where('titre', 'Profile Gallery')
+                    ->first()
+                    ?? Album::where('user_id', $user->id)->latest()->first();
+
                 $photos = $centreIds->isNotEmpty()
-                    ? Photo::whereIn('camping_centre_id', $centreIds)
-                        ->orderBy('order', 'asc')
-                        ->orderBy('created_at', 'desc')
-                        ->get()
-                    : collect();
+                    ? Photo::where(function ($q) use ($centreIds, $album) {
+                        $q->whereIn('camping_centre_id', $centreIds);
+                        // Also surface legacy photos that were uploaded before camping_centre_id
+                        // was introduced — they live in the album but have no centre FK.
+                        if ($album) {
+                            $q->orWhere('album_id', $album->id);
+                        }
+                    })
+                    ->orderBy('order', 'asc')
+                    ->orderBy('created_at', 'desc')
+                    ->get()
+                    : ($album
+                        ? Photo::where('album_id', $album->id)
+                            ->orderBy('order', 'asc')
+                            ->orderBy('created_at', 'desc')
+                            ->get()
+                        : collect());
 
                 $formattedPhotos = $photos->map(fn($p) => [
                     'id'          => $p->id,
-                    'url'         => asset('storage/' . $p->path_to_img),
+                    'url'         => storage_url($p->path_to_img),
                     'path'        => $p->path_to_img,
                     'is_cover'    => (bool) $p->is_cover,
                     'order'       => $p->order,
@@ -971,18 +894,13 @@ class ProfileController extends Controller
                     'uploaded_by' => $p->user_id ? 'partner' : 'admin',
                 ]);
 
-                // Load existing album for metadata (title/description) if present
-                $album = Album::where('user_id', $user->id)
-                    ->where('titre', 'Profile Gallery')
-                    ->first();
-
                 return response()->json([
                     'success' => true,
                     'album'   => $album ? [
                         'id'          => $album->id,
                         'title'       => $album->titre,
                         'description' => $album->description,
-                        'cover_image' => $album->path_to_img ? asset('storage/' . $album->path_to_img) : null,
+                        'cover_image' => $album->path_to_img ? storage_url($album->path_to_img) : null,
                         'photo_count' => $photos->count(),
                         'created_at'  => $album->created_at?->format('Y-m-d H:i:s'),
                     ] : null,
@@ -990,21 +908,40 @@ class ProfileController extends Controller
                 ]);
             }
 
-            // ── All other roles: original album-based logic ───────────────────────
-            $album = Album::firstOrCreate(
-                ['user_id' => $user->id, 'titre' => 'Profile Gallery'],
-                ['titre' => 'Profile Gallery', 'description' => 'User profile gallery images']
-            );
+            // ── All other roles: album-based logic ───────────────────────
+            // Use ->first() (not firstOrCreate) — we never want to create an empty
+            // album just because the user opened the Images tab before uploading.
+            // The album is created on first upload via storeOrUpdateProfilePhotos.
+            //
+            // Lookup order:
+            //   1. 'Profile Gallery' album (canonical default name)
+            //   2. Any album for this user (covers renamed albums)
+            $album = Album::where('user_id', $user->id)
+                ->where('titre', 'Profile Gallery')
+                ->first()
+                ?? Album::where('user_id', $user->id)->latest()->first();
 
-            $photos = Photo::where('user_id', $user->id)
-                ->where('album_id', $album->id)
+            if (!$album) {
+                // No album yet — return empty gracefully
+                return response()->json([
+                    'success' => true,
+                    'album'   => null,
+                    'photos'  => [],
+                ]);
+            }
+
+            // Load photos from the album.  We intentionally do NOT add an extra
+            // WHERE user_id filter here so that admin-imported or co-owner photos
+            // that live in this album (album_id matches, user_id may differ) are
+            // also surfaced.  The album itself is already scoped to the owner.
+            $photos = Photo::where('album_id', $album->id)
                 ->orderBy('order', 'asc')
                 ->orderBy('created_at', 'desc')
                 ->get();
 
             $formattedPhotos = $photos->map(fn($p) => [
                 'id'         => $p->id,
-                'url'        => asset('storage/' . $p->path_to_img),
+                'url'        => storage_url($p->path_to_img),
                 'path'       => $p->path_to_img,
                 'is_cover'   => (bool) $p->is_cover,
                 'order'      => $p->order,
@@ -1017,7 +954,7 @@ class ProfileController extends Controller
                     'id'          => $album->id,
                     'title'       => $album->titre,
                     'description' => $album->description,
-                    'cover_image' => $album->path_to_img ? asset('storage/' . $album->path_to_img) : null,
+                    'cover_image' => $album->path_to_img ? storage_url($album->path_to_img) : null,
                     'photo_count' => $photos->count(),
                     'created_at'  => $album->created_at?->format('Y-m-d H:i:s'),
                 ],
@@ -1049,12 +986,18 @@ class ProfileController extends Controller
                 return response()->json(['success' => false, 'message' => 'No linked centre found'], 404);
             }
 
+            $album = Album::where('user_id', $user->id)->where('titre', 'Profile Gallery')->first()
+                ?? Album::where('user_id', $user->id)->latest()->first();
+
             $photo = Photo::where('id', $photoId)
-                ->whereIn('camping_centre_id', $centreIds)
+                ->where(function ($q) use ($centreIds, $album) {
+                    $q->whereIn('camping_centre_id', $centreIds);
+                    if ($album) { $q->orWhere('album_id', $album->id); }
+                })
                 ->firstOrFail();
 
-            // Use the photo's own centre for any cascading updates
-            $campingCentreId = $photo->camping_centre_id;
+            // Use the photo's own centre for any cascading updates; fall back to first linked centre for legacy photos
+            $campingCentreId = $photo->camping_centre_id ?? $centreIds->first();
 
             DB::beginTransaction();
             try {
@@ -1090,7 +1033,7 @@ class ProfileController extends Controller
             } catch (\Exception $e) {
                 DB::rollBack();
                 \Log::error('Photo deletion error (centre): ' . $e->getMessage());
-                return response()->json(['success' => false, 'message' => 'Failed to delete photo', 'error' => $e->getMessage()], 500);
+                return response()->json(['success' => false, 'message' => 'Failed to delete photo', 'error' => 'server_error'], 500);
             }
         }
 
@@ -1137,7 +1080,7 @@ class ProfileController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
             \Log::error('Photo deletion error: ' . $e->getMessage());
-            return response()->json(['success' => false, 'message' => 'Failed to delete photo', 'error' => $e->getMessage()], 500);
+            return response()->json(['success' => false, 'message' => 'Failed to delete photo', 'error' => 'server_error'], 500);
         }
     }
 
@@ -1155,12 +1098,18 @@ class ProfileController extends Controller
                 return response()->json(['success' => false, 'message' => 'No linked centre found'], 404);
             }
 
+            $album = Album::where('user_id', $user->id)->where('titre', 'Profile Gallery')->first()
+                ?? Album::where('user_id', $user->id)->latest()->first();
+
             $photo = Photo::where('id', $photoId)
-                ->whereIn('camping_centre_id', $centreIds)
+                ->where(function ($q) use ($centreIds, $album) {
+                    $q->whereIn('camping_centre_id', $centreIds);
+                    if ($album) { $q->orWhere('album_id', $album->id); }
+                })
                 ->firstOrFail();
 
-            // Operate on the specific centre that owns this photo
-            $campingCentreId = $photo->camping_centre_id;
+            // Operate on the specific centre that owns this photo; fall back to first linked centre for legacy photos
+            $campingCentreId = $photo->camping_centre_id ?? $centreIds->first();
 
             DB::beginTransaction();
             try {
@@ -1185,7 +1134,7 @@ class ProfileController extends Controller
             } catch (\Exception $e) {
                 DB::rollBack();
                 \Log::error('Cover photo update error (centre): ' . $e->getMessage());
-                return response()->json(['success' => false, 'message' => 'Failed to update cover photo', 'error' => $e->getMessage()], 500);
+                return response()->json(['success' => false, 'message' => 'Failed to update cover photo', 'error' => 'server_error'], 500);
             }
         }
 
@@ -1219,7 +1168,7 @@ class ProfileController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
             \Log::error('Cover photo update error: ' . $e->getMessage());
-            return response()->json(['success' => false, 'message' => 'Failed to update cover photo', 'error' => $e->getMessage()], 500);
+            return response()->json(['success' => false, 'message' => 'Failed to update cover photo', 'error' => 'server_error'], 500);
         }
     }
 
@@ -1269,217 +1218,99 @@ class ProfileController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to reorder photos',
-                'error' => $e->getMessage(),
+                'error' => 'server_error',
             ], 500);
         }
     }
 
     public function showById($id)
     {
-        $user = User::findOrFail($id);
+        $user = is_numeric($id)
+            ? User::findOrFail($id)
+            : User::where('uuid', $id)->firstOrFail();
 
-        // Enforce visibility — if profile is private and the requester is not the owner, block it
         $profile = $user->profile;
         $requesterId = Auth::id();
+        $isSelf = $requesterId === $user->id;
 
-        if ($profile && !$profile->is_public && $requesterId !== $user->id) {
+        if ($profile && !$profile->is_public && !$isSelf) {
             return response()->json([
-                'success' => false,
-                'message'  => 'This profile is private.',
+                'success'    => false,
+                'message'    => 'This profile is private.',
                 'is_private' => true,
                 'user' => [
-                    'id'         => $user->id,
+                    'uuid'       => $user->uuid,
                     'first_name' => $user->first_name,
                     'last_name'  => $user->last_name,
-                    'avatar'     => $user->avatar,
-                    'role_id'    => $user->role_id,
+                    'avatar'     => $user->avatar ? storage_url($user->avatar) : null,
+                    'role'       => $user->role?->name,
                 ],
             ], 403);
         }
 
-        $userData = [
-            'id' => $user->id,
-            'first_name' => $user->first_name,
-            'last_name' => $user->last_name,
-            'email' => $user->email,
-            'phone_number' => $user->phone_number,
-            'ville' => $user->ville,
-            'avatar' => $user->avatar,
-            'role_id' => $user->role_id,
-            'created_at' => $user->created_at,
-        ];
-
-        if ($user->profile) {
-            $profile = $user->profile;
-            
-            $data = [
-                'user' => $userData,
-                'profile' => $profile,
-                'details' => null,
-            ];
-
-            switch ($profile->type) {
-                case 'guide':
-                    $data['details'] = $profile->profileGuide;
-                    break;
-                case 'centre':
-                    $data['details'] = $profile->profileCentre;
-                    break;
-                case 'groupe':
-                    $profileGroupe = $profile->profileGroupe;
-                    $data['details'] = $profileGroupe;
-
-                    // Album + photos (cover photo used as banner)
-                    $album = \App\Models\Album::with('photos')
-                        ->where('user_id', $user->id)
-                        ->latest()
-                        ->first();
-
-                    $data['album'] = $album ? [
-                        'id'     => $album->id,
-                        'photos' => $album->photos->map(fn($p) => [
-                            'id'       => $p->id,
-                            'url'      => $p->url,
-                            'is_cover' => (bool) $p->is_cover,
-                        ])->values(),
-                    ] : null;
-
-                    // Co-owners
-                    $data['co_owners'] = $profileGroupe
-                        ? $profileGroupe->coOwners()
-                            ->select('users.id', 'users.first_name', 'users.last_name', 'users.email', 'users.avatar')
-                            ->get()
-                            ->map(fn($u) => [
-                                'id'         => $u->id,
-                                'first_name' => $u->first_name,
-                                'last_name'  => $u->last_name,
-                                'email'      => $u->email,
-                                'avatar'     => $u->avatar ? asset('storage/' . $u->avatar) : null,
-                            ])
-                        : [];
-
-                    $feedbacks = \App\Models\Feedbacks::with('user')
-                        ->where('target_id', $user->id)
-                        ->where('type', 'groupe')
-                        ->where('status', 'approved')
-                        ->latest()
-                        ->take(5)
-                        ->get();
-
-                    $average = \App\Models\Feedbacks::where('target_id', $user->id)
-                        ->where('type', 'groupe')
-                        ->where('status', 'approved')
-                        ->avg('note');
-
-                    $data['feedback_summary'] = [
-                        'average_note' => round($average, 2),
-                        'feedback_count' => \App\Models\Feedbacks::where('target_id', $user->id)
-                            ->where('type', 'groupe')
-                            ->where('status', 'approved')
-                            ->count(),
-                        'latest_feedbacks' => $feedbacks,
-                    ];
-                    break;
-                case 'fournisseur':
-                    $data['details'] = $profile->profileFournisseur;
-                    break;
-            }
-
-            // Cover image URL (full URL for frontend)
-            if ($profile->cover_image) {
-                $data['cover_image_url'] = asset('storage/' . ltrim($profile->cover_image, '/'));
-            }
-
-            // Profile gallery photos (visible to everyone when profile is public)
-            if ($user->role_id === 3) {
-                // Centre users: serve all photos from all linked centres
-                $centreIds = $this->centreIdsForUser($user);
-                if ($centreIds->isNotEmpty()) {
-                    $data['photos'] = \App\Models\Photo::whereIn('camping_centre_id', $centreIds)
-                        ->orderBy('order', 'asc')
-                        ->orderBy('created_at', 'desc')
-                        ->get()
-                        ->map(fn($p) => [
-                            'id'       => $p->id,
-                            'url'      => asset('storage/' . $p->path_to_img),
-                            'is_cover' => (bool) $p->is_cover,
-                            'order'    => $p->order,
-                        ])->values();
-                }
-            } else {
-                $album = \App\Models\Album::with(['photos' => function ($q) {
-                        $q->orderBy('order', 'asc')->orderBy('created_at', 'desc');
-                    }])
-                    ->where('user_id', $user->id)
-                    ->where('titre', 'Profile Gallery')
-                    ->first();
-
-                if ($album) {
-                    $data['photos'] = $album->photos->map(fn($p) => [
-                        'id'       => $p->id,
-                        'url'      => asset('storage/' . $p->path_to_img),
-                        'is_cover' => (bool) $p->is_cover,
-                        'order'    => $p->order,
-                    ])->values();
-                }
-            }
-
-            // Feedback summary for all types (if not already set for groupe)
-            if (!isset($data['feedback_summary'])) {
-                $feedbackType = $profile->type;
-                $average = \App\Models\Feedbacks::where('target_id', $user->id)
-                    ->where('type', $feedbackType)
-                    ->where('status', 'approved')
-                    ->avg('note');
-
-                $count = \App\Models\Feedbacks::where('target_id', $user->id)
-                    ->where('type', $feedbackType)
-                    ->where('status', 'approved')
-                    ->count();
-
-                if ($count > 0) {
-                    $data['feedback_summary'] = [
-                        'average_note'    => round($average, 2),
-                        'feedback_count'  => $count,
-                    ];
-                }
-            }
-
-            // Past events (public, non-sensitive)
-            $data['past_events'] = \App\Models\Reservations_events::where('user_id', $user->id)
-                ->whereIn('status', ['confirmed', 'completed', 'attended'])
-                ->with('event')
-                ->get()
-                ->filter(fn($r) => $r->event && $r->event->start_date)
-                ->sortByDesc(fn($r) => $r->event->start_date)
-                ->take(8)
-                ->map(fn($r) => [
-                    'id'       => $r->event->id,
-                    'title'    => $r->event->title,
-                    'date'     => $r->event->start_date,
-                    'location' => $r->event->address ?? null,
-                ])->values();
-
-            // Visited camping centers (unique, most recent first)
-            $data['visited_centres'] = \App\Models\Reservations_centre::where('user_id', $user->id)
-                ->whereIn('status', ['confirmed', 'completed'])
-                ->with('centre')
-                ->get()
-                ->filter(fn($r) => $r->centre)
-                ->sortByDesc('date_debut')
-                ->unique('centre_id')
-                ->take(8)
-                ->map(fn($r) => [
-                    'id'       => $r->centre->id,
-                    'name'     => $r->centre->name,
-                    'location' => $r->centre->ville ?? null,
-                    'date'     => $r->date_debut,
-                ])->values();
-
-            return response()->json($data);
+        if (!$profile) {
+            return response()->json([
+                'user' => new ProfileUserResource($user),
+            ]);
         }
 
-        return response()->json(['user' => $userData]);
+        $data = [
+            'user'    => new ProfileUserResource($user),
+            'profile' => new ProfileBaseResource($profile),
+            'details' => $this->buildDetailsResource($profile, $isSelf),
+        ];
+
+        if ($profile->type === 'groupe') {
+            $profileGroupe = $profile->profileGroupe;
+
+            // Album for groupe banner display
+            $album = \App\Models\Album::with(['photos' => function ($q) {
+                    $q->orderBy('order', 'asc')->orderBy('created_at', 'desc');
+                }])
+                ->where('user_id', $user->id)
+                ->where('titre', 'Profile Gallery')
+                ->first()
+                ?? \App\Models\Album::with(['photos' => function ($q) {
+                    $q->orderBy('order', 'asc')->orderBy('created_at', 'desc');
+                }])
+                ->where('user_id', $user->id)
+                ->latest()
+                ->first();
+
+            $data['album'] = $album ? [
+                'photos' => $album->photos->map(fn($p) => [
+                    'id'       => $p->id,
+                    'url'      => storage_url($p->path_to_img),
+                    'is_cover' => (bool) $p->is_cover,
+                ])->values(),
+            ] : null;
+
+            // Co-owners — expose only public-safe fields (no email, no id)
+            $data['co_owners'] = $profileGroupe
+                ? $profileGroupe->coOwners()
+                    ->select('users.uuid', 'users.first_name', 'users.last_name', 'users.avatar')
+                    ->get()
+                    ->map(fn($u) => [
+                        'uuid'       => $u->uuid,
+                        'first_name' => $u->first_name,
+                        'last_name'  => $u->last_name,
+                        'avatar'     => $u->avatar ? storage_url($u->avatar) : null,
+                    ])
+                : [];
+
+            $data['feedback_summary'] = $this->buildFeedbackSummary($user->id, 'groupe');
+        } else {
+            $summary = $this->buildFeedbackSummary($user->id, $profile->type);
+            if ($summary['feedback_count'] > 0) {
+                $data['feedback_summary'] = $summary;
+            }
+        }
+
+        $data['photos']          = $this->buildPhotos($user);
+        $data['past_events']     = $this->buildPastEvents($user->id);
+        $data['visited_centres'] = $this->buildVisitedCentres($user->id);
+
+        return response()->json($data);
     }
 
     public function addCustomService(Request $request, $centerId)
@@ -1497,7 +1328,7 @@ class ProfileController extends Controller
 
             $validator = Validator::make($request->all(), [
                 'name' => 'required|string|max:255',
-                'description' => 'required|string',
+                'description' => 'nullable|string',
                 'price' => 'required|numeric|min:0',
                 'unit' => 'required|string|max:50',
                 'is_available' => 'boolean',
@@ -1548,9 +1379,158 @@ class ProfileController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to add custom service',
-                'error' => $e->getMessage()
+                'error' => 'server_error'
             ], 500);
         }
+    }
+
+    /**
+     * Build the appropriate detail Resource for a profile, applying self-view flag.
+     */
+    private function buildDetailsResource(\App\Models\Profile $profile, bool $isSelf): mixed
+    {
+        return match ($profile->type) {
+            'guide'       => (new ProfileGuideResource(
+                                $profile->profileGuide ?? new ProfileGuide(['profile_id' => $profile->id])
+                             ))->withSelf($isSelf),
+            'centre'      => (new ProfileCentreResource(
+                                $profile->profileCentre ?? new ProfileCentre(['profile_id' => $profile->id])
+                             ))->withSelf($isSelf),
+            'campeur'     => new ProfileCampeurResource(
+                                $profile->profileCampeur
+                                ?? ProfileCampeur::firstOrCreate(['profile_id' => $profile->id])
+                             ),
+            'groupe'      => (new ProfileGroupeResource(
+                                $profile->profileGroupe ?? new ProfileGroupe(['profile_id' => $profile->id])
+                             ))->withSelf($isSelf),
+            'fournisseur' => new ProfileFournisseurResource(
+                                $profile->profileFournisseur ?? new ProfileFournisseur(['profile_id' => $profile->id])
+                             ),
+            default       => null,
+        };
+    }
+
+    /**
+     * Build feedback summary with sanitised latest_feedbacks (no user email/id).
+     */
+    private function buildFeedbackSummary(int $userId, string $type): array
+    {
+        $feedbacks = \App\Models\Feedbacks::with('user')
+            ->where('target_id', $userId)
+            ->where('type', $type)
+            ->where('status', 'approved')
+            ->latest()
+            ->take(5)
+            ->get();
+
+        $average = \App\Models\Feedbacks::where('target_id', $userId)
+            ->where('type', $type)
+            ->where('status', 'approved')
+            ->avg('note');
+
+        $count = \App\Models\Feedbacks::where('target_id', $userId)
+            ->where('type', $type)
+            ->where('status', 'approved')
+            ->count();
+
+        return [
+            'average_note'    => round((float) $average, 2),
+            'feedback_count'  => $count,
+            'latest_feedbacks' => $feedbacks->map(fn($f) => [
+                'id'         => $f->id,
+                'note'       => $f->note,
+                'comment'    => $f->comment,
+                'created_at' => $f->created_at,
+                'user' => $f->user ? [
+                    'uuid'       => $f->user->uuid,
+                    'first_name' => $f->user->first_name,
+                    'last_name'  => $f->user->last_name,
+                    'avatar'     => $f->user->avatar ? storage_url($f->user->avatar) : null,
+                ] : null,
+            ])->values(),
+        ];
+    }
+
+    /**
+     * Build gallery photos array for a user. Reused across show() and showById().
+     */
+    private function buildPhotos(\App\Models\User $user): array
+    {
+        if ($user->role_id === 3) {
+            $centreIds = $this->centreIdsForUser($user);
+            if ($centreIds->isNotEmpty()) {
+                return \App\Models\Photo::whereIn('camping_centre_id', $centreIds)
+                    ->orderBy('order', 'asc')
+                    ->orderBy('created_at', 'desc')
+                    ->get()
+                    ->map(fn($p) => [
+                        'id'       => $p->id,
+                        'url'      => storage_url($p->path_to_img),
+                        'is_cover' => (bool) $p->is_cover,
+                        'order'    => $p->order,
+                    ])->values()->all();
+            }
+            return [];
+        }
+
+        $album = \App\Models\Album::with(['photos' => function ($q) {
+                $q->orderBy('order', 'asc')->orderBy('created_at', 'desc');
+            }])
+            ->where('user_id', $user->id)
+            ->where('titre', 'Profile Gallery')
+            ->first()
+            ?? \App\Models\Album::with(['photos' => function ($q) {
+                $q->orderBy('order', 'asc')->orderBy('created_at', 'desc');
+            }])
+            ->where('user_id', $user->id)
+            ->latest()
+            ->first();
+
+        if (!$album) {
+            return [];
+        }
+
+        return $album->photos->map(fn($p) => [
+            'id'       => $p->id,
+            'url'      => storage_url($p->path_to_img),
+            'is_cover' => (bool) $p->is_cover,
+            'order'    => $p->order,
+        ])->values()->all();
+    }
+
+    private function buildPastEvents(int $userId): array
+    {
+        return \App\Models\Reservations_events::where('user_id', $userId)
+            ->whereIn('status', ['confirmed', 'completed', 'attended'])
+            ->with('event')
+            ->get()
+            ->filter(fn($r) => $r->event && $r->event->start_date)
+            ->sortByDesc(fn($r) => $r->event->start_date)
+            ->take(8)
+            ->map(fn($r) => [
+                'id'       => $r->event->id,
+                'title'    => $r->event->title,
+                'date'     => $r->event->start_date,
+                'location' => $r->event->address ?? null,
+            ])->values()->all();
+    }
+
+    private function buildVisitedCentres(int $userId): array
+    {
+        return \App\Models\Reservations_centre::where('user_id', $userId)
+            ->whereIn('status', ['confirmed', 'completed'])
+            ->with('centre')
+            ->get()
+            ->filter(fn($r) => $r->centre)
+            ->sortByDesc('date_debut')
+            ->unique('centre_id')
+            ->take(8)
+            ->map(fn($r) => [
+                'id'       => $r->centre->id,
+                'name'     => $r->centre->name,
+                'location' => $r->centre->ville ?? null,
+                'date'     => $r->date_debut,
+            ])->values()->all();
     }
 
     private function determineUserType($roleId)
@@ -1613,7 +1593,7 @@ class ProfileController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch service categories',
-                'error' => $e->getMessage()
+                'error' => 'server_error'
             ], 500);
         }
     }
@@ -1695,7 +1675,7 @@ class ProfileController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch center services',
-                'error' => $e->getMessage()
+                'error' => 'server_error'
             ], 500);
         }
     }
@@ -1715,9 +1695,10 @@ class ProfileController extends Controller
             $validator = Validator::make($request->all(), [
                 'service_category_id' => 'nullable|exists:service_categories,id',
                 'name' => 'nullable|string|max:255',
-                'description' => 'required|string',
+                'description' => 'nullable|string',
                 'price' => 'required|numeric|min:0',
                 'is_available' => 'boolean',
+                'is_standard' => 'boolean',
                 'unit' => 'required|string|max:50',
                 'nbr_place' => 'nullable|integer|min:1',
             ]);
@@ -1754,11 +1735,20 @@ class ProfileController extends Controller
             ];
 
             $isStandardCategory = false;
-            if (!$isCustomService) {
+            // Handle custom services
+            if ($isCustomService) {
+                $serviceData['service_category_id'] = null;
+                $serviceData['name'] = $request->name;
+                $serviceData['is_standard'] = false;
+            } else {
+                // For category-based services
+                $serviceData['service_category_id'] = $request->service_category_id;
+                $serviceData['is_standard'] = $request->boolean('is_standard', false);
+
                 $serviceCategory = ServiceCategory::find($request->service_category_id);
                 if ($serviceCategory) {
                     $isStandardCategory = $serviceCategory->is_standard;
-                    
+
                     if ($serviceCategory->is_standard && $request->price < $serviceCategory->min_price) {
                         return response()->json([
                             'success' => false,
@@ -1768,9 +1758,6 @@ class ProfileController extends Controller
                 }
                 $serviceData['service_category_id'] = $request->service_category_id;
                 $serviceData['is_standard'] = $isStandardCategory;
-            } else {
-                $serviceData['service_category_id'] = null;
-                $serviceData['is_standard'] = false;
             }
 
             if ($serviceId) {
@@ -1807,7 +1794,7 @@ class ProfileController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to update service',
-                'error' => $e->getMessage(),
+                'error' => 'server_error',
                 'trace' => config('app.debug') ? $e->getTraceAsString() : null
             ], 500);
         }
@@ -1846,7 +1833,7 @@ class ProfileController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to delete service',
-                'error' => $e->getMessage()
+                'error' => 'server_error'
             ], 500);
         }
     }
@@ -1871,7 +1858,7 @@ class ProfileController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch equipment',
-                'error' => $e->getMessage()
+                'error' => 'server_error'
             ], 500);
         }
     }
@@ -1923,7 +1910,7 @@ class ProfileController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to update equipment',
-                'error' => $e->getMessage()
+                'error' => 'server_error'
             ], 500);
         }
     }
@@ -1946,7 +1933,7 @@ class ProfileController extends Controller
         $sharedSteps = [
             ['key' => 'avatar',        'label' => 'Profile photo',      'done' => (bool) $user->avatar,        'link' => '/settings/images',   'weight' => 15],
             ['key' => 'phone',         'label' => 'Phone number',        'done' => (bool) $user->phone_number,  'link' => '/settings',          'weight' => 10],
-            ['key' => 'city',          'label' => 'City',                'done' => (bool) $user->ville,         'link' => '/settings',          'weight' => 10],
+            ['key' => 'city',          'label' => 'City',                'done' => (bool) ($profile?->city ?: $user->ville), 'link' => '/settings', 'weight' => 10],
             ['key' => 'bio',           'label' => 'Bio / description',   'done' => (bool) $profile?->bio,       'link' => '/settings',          'weight' => 10],
             ['key' => 'email_verified','label' => 'Email verified',      'done' => (bool) $user->email_verified_at, 'link' => '/emailverification', 'weight' => 15],
         ];

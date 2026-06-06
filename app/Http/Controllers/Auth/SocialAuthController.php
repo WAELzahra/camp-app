@@ -4,137 +4,153 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
-use Illuminate\Support\Facades\Auth;
-use Laravel\Socialite\Facades\Socialite;
-use Illuminate\Support\Str;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
-use App\Services\EmailVerificationService;
+use Illuminate\Support\Str;
+use Laravel\Socialite\Facades\Socialite;
 
 class SocialAuthController extends Controller
 {
-    protected $emailVerificationService;
-    
-    public function __construct()
-    {
-        $this->emailVerificationService = new EmailVerificationService();
-    }
-    
     public function redirectToGoogle()
     {
-        return Socialite::driver('google')->redirect();
+        return Socialite::driver('google')->stateless()->redirect();
     }
 
     public function handleGoogleCallback(Request $request)
     {
         try {
             $googleUser = Socialite::driver('google')->stateless()->user();
-            return $this->loginOrCreateUser($googleUser, 'google', $request);
+            return $this->loginOrCreateUser($googleUser, 'google');
         } catch (\Exception $e) {
             Log::error('Google OAuth error: ' . $e->getMessage());
-            return redirect(config('app.frontend_url') . '/login?error=' . urlencode('Google authentication failed'));
+            $frontendUrl = config('app.frontend_url', 'http://localhost:5173');
+            return redirect($frontendUrl . '/login?error=' . urlencode('Google authentication failed'));
         }
     }
 
     public function redirectToFacebook()
     {
-        return Socialite::driver('facebook')->redirect();
+        return Socialite::driver('facebook')
+            ->scopes(['email', 'public_profile'])
+            ->fields(['name', 'email', 'first_name', 'last_name'])
+            ->stateless()
+            ->redirect();
     }
 
     public function handleFacebookCallback(Request $request)
     {
         try {
-            $facebookUser = Socialite::driver('facebook')->stateless()->user();
-            return $this->loginOrCreateUser($facebookUser, 'facebook', $request);
+            $facebookUser = Socialite::driver('facebook')
+                ->fields(['name', 'email', 'first_name', 'last_name'])
+                ->stateless()
+                ->user();
+            return $this->loginOrCreateUser($facebookUser, 'facebook');
         } catch (\Exception $e) {
             Log::error('Facebook OAuth error: ' . $e->getMessage());
-            return redirect(config('app.frontend_url') . '/login?error=' . urlencode('Facebook authentication failed'));
+            $frontendUrl = config('app.frontend_url', 'http://localhost:5173');
+            return redirect($frontendUrl . '/login?error=' . urlencode('Facebook authentication failed'));
         }
     }
 
-    protected function loginOrCreateUser($providerUser, $provider, Request $request)
+    protected function loginOrCreateUser($providerUser, string $provider)
     {
-        // Vérifie si l'utilisateur existe déjà
-        $user = User::where('email', $providerUser->getEmail())->first();
+        $frontendUrl = config('app.frontend_url', 'http://localhost:5173');
 
+        $user      = User::where('email', $providerUser->getEmail())->first();
         $isNewUser = false;
-        
+
         if (!$user) {
-            // Split name into first and last name
-            $nameParts = explode(' ', $providerUser->getName(), 2);
-            $firstName = $nameParts[0] ?? '';
-            $lastName = $nameParts[1] ?? '';
-            
-            // Create new user with camper role (role_id = 3)
+            $nameParts = explode(' ', trim($providerUser->getName() ?? ''), 2);
+
             $user = User::create([
-                'first_name' => $firstName,
-                'last_name' => $lastName,
-                'email' => $providerUser->getEmail(),
-                'password' => bcrypt(Str::random(16)),
-                'role_id' => 3, // Campeur
-                'provider' => $provider,
-                'provider_id' => $providerUser->getId(),
-                'email_verified_at' => now(), // Social users are auto-verified
-                'is_active' => true,
+                'first_name'        => $nameParts[0] ?? 'User',
+                'last_name'         => $nameParts[1] ?? '',
+                'email'             => $providerUser->getEmail(),
+                'password'          => bcrypt(Str::random(24)),
+                'role_id'           => 1, // campeur by default — completeRegistration() sets the real role
+                'provider'          => $provider,
+                'provider_id'       => $providerUser->getId(),
+                'email_verified_at' => now(),
+                // Always start INACTIVE. completeRegistration() activates campeurs (role_id=1)
+                // and leaves all other roles inactive pending admin approval.
+                // This prevents centre / supplier / guide accounts from being immediately
+                // active simply because they used social login.
+                'is_active'         => false,
+                'first_login'       => true,
+                'nombre_signalement' => 0,
             ]);
-            
+
+            // Create the base profile so downstream queries don't hit null-profile errors.
+            \DB::table('profiles')->insert([
+                'user_id'    => $user->id,
+                'type'       => 'campeur',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
             $isNewUser = true;
-            
-            Log::info('New user created via social auth', [
-                'user_id' => $user->id,
-                'email' => $user->email,
-                'provider' => $provider
+
+            Log::info('New social user created (inactive until role confirmed)', [
+                'user_id'  => $user->id,
+                'email'    => $user->email,
+                'provider' => $provider,
             ]);
         } else {
-            // Update existing user with provider info if not set
-            if (!$user->provider) {
-                $user->update([
-                    'provider' => $provider,
-                    'provider_id' => $providerUser->getId(),
-                ]);
-            }
-        }
-
-        // Create a Sanctum token for API authentication
-        $token = $user->createToken('social-auth-token')->plainTextToken;
-
-        // Get redirect URL from query parameter or use default
-        $redirectUrl = $request->query('redirect', config('app.frontend_url'));
-        
-        // For API requests (from React frontend)
-        if ($request->expectsJson() || $request->is('api/*')) {
-            return response()->json([
-                'success' => true,
-                'message' => $isNewUser ? 'Account created successfully' : 'Logged in successfully',
-                'user' => [
-                    'id' => $user->id,
-                    'first_name' => $user->first_name,
-                    'last_name' => $user->last_name,
-                    'email' => $user->email,
-                    'role_id' => $user->role_id,
-                    'email_verified_at' => $user->email_verified_at,
-                ],
-                'token' => $token,
-                'is_new_user' => $isNewUser,
-                'redirect_to' => $redirectUrl
+            // Existing user — just merge provider credentials. Never set isNewUser = true here.
+            // The role-selection popup must only appear for brand-new social sign-ups.
+            $user->update([
+                'provider'          => $user->provider ?? $provider,
+                'provider_id'       => $user->provider_id ?? $providerUser->getId(),
+                'email_verified_at' => $user->email_verified_at ?? now(),
             ]);
         }
 
-        // For traditional web requests (fallback)
-        Auth::login($user);
-        return redirect()->intended('/dashboard');
+        $user->load('role');
+        $token = $user->createToken('social-auth')->plainTextToken;
+
+        $params = http_build_query([
+            'token'       => $token,
+            'is_new_user' => $isNewUser ? '1' : '0',
+            'uuid'        => $user->uuid,
+            'first_name'  => $user->first_name,
+            'role'        => $user->role?->name ?? 'campeur',
+        ]);
+
+        return redirect($frontendUrl . '/social-callback?' . $params);
     }
-    
+
     /**
-     * Get social auth URLs for frontend
+     * Called by the frontend after the role selection popup.
+     * Updates the role for a newly created social user.
      */
-    public function getSocialAuthUrls(Request $request)
+    public function completeRegistration(Request $request)
     {
-        $redirectUrl = $request->query('redirect', config('app.frontend_url') . '/social-callback');
-        
+        $data = $request->validate([
+            'role_id' => 'required|integer|between:1,5',
+        ]);
+
+        $user = $request->user();
+
+        if (!$user->provider) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Not a social auth account.',
+            ], 403);
+        }
+
+        // Campeurs (role_id=1) are activated immediately; all other roles wait for admin approval.
+        $isActive = $data['role_id'] === 1;
+
+        $user->update([
+            'role_id'     => $data['role_id'],
+            'is_active'   => $isActive,
+            'first_login' => false, // Role confirmed — don't re-show the popup on next login.
+        ]);
+
         return response()->json([
-            'google' => route('google.redirect') . '?redirect=' . urlencode($redirectUrl),
-            'facebook' => route('facebook.redirect') . '?redirect=' . urlencode($redirectUrl),
+            'success'   => true,
+            'is_active' => $isActive,
+            'user'      => new \App\Http\Resources\UserResource($user->fresh()->load('role')),
         ]);
     }
 }

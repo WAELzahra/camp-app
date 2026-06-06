@@ -5,13 +5,11 @@ namespace App\Providers;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
 {
-    /**
-     * Register any application services.
-     */
     public function register(): void
     {
         $this->app->bind(
@@ -145,9 +143,6 @@ class AppServiceProvider extends ServiceProvider
         );
     }
 
-    /**
-     * Bootstrap any application services.
-     */
     public function boot(): void
     {
         // ── Model Observers: behavioral profile cache invalidation ────────────
@@ -185,5 +180,8 @@ class AppServiceProvider extends ServiceProvider
                 Limit::perDay(2000)->by($request->ip()),
             ];
         });
+        if (config('filesystems.default') === 'r2') {
+            config(['filesystems.disks.public' => config('filesystems.disks.r2')]);
+        }
     }
 }

@@ -11,8 +11,11 @@ use App\Models\ProfileGroupe;
 use App\Models\ProfileFournisseur;
 use App\Models\Feedbacks;
 use App\Models\Role;
+use App\Models\CentreClaim;
+use App\Services\CentreClaimApprovalService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Mail;
 use App\Mail\AccountStatusChanged;
 use App\Mail\PasswordResetEmail;
@@ -139,7 +142,8 @@ class AdminUserController extends Controller
                         'price_per_night'           => $pc->price_per_night,
                         'category'                  => $pc->category,
                         'disponibilite'             => (bool) $pc->disponibilite,
-                        'legal_document'            => $pc->legal_document,
+                        'has_legal_document'        => (bool) $pc->legal_document,
+                        'legal_document_url'        => $pc->legal_document ? storage_url($pc->legal_document) : null,
                         'document_legal_type'       => $pc->document_legal_type,
                         'document_legal_expiration' => $pc->document_legal_expiration
                             ? $pc->document_legal_expiration->format('Y-m-d') : null,
@@ -159,7 +163,8 @@ class AdminUserController extends Controller
                         'experience'            => $pg->experience,
                         'tarif'                 => $pg->tarif,
                         'zone_travail'          => $pg->zone_travail,
-                        'certificat_path'       => $pg->certificat_path,
+                        'has_certificat'        => (bool) $pg->certificat_path,
+                        'certificat_url'        => $pg->certificat_path ? storage_url($pg->certificat_path) : null,
                         'certificat_type'       => $pg->certificat_type,
                         'certificat_expiration' => $pg->certificat_expiration
                             ? $pg->certificat_expiration->format('Y-m-d') : null,
@@ -169,8 +174,9 @@ class AdminUserController extends Controller
                 if ($user->profile->profileGroupe) {
                     $pg = $user->profile->profileGroupe;
                     $profileExtra['profile_groupe'] = [
-                        'nom_groupe'   => $pg->nom_groupe,
-                        'patente_path' => $pg->patente_path,
+                        'nom_groupe'  => $pg->nom_groupe,
+                        'has_patente' => (bool) $pg->patente_path,
+                        'patente_url' => $pg->patente_path ? storage_url($pg->patente_path) : null,
                     ];
                 }
 
@@ -409,7 +415,8 @@ class AdminUserController extends Controller
             break;
 
         // ── profile_groupes ───────────────────────────────────────────────────
-        case 'groupe':
+        case 'organizer':
+        case 'groupe': // backward compat
         case 'group':
             if ($user->profile) {
                 if (!$user->profile->profileGroupe) {
@@ -477,7 +484,7 @@ class AdminUserController extends Controller
                 'message' => 'Document uploadé avec succès',
                 'data' => [
                     'path' => $path,
-                    'url' => asset('storage/' . $path),
+                    'url' => storage_url($path),
                     'filename' => $file->getClientOriginalName(),
                     'type' => $documentType
                 ]
@@ -578,38 +585,78 @@ class AdminUserController extends Controller
     }
 
     /**
-     * Réinitialiser le mot de passe
+     * Réinitialiser le mot de passe (admin — no current password required).
+     *
+     * Body (all optional):
+     *   new_password             string  min:8  — if omitted a random 12-char password is generated
+     *   new_password_confirmation string        — required when new_password is provided
+     *   notify_user              bool           — default true; set to false to skip the email
      */
-    public function resetPassword($id)
+    public function resetPassword(Request $request, $id)
     {
+        // Validate only when a custom password is provided
+        if ($request->filled('new_password')) {
+            $validator = \Illuminate\Support\Facades\Validator::make($request->all(), [
+                'new_password'              => 'required|string|min:8|confirmed',
+                'new_password_confirmation' => 'required|string',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $validator->errors()->first(),
+                    'errors'  => $validator->errors(),
+                ], 422);
+            }
+        }
+
         try {
             $user = User::findOrFail($id);
 
-            $newPassword = Str::random(10);
-            
+            // Admin cannot reset their own password through this endpoint
+            if (auth()->id() == $user->id) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You cannot reset your own password through the admin panel.',
+                ], 403);
+            }
+
+            // Use provided password or generate a secure random one
+            $newPassword = $request->filled('new_password')
+                ? $request->input('new_password')
+                : Str::random(12);
+
             $user->password = Hash::make($newPassword);
             $user->save();
 
-            try {
-                Mail::to($user->email)->send(new PasswordResetEmail($user, $newPassword));
-            } catch (\Exception $e) {
-                Log::error('Erreur envoi email: ' . $e->getMessage());
+            // Notify the user unless explicitly disabled
+            $notifyUser = $request->input('notify_user', true);
+            $emailSent  = false;
+            if ($notifyUser) {
+                try {
+                    Mail::to($user->email)->send(new PasswordResetEmail($user, $newPassword));
+                    $emailSent = true;
+                } catch (\Exception $e) {
+                    Log::error('Password reset email error: ' . $e->getMessage());
+                }
             }
 
             return response()->json([
                 'success' => true,
-                'message' => 'Mot de passe réinitialisé avec succès',
+                'message' => 'Password reset successfully.',
                 'data' => [
-                    'email' => $user->email,
-                    'temporary_password' => $newPassword
-                ]
+                    'email'              => $user->email,
+                    'temporary_password' => $newPassword,
+                    'email_sent'         => $emailSent,
+                    'custom_password'    => $request->filled('new_password'),
+                ],
             ]);
 
         } catch (\Exception $e) {
-            Log::error('Erreur reset password: ' . $e->getMessage());
+            Log::error('Admin reset password error: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
-                'message' => 'Erreur lors de la réinitialisation'
+                'message' => 'Failed to reset password.',
             ], 500);
         }
     }
@@ -629,8 +676,26 @@ class AdminUserController extends Controller
                 ], 403);
             }
 
+            $wasInactive = $user->is_active == 0;
             $user->is_active = $user->is_active == 1 ? 0 : 1;
             $user->save();
+
+            // When activating a centre-role user, auto-approve their pending claim
+            if ($wasInactive && $user->is_active == 1 && $user->role_id == 3) {
+                $pendingClaim = CentreClaim::with('centre')
+                    ->where('user_id', $user->id)
+                    ->where('status', 'pending')
+                    ->latest()
+                    ->first();
+
+                if ($pendingClaim) {
+                    try {
+                        (new CentreClaimApprovalService())->approve($pendingClaim, Auth::id());
+                    } catch (\Exception $e) {
+                        Log::error('Auto-approve claim failed: ' . $e->getMessage());
+                    }
+                }
+            }
 
             // Envoyer email de notification
             try {
@@ -771,14 +836,12 @@ class AdminUserController extends Controller
         $profileData = null;
         if ($user->profile) {
             $profileData = [
-                'id' => $user->profile->id,
-                'bio' => $user->profile->bio,
+                'bio'         => $user->profile->bio,
                 'cover_image' => $user->profile->cover_image,
-                'type' => $user->profile->type,
-                'activities' => $user->profile->activities,
-                'cin_path' => $user->profile->cin_path,
-                'cin_filename' => $user->profile->cin_filename,
-                'cin_url' => $user->profile->cin_path ? asset('storage/' . $user->profile->cin_path) : null,
+                'type'        => $user->profile->type,
+                'activities'  => $user->profile->activities,
+                'has_cin'     => (bool) $user->profile->cin_path,
+                'cin_url'     => $user->profile->cin_path ? storage_url($user->profile->cin_path) : null,
             ];
         }
 
@@ -791,7 +854,7 @@ class AdminUserController extends Controller
             'role' => $user->role ? $user->role->name : 'Camper',
             'role_id' => $user->role_id,
             'phone_number' => $user->phone_number,
-            'avatar' => $user->avatar,
+            'avatar' => $user->avatar ? storage_url($user->avatar) : null,
             'ville' => $user->ville,
             'adresse' => $user->adresse,
             'date_naissance' => $user->date_naissance,
@@ -825,46 +888,40 @@ class AdminUserController extends Controller
         ];
 
         if ($user->profile) {
-            // CIN (dans profile)
+            // CIN
             $documents['cin'] = [
-                'path' => $user->profile->cin_path,
-                'filename' => $user->profile->cin_filename,
-                'url' => $user->profile->cin_path ? asset('storage/' . $user->profile->cin_path) : null,
+                'has_cin' => (bool) $user->profile->cin_path,
+                'url'     => $user->profile->cin_path ? storage_url($user->profile->cin_path) : null,
             ];
 
             // Documents guide
             if ($user->profile->profileGuide) {
                 $guide = $user->profile->profileGuide;
                 $documents['guide'] = [
-                    'certificat_path' => $guide->certificat_path,
-                    'certificat_filename' => $guide->certificat_filename,
-                    'certificat_type' => $guide->certificat_type,
+                    'has_certificat'        => (bool) $guide->certificat_path,
+                    'certificat_type'       => $guide->certificat_type,
                     'certificat_expiration' => $guide->certificat_expiration,
-                    'certificat_url' => $guide->certificat_path ? asset('storage/' . $guide->certificat_path) : null,
+                    'certificat_url'        => $guide->certificat_path ? storage_url($guide->certificat_path) : null,
                 ];
             }
 
-            // Documents centre — column on profile_centres is `legal_document`
+            // Documents centre
             if ($user->profile->profileCentre) {
                 $centre = $user->profile->profileCentre;
                 $documents['centre'] = [
-                    'document_legal'            => $centre->legal_document,
+                    'has_legal_document'        => (bool) $centre->legal_document,
                     'document_legal_type'       => $centre->document_legal_type,
                     'document_legal_expiration' => $centre->document_legal_expiration,
-                    'document_legal_url'        => $centre->legal_document
-                                                    ? asset('storage/' . $centre->legal_document)
-                                                    : null,
+                    'document_legal_url'        => $centre->legal_document ? storage_url($centre->legal_document) : null,
                 ];
             }
 
-            // Documents groupe — only patente_path exists in profile_groupes table
+            // Documents groupe
             if ($user->profile->profileGroupe) {
                 $groupe = $user->profile->profileGroupe;
                 $documents['groupe'] = [
-                    'patente_path' => $groupe->patente_path,
-                    'patente_url'  => $groupe->patente_path
-                                        ? asset('storage/' . $groupe->patente_path)
-                                        : null,
+                    'has_patente' => (bool) $groupe->patente_path,
+                    'patente_url' => $groupe->patente_path ? storage_url($groupe->patente_path) : null,
                 ];
             }
 
@@ -872,12 +929,10 @@ class AdminUserController extends Controller
             if ($user->profile->profileFournisseur) {
                 $fournisseur = $user->profile->profileFournisseur;
                 $documents['fournisseur'] = [
-                    'cin_commercant_path' => $fournisseur->cin_commercant_path,
-                    'cin_commercant_filename' => $fournisseur->cin_commercant_filename,
-                    'cin_commercant_url' => $fournisseur->cin_commercant_path ? asset('storage/' . $fournisseur->cin_commercant_path) : null,
-                    'registre_commerce_path' => $fournisseur->registre_commerce_path,
-                    'registre_commerce_filename' => $fournisseur->registre_commerce_filename,
-                    'registre_commerce_url' => $fournisseur->registre_commerce_path ? asset('storage/' . $fournisseur->registre_commerce_path) : null,
+                    'has_cin_commercant'     => (bool) $fournisseur->cin_commercant_path,
+                    'cin_commercant_url'     => $fournisseur->cin_commercant_path ? storage_url($fournisseur->cin_commercant_path) : null,
+                    'has_registre_commerce'  => (bool) $fournisseur->registre_commerce_path,
+                    'registre_commerce_url'  => $fournisseur->registre_commerce_path ? storage_url($fournisseur->registre_commerce_path) : null,
                 ];
             }
         }
@@ -1092,23 +1147,35 @@ public function uploadPhotos(Request $request, $id)
                 ['titre' => 'Album principal']
             );
 
+            // For centre users, stamp photos with the linked camping centre id
+            $campingCentreId = null;
+            if ($user->role_id === 3) {
+                $claimCentreId = \App\Models\CentreClaim::where('user_id', $user->id)
+                    ->where('status', 'approved')
+                    ->value('centre_id');
+                $campingCentreId = $claimCentreId
+                    ?? \App\Models\CampingCentre::where('user_id', $user->id)->value('id');
+            }
+
             $uploadedPhotos = [];
-            
+
             foreach ($request->file('photos') as $photo) {
                 // Générer un nom unique
                 $filename = time() . '_' . uniqid() . '.' . $photo->getClientOriginalExtension();
-                $path = $photo->storeAs('albums/' . $user->id, $filename, 'public');
+                $storageDir = $campingCentreId ? 'centre_photos/' . $campingCentreId : 'albums/' . $user->id;
+                $path = $photo->storeAs($storageDir, $filename, 'public');
 
                 // Créer la photo
                 $photoModel = $album->photos()->create([
-                    'path_to_img' => $path,
-                    'user_id' => $user->id,
-                    'order' => $album->photos()->count() + 1
+                    'path_to_img'       => $path,
+                    'user_id'           => $user->id,
+                    'camping_centre_id' => $campingCentreId,
+                    'order'             => $album->photos()->count() + 1,
                 ]);
 
                 $uploadedPhotos[] = [
                     'id' => $photoModel->id,
-                    'url' => asset('storage/' . $path),
+                    'url' => storage_url($path),
                     'path' => $path,
                     'name' => $photo->getClientOriginalName()
                 ];
@@ -1124,7 +1191,7 @@ public function uploadPhotos(Request $request, $id)
             \Log::error('Erreur upload: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
-                'message' => 'Erreur: ' . $e->getMessage()
+                'message' => 'An unexpected error occurred. Please try again.'
             ], 500);
         }
     }
@@ -1136,24 +1203,53 @@ public function uploadPhotos(Request $request, $id)
     {
         try {
             $user = User::with('albums.photos')->findOrFail($id);
-            
+
             $photos = [];
+            $seenIds = [];
+
             foreach ($user->albums as $album) {
                 foreach ($album->photos as $photo) {
+                    $seenIds[] = $photo->id;
                     $photos[] = [
-                        'id' => $photo->id,
-                        'url' => asset('storage/' . $photo->path_to_img),
-                        'path' => $photo->path_to_img,
-                        'album_id' => $album->id,
-                        'order' => $photo->order,
-                        'created_at' => $photo->created_at
+                        'id'         => $photo->id,
+                        'url'        => storage_url($photo->path_to_img),
+                        'path'       => $photo->path_to_img,
+                        'is_cover'   => (bool) $photo->is_cover,
+                        'album_id'   => $album->id,
+                        'order'      => $photo->order,
+                        'created_at' => $photo->created_at,
                     ];
+                }
+            }
+
+            // For centre users also include photos stored directly on the camping centre
+            // (uploaded via admin centre panel — no album_id, but have camping_centre_id).
+            if ($user->role_id === 3) {
+                $centreIds = \App\Models\CampingCentre::where('user_id', $user->id)->pluck('id');
+                if ($centreIds->isNotEmpty()) {
+                    \App\Models\Photo::whereIn('camping_centre_id', $centreIds)
+                        ->whereNull('album_id')
+                        ->get()
+                        ->each(function ($photo) use (&$photos, &$seenIds) {
+                            if (!in_array($photo->id, $seenIds)) {
+                                $seenIds[]  = $photo->id;
+                                $photos[]   = [
+                                    'id'         => $photo->id,
+                                    'url'        => storage_url($photo->path_to_img),
+                                    'path'       => $photo->path_to_img,
+                                    'is_cover'   => (bool) $photo->is_cover,
+                                    'album_id'   => null,
+                                    'order'      => $photo->order,
+                                    'created_at' => $photo->created_at,
+                                ];
+                            }
+                        });
                 }
             }
 
             return response()->json([
                 'success' => true,
-                'data' => $photos
+                'data' => $photos,
             ]);
 
         } catch (\Exception $e) {

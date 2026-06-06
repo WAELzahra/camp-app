@@ -29,11 +29,11 @@ class TestUserController extends Controller
             ]);
             
         } catch (\Exception $e) {
-            Log::error('🔴 Erreur:', ['message' => $e->getMessage()]);
+            Log::error('🔴 Erreur:', ['message' => 'An unexpected error occurred. Please try again.']);
             
             return response()->json([
                 'success' => false,
-                'message' => $e->getMessage()
+                'message' => 'An unexpected error occurred. Please try again.'
             ], 500);
         }
     }

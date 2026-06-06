@@ -22,8 +22,17 @@ class AnnonceController extends Controller
      */
     public function index($idUser)
     {
+        // Resolve UUID to numeric DB id (legacy callers may still pass a numeric id)
+        $numericId = is_numeric($idUser)
+            ? (int) $idUser
+            : optional(\App\Models\User::where('uuid', $idUser)->first())->id;
+
+        if (!$numericId) {
+            return response()->json(['status' => 'success', 'annonces' => []]);
+        }
+
         $annonces = Annonce::with('photos')
-            ->where('user_id', $idUser)
+            ->where('user_id', $numericId)
             ->orderBy('created_at', 'desc')
             ->get();
 
@@ -147,7 +156,7 @@ class AnnonceController extends Controller
             DB::rollBack();
             return response()->json([
                 'status'  => 'error',
-                'message' => 'Erreur lors de la création: ' . $e->getMessage(),
+                'message' => 'An unexpected error occurred. Please try again.',
             ], 500);
         }
  
@@ -302,7 +311,7 @@ class AnnonceController extends Controller
             DB::rollBack();
             return response()->json([
                 'status'  => 'error',
-                'message' => 'Erreur lors de la mise à jour: ' . $e->getMessage(),
+                'message' => 'An unexpected error occurred. Please try again.',
             ], 500);
         }
  
@@ -338,7 +347,7 @@ class AnnonceController extends Controller
             DB::rollBack();
             return response()->json([
                 'status'  => 'error',
-                'message' => 'Erreur lors de la suppression: ' . $e->getMessage(),
+                'message' => 'An unexpected error occurred. Please try again.',
             ], 500);
         }
 
@@ -471,8 +480,16 @@ class AnnonceController extends Controller
      */
     public function getArchived($userId)
     {
+        $numericId = is_numeric($userId)
+            ? (int) $userId
+            : optional(\App\Models\User::where('uuid', $userId)->first())->id;
+
+        if (!$numericId) {
+            return response()->json(['status' => 'success', 'annonces' => []]);
+        }
+
         $annonces = Annonce::with('photos')
-            ->where('user_id', $userId)
+            ->where('user_id', $numericId)
             ->where(function ($q) {
                 $q->where('is_archived', true)
                   ->orWhere(function ($q2) {

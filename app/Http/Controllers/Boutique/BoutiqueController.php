@@ -57,6 +57,18 @@ class BoutiqueController extends Controller
     }
 
     /**
+     * Show a boutique by the supplier's UUID (public, for UUID-based navigation).
+     */
+    public function showByUuid(string $uuid)
+    {
+        $user = \App\Models\User::where('uuid', $uuid)->first();
+        if (!$user) {
+            return response()->json(['status' => 'error', 'message' => 'Supplier not found.'], 404);
+        }
+        return $this->show($user->id);
+    }
+
+    /**
      * Show a boutique by its own ID (for edit screens).
      */
     public function edit(int $boutique_id)
@@ -100,7 +112,7 @@ class BoutiqueController extends Controller
         $validated = $request->validate([
             'nom_boutique' => 'required|string|max:255',
             'description'  => 'nullable|string',
-            'image'        => 'nullable|image|mimes:jpeg,png,jpg,webp|max:2048',
+            'image'        => 'nullable|image|mimes:jpeg,png,jpg,webp|max:5120',
         ], [
             'nom_boutique.required' => 'Le nom de la boutique est obligatoire.',
         ]);
@@ -143,7 +155,7 @@ class BoutiqueController extends Controller
         $validated = $request->validate([
             'nom_boutique' => 'sometimes|required|string|max:255',
             'description'  => 'nullable|string',
-            'image'        => 'nullable|image|mimes:jpeg,png,jpg,webp|max:2048',
+            'image'        => 'nullable|image|mimes:jpeg,png,jpg,webp|max:5120',
         ], [
             'nom_boutique.required' => 'Le nom de la boutique est requis.',
         ]);

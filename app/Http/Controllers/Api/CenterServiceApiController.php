@@ -19,9 +19,7 @@ class CenterServiceApiController extends Controller
 
     private function photoUrl(?string $path): ?string
     {
-        if (!$path) return null;
-        if (filter_var($path, FILTER_VALIDATE_URL)) return $path;
-        return url('storage/' . $path);
+        return storage_url($path);
     }
 
     /**
@@ -43,16 +41,29 @@ class CenterServiceApiController extends Controller
         $userId  = $user?->id;
 
         /* ── Resolve user's linked CampingCentre (for photo fallbacks) ─── */
-        $campingCentreId = null;
-        if ($userId) {
-            $campingCentreId = CampingCentre::where('user_id', $userId)->value('id');
-        }
+        // Use profile_centre_id first — it is a direct 1-to-1 link and always
+        // points to the correct CampingCentre row even when multiple rows share
+        // the same user_id (e.g. after unlink → auto-sync → re-link).
+        // Falling back to user_id would return a random row and miss the photos.
+        $campingCentreId = CampingCentre::where('profile_centre_id', $center->id)->value('id')
+            ?? ($userId ? CampingCentre::where('user_id', $userId)->value('id') : null);
 
         /* ── Cover image ─────────────────────────────────────────────── */
+        // Priority: camping_centre photos table (always has correct current paths,
+        // e.g. centre_photos/{id}/) → album → profile.cover_image (may be a stale
+        // URL written before the storage path was updated to centre_photos/).
         $coverImage = null;
 
-        if ($profile?->cover_image) {
-            $coverImage = $this->photoUrl($profile->cover_image);
+        if ($campingCentreId) {
+            $ccCover = Photo::where('camping_centre_id', $campingCentreId)
+                ->where('is_cover', true)
+                ->first()
+                ?? Photo::where('camping_centre_id', $campingCentreId)
+                    ->orderBy('id', 'desc')
+                    ->first();
+            if ($ccCover) {
+                $coverImage = $this->photoUrl($ccCover->path_to_img);
+            }
         }
 
         if (!$coverImage && $userId) {
@@ -67,17 +78,8 @@ class CenterServiceApiController extends Controller
             }
         }
 
-        // Fallback: cover photo from the camping_centre photos (handles centers
-        // approved before the album-migration fix, or where profile.cover_image
-        // is still empty).
-        if (!$coverImage && $campingCentreId) {
-            $ccCover = Photo::where('camping_centre_id', $campingCentreId)
-                ->where('is_cover', true)
-                ->first()
-                ?? Photo::where('camping_centre_id', $campingCentreId)->first();
-            if ($ccCover) {
-                $coverImage = $this->photoUrl($ccCover->path_to_img);
-            }
+        if (!$coverImage && $profile?->cover_image) {
+            $coverImage = $this->photoUrl($profile->cover_image);
         }
 
         /* ── All gallery photos ───────────────────────────────────────── */
@@ -90,28 +92,35 @@ class CenterServiceApiController extends Controller
 
             $albumId = $album?->id;
 
-            // Load photos from the Profile Gallery album AND any camping_centre
-            // photos not yet migrated into the album (union via OR condition).
-            $photoQuery = Photo::where('user_id', $userId)
-                ->where(function ($q) use ($albumId, $campingCentreId) {
-                    if ($albumId) {
-                        $q->where('album_id', $albumId);
-                    }
+            // Two precise sources:
+            //   1. Camping-centre photos (by camping_centre_id) — no user_id needed.
+            //   2. Profile Gallery album photos owned by the user.
+            if (!$campingCentreId && !$albumId) {
+                // Nothing to query — no centre row and no gallery album yet.
+                $photos = [];
+            } else {
+                $photoQuery = Photo::where(function ($q) use ($userId, $albumId, $campingCentreId) {
                     if ($campingCentreId) {
-                        $q->orWhere('camping_centre_id', $campingCentreId);
+                        $q->where('camping_centre_id', $campingCentreId);
+                    }
+                    if ($userId && $albumId) {
+                        $q->orWhere(function ($q2) use ($userId, $albumId) {
+                            $q2->where('user_id', $userId)->where('album_id', $albumId);
+                        });
                     }
                 });
 
-            $photos = $photoQuery->get()
-                ->unique('id')
-                ->sortByDesc('is_cover')
-                ->values()
-                ->map(fn($p) => [
-                    'id'       => $p->id,
-                    'url'      => $this->photoUrl($p->path_to_img),
-                    'is_cover' => (bool) $p->is_cover,
-                    'order'    => $p->order ?? 0,
-                ])->toArray();
+                $photos = $photoQuery->get()
+                    ->unique('id')
+                    ->sortByDesc('is_cover')
+                    ->values()
+                    ->map(fn($p) => [
+                        'id'       => $p->id,
+                        'url'      => $this->photoUrl($p->path_to_img),
+                        'is_cover' => (bool) $p->is_cover,
+                        'order'    => $p->order ?? 0,
+                    ])->toArray();
+            }
         }
 
         /* ── Ratings ─────────────────────────────────────────────────── */
@@ -203,58 +212,26 @@ class CenterServiceApiController extends Controller
     }
 
     /* ──────────────────────────────────────────────────────────────────
-     * GET /centers/services  — list all available centers
+     * GET /centers/list  — lightweight card list (no services, no photos)
      *
-     * Returns both partner centres (profile_centres) and non-partner
-     * centres (camping_centres with no user_id) that have admin status=true.
-     * Partner centres whose linked camping_centre has status=false are hidden.
+     * Returns only the fields the list cards actually use. Skips all
+     * service/album/Photo queries, cutting response size by ~70%.
      * ────────────────────────────────────────────────────────────────── */
-    public function centersWithServices(Request $request)
+    public function centersListSummary()
     {
-        // Partner centres that admin has explicitly disabled (status=false)
-        $disabledProfileIds = \App\Models\CampingCentre::whereNotNull('profile_centre_id')
-            ->where('status', false)
-            ->pluck('profile_centre_id')
-            ->toArray();
+        $centers = ProfileCentre::with(['profile.user', 'availableEquipment'])
+            ->available()
+            ->whereHas('profile.user', fn($q) => $q->where('is_active', 1))
+            ->get()
+            ->sortByDesc('price_per_night')
+            ->unique(fn($c) => $c->profile?->user_id
+                ? 'u-' . $c->profile->user_id
+                : 'pc-' . $c->id
+            )
+            ->values();
 
-        $query = ProfileCentre::with([
-            'profile.user',
-            'availableEquipment',  
-        ])->available()
-        ->whereNotIn('id', $disabledProfileIds)
-        ->whereHas('profile.user', fn($q) => $q->where('is_active', 1));
-
-        if ($request->has('category')) {
-            $query->where('category', $request->category);
-        }
-        if ($request->has('equipment')) {
-            $query->withEquipment($request->equipment);
-        }
-        if ($request->has('service')) {
-            $query->withService($request->service);
-        }
-        if ($request->has('min_price')) {
-            $query->where('price_per_night', '>=', $request->min_price);
-        }
-        if ($request->has('max_price')) {
-            $query->where('price_per_night', '<=', $request->max_price);
-        }
-
-        $centers = $query->get();
-
-        /* ── Bulk-load albums to avoid N+1 ────────────────────────────── */
+        // Bulk-load ratings — single query for all centres
         $userIds = $centers->map(fn($c) => $c->profile?->user?->id)->filter()->unique()->values()->toArray();
-
-        $albumMap = [];
-        if (!empty($userIds)) {
-            Album::whereIn('user_id', $userIds)
-                ->where('titre', 'Profile Gallery')
-                ->with(['coverPhoto'])
-                ->get()
-                ->each(fn($album) => $albumMap[$album->user_id] = $album);
-        }
-
-        /* ── Bulk-load ratings ─────────────────────────────────────────── */
         $ratingMap = [];
         if (!empty($userIds)) {
             Feedbacks::where('type', 'centre')
@@ -271,48 +248,107 @@ class CenterServiceApiController extends Controller
                 });
         }
 
-        // Partner centres with is_partner flag
-        $partnerResult = $centers->map(function ($c) use ($albumMap, $ratingMap) {
-            return array_merge(
-                $this->formatCenter($c, $albumMap, $ratingMap, false),
-                ['is_partner' => true, '_source' => 'partner']
-            );
+        // Bulk-load cover photos by user_id — one query covers ALL upload paths:
+        //   • centre_photos/{id}/  (ImagesTab uploads for centers with a CampingCentre row)
+        //   • albums/{user_id}/    (admin panel uploads — most partner centers)
+        //   • profile_photos/      (older fallback path)
+        // Querying by camping_centre_id would miss admin-created partners that have no
+        // CampingCentre row, which is the common case. user_id is always set.
+        $coverPhotoMap = []; // userId → resolved cover URL
+
+        if (!empty($userIds)) {
+            Photo::whereIn('user_id', $userIds)
+                ->whereNotNull('path_to_img')
+                ->orderByRaw('is_cover DESC, id DESC')
+                ->get()
+                ->each(function ($photo) use (&$coverPhotoMap) {
+                    $uid = $photo->user_id;
+                    // First match per user wins (is_cover = true sorts first).
+                    if (!isset($coverPhotoMap[$uid])) {
+                        $coverPhotoMap[$uid] = $this->photoUrl($photo->path_to_img);
+                    }
+                });
+        }
+
+        $partnerResult = $centers->map(function ($c) use ($ratingMap, $coverPhotoMap) {
+            $profile = $c->profile;
+            $user    = $profile?->user;
+            $userId  = $user?->id;
+
+            // Photo table wins (any upload path); profile.cover_image is the fallback
+            // for centers where no Photo record exists yet.
+            $coverImage = ($userId && isset($coverPhotoMap[$userId]))
+                ? $coverPhotoMap[$userId]
+                : ($profile?->cover_image ? $this->photoUrl($profile->cover_image) : null);
+
+            $avgRating   = null;
+            $reviewCount = 0;
+            if ($userId && isset($ratingMap[$userId])) {
+                $avgRating   = $ratingMap[$userId]['avg'];
+                $reviewCount = $ratingMap[$userId]['count'];
+            }
+
+            // Equipment: only type + is_available (strip id and notes)
+            $equipment = $c->availableEquipment->map(fn($eq) => [
+                'type'         => $eq->type,
+                'is_available' => (bool) $eq->is_available,
+            ])->values()->toArray();
+
+            return [
+                'id'              => $c->id,
+                'name'            => $c->name,
+                'capacite'        => $c->capacite,
+                'price_per_night' => (float) $c->price_per_night,
+                'category'        => $c->category,
+                'disponibilite'   => (bool) $c->disponibilite,
+                'latitude'        => $c->latitude  ? (string) $c->latitude  : null,
+                'longitude'       => $c->longitude ? (string) $c->longitude : null,
+                'average_rating'  => $avgRating,
+                'review_count'    => $reviewCount,
+                'profile' => [
+                    'city'        => $profile?->city,
+                    'address'     => $profile?->address,
+                    'cover_image' => $coverImage,
+                    'user'        => $user ? ['ville' => $user->ville] : null,
+                ],
+                'available_equipment' => $equipment,
+                'is_partner'      => true,
+                '_source'         => 'partner',
+            ];
         })->values();
 
-        // Non-partner centres: camping_centres with no user AND not linked to a profile_centre
-        $nonPartnerResult = \App\Models\CampingCentre::whereNull('user_id')
+        $partnerNameSet = $partnerResult->map(fn($c) => mb_strtolower(trim($c['name'] ?? '')))
+            ->filter()->flip()->toArray();
+
+        // Include active CampingCentre rows not already covered by a ProfileCentre partner.
+        // Exclude rows that have a profile_centre_id: those centres belong to a registered
+        // partner and must not appear as standalone non-partner cards (they would show no
+        // price and trigger a broken redirect on the detail page).
+        $nonPartnerResult = \App\Models\CampingCentre::where('status', true)
             ->whereNull('profile_centre_id')
-            ->where('status', true)
-            ->with('coverPhoto')
             ->get()
+            ->filter(fn($c) => !isset($partnerNameSet[mb_strtolower(trim($c->nom ?? ''))]))
             ->map(fn($c) => [
-                'id'               => $c->id,
-                'name'             => $c->nom,
-                'capacite'         => 0,
-                'price_per_night'  => 0,
-                'category'         => 'Camping',
-                'disponibilite'    => true,
-                'latitude'         => $c->lat  ? (string) $c->lat  : null,
-                'longitude'        => $c->lng  ? (string) $c->lng  : null,
-                'contact_email'    => null,
-                'contact_phone'    => null,
-                'manager_name'     => null,
-                'average_rating'   => null,
-                'review_count'     => 0,
+                'id'              => $c->id,
+                'name'            => $c->nom,
+                'capacite'        => 0,
+                'price_per_night' => 0,
+                'category'        => 'Camping',
+                'disponibilite'   => true,
+                'latitude'        => $c->lat  ? (string) $c->lat  : null,
+                'longitude'       => $c->lng  ? (string) $c->lng  : null,
+                'average_rating'  => null,
+                'review_count'    => 0,
                 'profile' => [
-                    'bio'         => $c->description,
                     'city'        => null,
                     'address'     => $c->adresse,
-                    'cover_image' => $c->image
-                        ? url('storage/' . $c->image)
-                        : ($c->coverPhoto ? url('storage/' . $c->coverPhoto->path_to_img) : null),
+                    'cover_image' => $c->image ? storage_url($c->image) : null,
                     'user'        => null,
                 ],
-                'available_services'  => [],
                 'available_equipment' => [],
-                'is_partner'       => false,
-                '_source'          => 'camping',
-            ]);
+                'is_partner'      => (bool) $c->is_partner,
+                '_source'         => 'camping',
+            ])->values();
 
         return response()->json($partnerResult->concat($nonPartnerResult)->values());
     }
@@ -324,14 +360,18 @@ class CenterServiceApiController extends Controller
     {
         $center = ProfileCentre::with([
             'profile.user',
-            'availableServices',
+            'centerServices.serviceCategory',
             'availableEquipment',
         ])->findOrFail($centerId);
 
-        return response()->json(array_merge(
-            $this->formatCenter($center, null, null, true),
-            ['is_partner' => true, '_source' => 'partner']
-        ));
+        // formatCenter with $withPhotos=true returns the full flat shape that
+        // normalizeCentre() on the frontend expects (detects via `capacite` key).
+        // It already resolves cover_image via profile → album → camping_centre photos.
+        $data = $this->formatCenter($center, null, null, true);
+        $data['is_partner'] = true;
+        $data['_source']    = 'partner';
+
+        return response()->json($data);
     }
 
     /* ──────────────────────────────────────────────────────────────────

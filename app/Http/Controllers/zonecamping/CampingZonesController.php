@@ -22,58 +22,101 @@ class CampingZonesController extends Controller
      */
     public function index(Request $request)
     {
-        $user  = Auth::user();
+        $user    = Auth::user();
         $isAdmin = $user && $user->role && $user->role->name === 'admin';
 
-        $query = CampingZone::with(['coverPhoto', 'centre']);
+        // Only load coverPhoto — images appended attr triggers N+1 if photos not loaded,
+        // so we bypass $appends entirely via formatZoneList() and skip loading photos/centre.
+        $query = CampingZone::with(['coverPhoto'])
+            ->select([
+                'id', 'nom', 'city', 'region', 'difficulty', 'terrain', 'terrain_type',
+                'is_beginner_friendly', 'danger_level', 'best_season', 'rating',
+                'reviews_count', 'lat', 'lng', 'status', 'is_closed', 'is_public',
+                'created_at',
+            ]);
 
-        // Non-admins only see open, public, non-closed zones
         if (!$isAdmin) {
             $query->where('status', true)
-                  ->where('is_public', true)
-                  ->where('is_closed', false);
+                ->where('is_public', true)
+                ->where('is_closed', false);
         }
 
-        // Filters
+        if ($request->filled('q')) {
+            $term = $request->q;
+            $query->addSelect('description')
+                ->where(function ($q) use ($term) {
+                    $q->where('nom',         'LIKE', "%{$term}%")
+                        ->orWhere('city',       'LIKE', "%{$term}%")
+                        ->orWhere('region',     'LIKE', "%{$term}%")
+                        ->orWhere('description','LIKE', "%{$term}%");
+                });
+        }
+
         if ($request->filled('region'))     $query->where('region', $request->region);
         if ($request->filled('city'))       $query->where('city', $request->city);
         if ($request->filled('terrain'))    $query->where('terrain', 'LIKE', "%{$request->terrain}%");
-        if ($request->filled('difficulty')) $query->where('difficulty', $request->difficulty);
-        if ($request->filled('danger_level')) $query->where('danger_level', $request->danger_level);
-        if ($request->filled('access_type'))  $query->where('access_type', $request->access_type);
+        if ($request->filled('difficulty')) $query->whereIn('difficulty', (array) $request->difficulty);
+        if ($request->filled('danger_level')) $query->whereIn('danger_level', (array) $request->danger_level);
+        if ($request->filled('access_type')) $query->where('access_type', $request->access_type);
         if ($request->filled('is_protected_area')) {
             $query->where('is_protected_area', (bool) $request->is_protected_area);
         }
-        if ($request->filled('activity')) {
-            $query->whereJsonContains('activities', $request->activity);
-        }
-        if ($request->filled('season')) {
-            $query->whereJsonContains('best_season', $request->season);
-        }
+        if ($request->filled('activity')) $query->whereJsonContains('activities', $request->activity);
+        if ($request->filled('season'))   $query->whereJsonContains('best_season', $request->season);
 
-        // Sorting
         $sortBy  = $request->get('sort_by', 'created_at');
         $sortDir = $request->get('sort_dir', 'desc');
-        $allowed = ['created_at', 'rating', 'reviews_count', 'nom', 'difficulty'];
-        if (in_array($sortBy, $allowed)) {
+        if (in_array($sortBy, ['created_at', 'rating', 'reviews_count', 'nom', 'difficulty'])) {
             $query->orderBy($sortBy, $sortDir);
         }
 
         $zones = $query->paginate($request->get('per_page', 10));
 
-        return response()->json($zones);
+        // ═══════════════════════════════════════════════════════════════
+        // ADD THIS: Aggregation counts for all public active zones
+        // ═══════════════════════════════════════════════════════════════
+        $countsBase = CampingZone::where('status', true)
+            ->where('is_public', true)
+            ->where('is_closed', false);
+
+        $counts = [
+            'difficulty' => [
+                'easy'   => (clone $countsBase)->where('difficulty', 'easy')->count(),
+                'medium' => (clone $countsBase)->where('difficulty', 'medium')->count(),
+                'hard'   => (clone $countsBase)->where('difficulty', 'hard')->count(),
+            ],
+            'danger_level' => [
+                'low'      => (clone $countsBase)->where('danger_level', 'low')->count(),
+                'moderate' => (clone $countsBase)->where('danger_level', 'moderate')->count(),
+                'high'     => (clone $countsBase)->where('danger_level', 'high')->count(),
+                'extreme'  => (clone $countsBase)->where('danger_level', 'extreme')->count(),
+            ],
+            'total'          => (clone $countsBase)->count(),
+            'centres_count'  => (clone $countsBase)->whereNotNull('centre_id')->distinct('centre_id')->count('centre_id'),
+        ];
+        // ═══════════════════════════════════════════════════════════════
+
+        return response()->json([
+            'current_page' => $zones->currentPage(),
+            'last_page'    => $zones->lastPage(),
+            'per_page'     => $zones->perPage(),
+            'total'        => $zones->total(),
+            'from'         => $zones->firstItem(),
+            'to'           => $zones->lastItem(),
+            'data'         => $zones->getCollection()->map(fn($z) => $this->formatZoneList($z)),
+            'counts'       => $counts, 
+        ]);
     }
 
     /**
      * Full details of a single zone.
+     * Feedbacks are fetched separately by the frontend (useFeedback hook).
      */
     public function show($id)
     {
         $zone = CampingZone::with([
             'photos',
             'coverPhoto',
-            'centre.profileCentre',
-            'feedbacks.user',
         ])->findOrFail($id);
 
         $user    = Auth::user();
@@ -271,7 +314,7 @@ class CampingZonesController extends Controller
         $zone = CampingZone::findOrFail($id);
         $request->validate([
             'images'   => 'required|array',
-            'images.*' => 'required|image|max:4096',
+            'images.*' => 'required|image|max:5120',
         ]);
 
         $uploaded = [];
@@ -306,6 +349,9 @@ class CampingZonesController extends Controller
     public function search(Request $request)
     {
         $query = CampingZone::with(['coverPhoto'])
+            ->select(['id','nom','city','region','difficulty','terrain','terrain_type',
+                      'is_beginner_friendly','danger_level','best_season','rating',
+                      'reviews_count','lat','lng','status','is_closed','is_public','description'])
             ->where('status', true)
             ->where('is_public', true)
             ->where('is_closed', false);
@@ -325,7 +371,17 @@ class CampingZonesController extends Controller
         if ($request->filled('region'))     $query->where('region', $request->region);
         if ($request->filled('danger_level')) $query->where('danger_level', $request->danger_level);
 
-        return response()->json($query->paginate(10));
+        $zones = $query->paginate(10);
+
+        return response()->json([
+            'current_page' => $zones->currentPage(),
+            'last_page'    => $zones->lastPage(),
+            'per_page'     => $zones->perPage(),
+            'total'        => $zones->total(),
+            'from'         => $zones->firstItem(),
+            'to'           => $zones->lastItem(),
+            'data'         => $zones->getCollection()->map(fn($z) => $this->formatZoneList($z)),
+        ]);
     }
 
     /**
@@ -335,7 +391,7 @@ class CampingZonesController extends Controller
     {
         $request->validate(['region' => 'required|string']);
 
-        $zones = CampingZone::with('coverPhoto')
+        $zones = CampingZone::with(['photos', 'coverPhoto'])
             ->where('region', $request->region)
             ->where('status', true)
             ->where('is_closed', false)
@@ -357,20 +413,27 @@ class CampingZonesController extends Controller
 
         $radius = $request->radius ?? 10;
 
-        $zones = CampingZone::with('coverPhoto')
+        $zones = CampingZone::with(['coverPhoto'])
             ->where('status', true)
             ->where('is_public', true)
             ->where('is_closed', false)
-            ->selectRaw('*, (6371 * acos(
-                cos(radians(?)) * cos(radians(lat)) *
-                cos(radians(lng) - radians(?)) +
-                sin(radians(?)) * sin(radians(lat))
-            )) AS distance_km', [$request->lat, $request->lng, $request->lat])
+            ->selectRaw('id, nom, city, region, difficulty, terrain, terrain_type,
+                is_beginner_friendly, danger_level, best_season, rating, reviews_count,
+                lat, lng, status, is_closed, is_public,
+                (6371 * acos(
+                    cos(radians(?)) * cos(radians(lat)) *
+                    cos(radians(lng) - radians(?)) +
+                    sin(radians(?)) * sin(radians(lat))
+                )) AS distance_km', [$request->lat, $request->lng, $request->lat])
             ->having('distance_km', '<=', $radius)
             ->orderBy('distance_km')
             ->get();
 
-        return response()->json(['radius_km' => $radius, 'count' => $zones->count(), 'zones' => $zones]);
+        return response()->json([
+            'radius_km' => $radius,
+            'count'     => $zones->count(),
+            'zones'     => $zones->map(fn($z) => $this->formatZoneList($z)),
+        ]);
     }
 
     /**
@@ -378,7 +441,7 @@ class CampingZonesController extends Controller
      */
     public function topZones(Request $request)
     {
-        $zones = CampingZone::with('coverPhoto')
+        $zones = CampingZone::with(['photos', 'coverPhoto'])
             ->where('status', true)
             ->where('is_public', true)
             ->where('is_closed', false)
@@ -397,7 +460,7 @@ class CampingZonesController extends Controller
     {
         $season = $request->get('season', $this->getCurrentSeason());
 
-        $zones = CampingZone::with('coverPhoto')
+        $zones = CampingZone::with(['photos', 'coverPhoto'])
             ->where('status', true)
             ->where('is_public', true)
             ->where('is_closed', false)
@@ -414,7 +477,7 @@ class CampingZonesController extends Controller
      */
     public function excludeNonRelevantZones()
     {
-        $zones = CampingZone::with('coverPhoto')
+        $zones = CampingZone::with(['photos', 'coverPhoto'])
             ->where('status', true)
             ->where('is_public', true)
             ->where('is_closed', false)
@@ -431,7 +494,7 @@ class CampingZonesController extends Controller
     public function personalizedRecommendations($userId)
     {
         // Fall back to top-rated if no user preferences available
-        $zones = CampingZone::with('coverPhoto')
+        $zones = CampingZone::with(['photos', 'coverPhoto'])
             ->where('status', true)
             ->where('is_public', true)
             ->where('is_closed', false)
@@ -457,7 +520,7 @@ class CampingZonesController extends Controller
     {
         $season = $this->getCurrentSeason();
 
-        $zones = CampingZone::with('coverPhoto')
+        $zones = CampingZone::with(['photos', 'coverPhoto'])
             ->where('status', true)
             ->where('is_public', true)
             ->where('is_closed', false)
@@ -498,6 +561,40 @@ class CampingZonesController extends Controller
     // =========================================================================
     // GEO / MAP
     // =========================================================================
+
+    /**
+     * Lightweight map overlay: all active public zones with coordinates + photos.
+     * Mirrors /api/centres/registered-map for the interactive map.
+     */
+    public function registeredZonesMap()
+    {
+        $zones = CampingZone::with(['coverPhoto', 'photos'])
+            ->where('status', true)
+            ->where('is_public', true)
+            ->where('is_closed', false)
+            ->whereNotNull('lat')
+            ->whereNotNull('lng')
+            ->get();
+
+        $data = $zones->map(fn($zone) => [
+            'id'            => $zone->id,
+            'name'          => $zone->nom,
+            'description'   => $zone->description ?? '',
+            'latitude'      => (float) $zone->lat,
+            'longitude'     => (float) $zone->lng,
+            'region'        => $zone->region,
+            'city'          => $zone->city,
+            'difficulty'    => $zone->difficulty,
+            'rating'        => $zone->rating,
+            'reviews_count' => $zone->reviews_count,
+            'activities'    => $zone->activities ?? [],
+            'max_capacity'  => $zone->max_capacity,
+            'photos'        => $zone->images,
+            'cover_image'   => $zone->cover_image,
+        ]);
+
+        return response()->json(['status' => 'success', 'data' => $data]);
+    }
 
     /**
      * Export all open zones as GeoJSON FeatureCollection.
@@ -619,19 +716,62 @@ class CampingZonesController extends Controller
     }
 
     /**
-     * Shape a zone for API responses.
+     * Slim format for list cards.
+     * Bypasses $appends (cover_image/images) to avoid N+1 on photos relation.
+     * Requires coverPhoto to be eager-loaded.
+     */
+    private function formatZoneList(CampingZone $zone): array
+    {
+        $coverImage = null;
+        if ($zone->relationLoaded('coverPhoto') && $zone->coverPhoto) {
+            $path = $zone->coverPhoto->path_to_img;
+            $coverImage = filter_var($path, FILTER_VALIDATE_URL)
+                ? $path
+                : Storage::disk('public')->url($path);
+        }
+
+        return [
+            'id'                   => $zone->id,
+            'nom'                  => $zone->nom,
+            'name'                 => $zone->nom,
+            'city'                 => $zone->city,
+            'region'               => $zone->region,
+            'difficulty'           => $zone->difficulty,
+            'terrain'              => $zone->terrain,
+            'terrain_type'         => $zone->terrain_type,
+            'is_beginner_friendly' => (bool) $zone->is_beginner_friendly,
+            'danger_level'         => $zone->danger_level,
+            'best_season'          => $zone->best_season ?? [],
+            'rating'               => $zone->rating,
+            'reviews_count'        => $zone->reviews_count,
+            'reviews'              => $zone->reviews_count,
+            'cover_image'          => $coverImage,
+            'images'               => [],
+            'coordinates'          => ['lat' => (float) $zone->lat, 'lng' => (float) $zone->lng],
+            'status'               => (bool) $zone->status,
+            'is_closed'            => (bool) $zone->is_closed,
+        ];
+    }
+
+    /**
+     * Full format for detail view.
      */
     private function formatZone(CampingZone $zone, bool $detailed = false): array
     {
         $data = [
             'id'             => $zone->id,
+            'nom'            => $zone->nom,
             'name'           => $zone->nom,
             'city'           => $zone->city,
             'region'         => $zone->region,
             'description'    => $zone->description,
             'terrain'        => $zone->terrain,
+            'terrain_type'   => $zone->terrain_type,
             'difficulty'     => $zone->difficulty,
+            'danger_level'   => $zone->danger_level,
+            'is_beginner_friendly' => (bool) $zone->is_beginner_friendly,
             'rating'         => $zone->rating,
+            'reviews_count'  => $zone->reviews_count,
             'reviews'        => $zone->reviews_count,
             'accessibility'  => $zone->accessibility,
             'best_season'    => $zone->best_season ?? [],
@@ -639,49 +779,26 @@ class CampingZonesController extends Controller
             'facilities'     => $zone->facilities  ?? [],
             'distance'       => $zone->distance,
             'altitude'       => $zone->altitude,
+            'min_temp_celsius' => $zone->min_temp_celsius,
+            'max_temp_celsius' => $zone->max_temp_celsius,
             'coordinates'    => ['lat' => (float) $zone->lat, 'lng' => (float) $zone->lng],
             'contact'        => array_filter([
                 'phone'   => $zone->contact_phone,
                 'email'   => $zone->contact_email,
                 'website' => $zone->contact_website,
             ]),
-            'cover_image'    => $zone->coverPhoto?->path_to_img,
-            'images'         => $zone->photos?->pluck('path_to_img') ?? [],
-            'status'         => $zone->status,
-            'is_closed'      => $zone->is_closed,
+            'cover_image'    => $zone->cover_image,
+            'images'         => $zone->images ?? [],
+            'status'         => (bool) $zone->status,
+            'is_closed'      => (bool) $zone->is_closed,
         ];
 
         if ($detailed) {
-            $data['full_description'] = $zone->full_description;
-            $data['rules']            = $zone->rules ?? [];
-            $data['danger_level']     = $zone->danger_level;
-            $data['max_capacity']     = $zone->max_capacity;
-            $data['is_protected']     = $zone->is_protected_area;
+            $data['full_description']   = $zone->full_description;
+            $data['rules']              = $zone->rules ?? [];
+            $data['max_capacity']       = $zone->max_capacity;
+            $data['is_protected']       = $zone->is_protected_area;
             $data['emergency_contacts'] = $zone->emergency_contacts ?? [];
-            $data['feedbacks']        = $zone->feedbacks?->map(fn($f) => [
-                'id'         => $f->id,
-                'user_name'  => $f->user->first_name . ' ' . $f->user->last_name,
-                'comment'    => $f->comment,
-                'rating'     => $f->rating,
-                'created_at' => $f->created_at,
-            ]);
-
-            if ($zone->centre) {
-                $profil = $zone->centre->profileCentre;
-                $data['centre'] = [
-                    'id'               => $zone->centre->id,
-                    'nom'              => $zone->centre->nom,
-                    'description'      => $zone->centre->description,
-                    'adresse'          => $zone->centre->adresse,
-                    'lat'              => $zone->centre->lat ?? $zone->lat,
-                    'lng'              => $zone->centre->lng ?? $zone->lng,
-                    'capacite'         => $profil->capacite ?? null,
-                    'disponibilite'    => $profil->disponibilite ?? null,
-                    'is_registered'    => method_exists($zone->centre, 'isRegistered')
-                                         ? $zone->centre->isRegistered()
-                                         : true,
-                ];
-            }
         }
 
         return $data;

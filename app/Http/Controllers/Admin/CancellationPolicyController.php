@@ -54,7 +54,7 @@ class CancellationPolicyController extends Controller
             return response()->json(['policy' => $policy->load('tiers')], 201);
         } catch (\Throwable $e) {
             DB::rollBack();
-            return response()->json(['message' => $e->getMessage()], 500);
+            return response()->json(['message' => 'An unexpected error occurred. Please try again.'], 500);
         }
     }
 

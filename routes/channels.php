@@ -10,7 +10,9 @@ Broadcast::channel('conversation.{conversationId}', function ($user, $conversati
     }
 
     return [
-        'id'         => $user->id,
+        // uuid is the stable identifier the frontend now uses everywhere
+        'id'         => $user->uuid,
+        'uuid'       => $user->uuid,
         'first_name' => $user->first_name,
         'last_name'  => $user->last_name,
         'avatar'     => $user->avatar,
@@ -19,11 +21,9 @@ Broadcast::channel('conversation.{conversationId}', function ($user, $conversati
     ];
 });
 
-// ✅ NEW: each user has their own private channel for global real-time events
-// (new messages from any conversation, system alerts, etc.)
-Broadcast::channel('user.{userId}', function ($user, $userId) {
-    // Only the authenticated user can join their own channel
-    return (int) $user->id === (int) $userId;
+// Private channel for each user — keyed by UUID so the frontend never needs the numeric id
+Broadcast::channel('user.{userUuid}', function ($user, $userUuid) {
+    return $user->uuid === $userUuid;
 });
 
 Broadcast::channel('group.{groupId}', function ($user, $groupId) {

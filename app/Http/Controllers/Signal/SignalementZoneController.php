@@ -15,7 +15,7 @@ class SignalementZoneController extends Controller
     {
         $data = $request->validate([
             'contenu' => 'required|string|max:255',
-            'photo' => 'nullable|image|max:2048', // photo optionnelle
+            'photo' => 'nullable|image|max:5120',
         ]);
 
         if ($request->hasFile('photo')) {

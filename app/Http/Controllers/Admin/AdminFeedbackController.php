@@ -133,7 +133,7 @@ class AdminFeedbackController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Erreur lors de la récupération des feedbacks',
-                'error' => $e->getMessage()
+                'error' => 'server_error'
             ], 500);
         }
     }
@@ -349,7 +349,7 @@ class AdminFeedbackController extends Controller
             
             return response()->json([
                 'success' => false,
-                'message' => 'Erreur lors de la mise à jour: ' . $e->getMessage(),
+                'message' => 'An unexpected error occurred. Please try again.',
                 'file' => $e->getFile(),
                 'line' => $e->getLine()
             ], 500);

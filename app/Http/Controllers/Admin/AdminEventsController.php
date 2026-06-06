@@ -163,7 +163,7 @@ class AdminEventsController extends Controller
             DB::rollBack();
             return response()->json([
                 'success' => false,
-                'message' => 'Erreur lors de la création: ' . $e->getMessage(),
+                'message' => 'An unexpected error occurred. Please try again.',
             ], 500);
         }
     }
@@ -224,7 +224,7 @@ class AdminEventsController extends Controller
             DB::rollBack();
             return response()->json([
                 'success' => false,
-                'message' => 'Erreur lors de la mise à jour: ' . $e->getMessage(),
+                'message' => 'An unexpected error occurred. Please try again.',
             ], 500);
         }
     }
@@ -295,7 +295,7 @@ class AdminEventsController extends Controller
             DB::rollBack();
             return response()->json([
                 'success' => false,
-                'message' => 'Erreur lors de la suppression: ' . $e->getMessage(),
+                'message' => 'An unexpected error occurred. Please try again.',
             ], 500);
         }
     }
@@ -305,7 +305,7 @@ class AdminEventsController extends Controller
      */
     public function getGroups(Request $request)
     {
-        $groups = User::whereHas('role', fn($q) => $q->where('name', 'groupe'))
+        $groups = User::where('role_id', 2)
             ->when($request->search, function ($query, $search) {
                 $query->where('first_name', 'like', "%{$search}%")
                       ->orWhere('last_name', 'like', "%{$search}%")

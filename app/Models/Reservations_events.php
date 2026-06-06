@@ -59,4 +59,21 @@ protected $table = 'reservations_events';
     {
         return $this->belongsTo(Payments::class, 'payment_id');
     }
+
+    // 🔁 Alias: organizer (same as group)
+    public function organizer()
+    {
+        return $this->belongsTo(User::class, 'group_id');
+    }
+
+    // 🔁 Optional equipment booked alongside this event reservation
+    public function materials()
+    {
+        return $this->hasMany(EventReservationMaterial::class, 'event_reservation_id');
+    }
+
+    public function services()
+    {
+        return $this->hasMany(EventReservationService::class, 'event_reservation_id');
+    }
 }
