@@ -29,12 +29,19 @@ class GroupACollectorService
      *         in this turn and already merged).
      * Rule 4: all Group A fields complete → return null (run the pipeline).
      */
-    public function check(array $state): ?array
+    public function check(array $state, string $originalMessage = ''): ?array
     {
+        $lang = $this->detectLanguage($originalMessage);
+
         if ($state['destination'] === null) {
+            $chatMessage = match ($lang) {
+                'en'    => 'Where in Tunisia would you like to camp?',
+                'ar'    => 'أين تريد التخييم في تونس؟',
+                default => 'Où souhaitez-vous camper en Tunisie ?',
+            };
             return [
                 'type'         => 'destination_clarification',
-                'chat_message' => 'Où souhaitez-vous camper en Tunisie ?',
+                'chat_message' => $chatMessage,
                 'quick_replies' => [
                     [
                         'label' => '🌿 Nord — Jendouba / Tabarka',
@@ -68,11 +75,45 @@ class GroupACollectorService
 
         $destination = $state['destination'];
 
+        $modalMessage = match ($lang) {
+            'en'    => "To plan your stay in {$destination}:",
+            'ar'    => "لتخطيط إقامتك في {$destination}:",
+            default => "Pour planifier votre séjour à {$destination} :",
+        };
+
         return [
             'type'         => 'group_a_modal',
-            'chat_message' => "Pour planifier votre séjour à {$destination} :",
+            'chat_message' => $modalMessage,
             'fields'       => array_values(array_map([$this, 'buildField'], $missing)),
         ];
+    }
+
+    // ── Language detection ────────────────────────────────────────────────────
+
+    private function detectLanguage(string $message): string
+    {
+        if ($message === '') {
+            return 'fr';
+        }
+
+        // Arabic script is unambiguous
+        if (preg_match('/[\x{0600}-\x{06FF}]/u', $message)) {
+            return 'ar';
+        }
+
+        $lower = mb_strtolower($message);
+        $englishSignals = [
+            'i want', 'i would', 'camping', 'where', 'how',
+            'can you', 'please', 'looking for', 'recommend',
+            'changed my mind', 'prefer',
+        ];
+        foreach ($englishSignals as $signal) {
+            if (str_contains($lower, $signal)) {
+                return 'en';
+            }
+        }
+
+        return 'fr';
     }
 
     /**

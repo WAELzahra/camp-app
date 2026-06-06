@@ -181,6 +181,16 @@ class BookingPreparationService
             $bookingType = ! empty($gearItems) ? 'zone_with_gear' : 'zone_no_gear';
         }
 
+        // A free natural zone with no gear to rent has nothing to book.
+        // The booking card would be empty and misleading — return not-bookable
+        // so the frontend omits the booking card for this case.
+        if ($bookingType === 'zone_no_gear') {
+            return $this->notBookable(
+                'Cette zone naturelle est en accès libre — aucune réservation requise. '
+                . 'Vous pouvez ajouter du matériel à louer si nécessaire.'
+            );
+        }
+
         // ── Step 5 & 6: Totals with platform service fee ──────────────────────
         $subtotal      = round($accommodationTotal + $gearTotal, 2);
         $feeRate       = $this->platformFeeRate();

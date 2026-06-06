@@ -74,6 +74,7 @@ class ConversationStateService
                 'accommodation_type',
                 'wants_gear',
                 'partner_choice',
+                'last_recommended_id',
             ];
 
             foreach ($slots as $slot) {
@@ -172,12 +173,13 @@ class ConversationStateService
     private function defaultState(): array
     {
         return [
-            'destination'        => null,
-            'group_size'         => null,
-            'duration_nights'    => null,
-            'accommodation_type' => 'any',   // "any" = not yet chosen
-            'wants_gear'         => null,    // null = not yet asked
-            'partner_choice'     => null,
+            'destination'         => null,
+            'group_size'          => null,
+            'duration_nights'     => null,
+            'accommodation_type'  => 'any',   // "any" = not yet chosen
+            'wants_gear'          => null,    // null = not yet asked
+            'partner_choice'      => null,
+            'last_recommended_id' => null,    // for "another option" exclusion
         ];
     }
 }

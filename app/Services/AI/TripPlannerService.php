@@ -37,6 +37,9 @@ use Illuminate\Support\Facades\Log;
  */
 class TripPlannerService
 {
+    /** Set during an alternative-request turn to exclude the last-recommended item from scoring. */
+    private ?int $excludeRecommendedId = null;
+
     public function __construct(
         private readonly LLMAdapterInterface       $llm,
         private readonly RecommendationService     $recommender,
@@ -50,7 +53,6 @@ class TripPlannerService
         private readonly ConversationStateService    $conversationState,
         private readonly BehavioralProfileService    $behavioralProfileService,
         private readonly GroupACollectorService      $groupACollector,
-        private readonly ConfirmationClassifierService $confirmationClassifier,
         private readonly BookingPreparationService   $bookingPreparation,
     ) {}
 
@@ -78,74 +80,16 @@ class TripPlannerService
         // ── 1. Load the persisted conversation state (single source of truth) ──
         $persistedState = $this->conversationState->load($user->id);
 
-        // ── 1b. POST_RECOMMENDATION PHASE ──────────────────────────────────────
-        // When the user already received a recommendation (Group A complete +
-        // last_recommendation cached), the NEXT message is routed through two
-        // deterministic pre-checks before the LLM classifier is considered.
-        if ($this->conversationState->isGroupAComplete($persistedState)) {
-            $lastRecommendation = Cache::get('last_recommendation:' . $user->id);
-            if ($lastRecommendation !== null) {
+        // ── 1b. Alternative / modify request pre-processing ──────────────────
+        // "recommend another" → run the pipeline again, excluding the last id.
+        if ($this->isAlternativeRequest($message) && $this->conversationState->isGroupAComplete($persistedState)) {
+            $this->excludeRecommendedId = $persistedState['last_recommended_id'] ?? null;
+        }
 
-                // ── Pre-check 1: message contains a known Tunisian place name ───
-                // The user wants to go somewhere different — this is a new
-                // destination request, not a confirmation or rejection.
-                // Clear the stale recommendation and let the normal pipeline
-                // extract and apply the new destination. Group A fields other
-                // than destination are preserved so no re-entry is needed.
-                $detectedRegion = $this->extractMentionedRegion($message);
-                if ($detectedRegion !== null) {
-                    Cache::forget('last_recommendation:' . $user->id);
-                    // Clear the stale destination so intent extraction picks up
-                    // the new place cleanly. Other Group A fields are preserved
-                    // (group_size, nights, gear) — only the destination changes.
-                    $persistedState['destination'] = null;
-                    $this->conversationState->save($user->id, $persistedState);
-                    // Fall through to intent extraction + pipeline
-                }
-
-                // ── Pre-check 2: message is a clear new-trip signal ─────────────
-                // "je veux camper", "nouveau voyage", "autre destination", etc.
-                // Full state reset so the Group A modal re-collects everything
-                // for the fresh trip.
-                elseif ($this->isNewTripMessage($message)) {
-                    Cache::forget('last_recommendation:' . $user->id);
-                    $this->conversationState->reset($user->id);
-                    // Reload so ConversationManager doesn't carry forward the
-                    // old destination — the reset state has destination=null.
-                    $persistedState = $this->conversationState->load($user->id);
-                    // Fall through to intent extraction (destination_clarification will appear)
-                }
-
-                // ── LLM classifier — only for short, ambiguous responses ─────────
-                // "oui", "parfait", "non merci", "je veux modifier", etc.
-                else {
-                    $classification = $this->confirmationClassifier->classify($message, $history);
-
-                    if ($classification === 'confirm') {
-                        return $this->handleBookingConfirmation(
-                            $user, $lastRecommendation, $persistedState, $history
-                        );
-                    }
-
-                    if ($classification === 'reject') {
-                        Cache::forget('last_recommendation:' . $user->id);
-                        $this->conversationState->reset($user->id);
-                        return $this->buildRejectResponse();
-                    }
-
-                    if ($classification === 'modify') {
-                        Cache::forget('last_recommendation:' . $user->id);
-                        // Reset ONLY destination so the user picks a new place
-                        // without re-entering group size, nights, gear preference.
-                        $modifyState = $this->conversationState->load($user->id);
-                        $modifyState['destination'] = null;
-                        $this->conversationState->save($user->id, $modifyState);
-                        // Fall through to intent extraction + pipeline
-                    }
-
-                    // 'other' → fall through untouched
-                }
-            }
+        // "Je veux modifier le plan" → clear destination so user picks a new one.
+        if ($this->isModifyRequest($message) && $this->conversationState->isGroupAComplete($persistedState)) {
+            $persistedState['destination'] = null;
+            $this->conversationState->save($user->id, $persistedState);
         }
 
         // ── 2. Understand this turn (current message + persisted context) ──────
@@ -201,7 +145,7 @@ class TripPlannerService
         // ── 5b. Group A gate — all planning paths require complete Group A ──────
         // Returns destination_clarification or group_a_modal when fields are
         // missing; returns null when all five Group A fields are confirmed.
-        $groupAResult = $this->groupACollector->check($mergedState);
+        $groupAResult = $this->groupACollector->check($mergedState, $message);
         if ($groupAResult !== null) {
             return $groupAResult;
         }
@@ -211,8 +155,25 @@ class TripPlannerService
             $result = $this->buildAskResponse($state);
         } else {
             $result = $this->planFromState($user, $profile, $state, $message, $history, $missingCritical, $mergedState, $behavioralProfile);
-            // Store the recommendation so prepare-booking can reference it within 30 min.
-            Cache::put('last_recommendation:' . $user->id, $result, 1800);
+            $this->excludeRecommendedId = null; // reset for next request
+
+            // Persist the recommended id so alternative requests can exclude it.
+            $newId = $result['recommended_zone']['id'] ?? ($result['recommended']['id'] ?? null);
+            if ($newId !== null) {
+                $mergedState['last_recommended_id'] = $newId;
+                $this->conversationState->save($user->id, $mergedState);
+            }
+
+            // Attach booking summary immediately — no separate "oui parfait" step.
+            $bookingSummary = $this->bookingPreparation->prepare($result, $mergedState, $user);
+            if ($bookingSummary->is_bookable) {
+                Cache::put('booking_summary:' . $user->id, $bookingSummary->toArray(), 900);
+                $result['booking_summary'] = $bookingSummary->toArray();
+                $result['booking_ready']   = true;
+            } else {
+                $result['booking_ready'] = false;
+                $result['booking_note']  = $bookingSummary->not_bookable_reason;
+            }
         }
 
         if (! empty($extracted) && ! isset($result['clarification_questions']) && ! isset($result['quick_replies'])) {
@@ -271,8 +232,23 @@ class TripPlannerService
             $behavioralProfile,
         );
 
-        // Store the recommendation so prepare-booking can reference it within 30 min.
-        Cache::put('last_recommendation:' . $user->id, $result, 1800);
+        // Persist the recommended id for alternative request filtering.
+        $newId = $result['recommended_zone']['id'] ?? ($result['recommended']['id'] ?? null);
+        if ($newId !== null) {
+            $mergedState['last_recommended_id'] = $newId;
+            $this->conversationState->save($user->id, $mergedState);
+        }
+
+        // Attach booking summary immediately.
+        $bookingSummary = $this->bookingPreparation->prepare($result, $mergedState, $user);
+        if ($bookingSummary->is_bookable) {
+            Cache::put('booking_summary:' . $user->id, $bookingSummary->toArray(), 900);
+            $result['booking_summary'] = $bookingSummary->toArray();
+            $result['booking_ready']   = true;
+        } else {
+            $result['booking_ready'] = false;
+            $result['booking_note']  = $bookingSummary->not_bookable_reason;
+        }
 
         return $result;
     }
@@ -471,15 +447,31 @@ PROMPT;
     }
 
     /** Standard rejection response — clears state and invites a new search. */
-    private function buildRejectResponse(): array
+    private function buildRejectResponse(string $lang = 'fr'): array
     {
-        return [
-            'chat_message'  => "Pas de problème ! Dites-moi ce que vous recherchez et je trouverai une autre option pour vous.",
-            'quick_replies' => [
-                ['label' => '🔄 Nouvelle recherche', 'value' => 'Je veux chercher une autre zone'],
-                ['label' => '🏕️ Autre région',       'value' => 'Je veux camper dans une autre région'],
+        return match ($lang) {
+            'en' => [
+                'chat_message'  => "No problem! Tell me what you're looking for and I'll find another option for you.",
+                'quick_replies' => [
+                    ['label' => '🔄 New search',      'value' => 'I want to search for another zone'],
+                    ['label' => '🏕️ Another region',  'value' => 'I want to camp in another region'],
+                ],
             ],
-        ];
+            'ar' => [
+                'chat_message'  => "لا مشكلة! أخبرني بما تبحث عنه وسأجد لك خيارًا آخر.",
+                'quick_replies' => [
+                    ['label' => '🔄 بحث جديد',       'value' => 'أريد البحث عن منطقة أخرى'],
+                    ['label' => '🏕️ منطقة أخرى',     'value' => 'أريد التخييم في منطقة أخرى'],
+                ],
+            ],
+            default => [
+                'chat_message'  => "Pas de problème ! Dites-moi ce que vous recherchez et je trouverai une autre option pour vous.",
+                'quick_replies' => [
+                    ['label' => '🔄 Nouvelle recherche', 'value' => 'Je veux chercher une autre zone'],
+                    ['label' => '🏕️ Autre région',       'value' => 'Je veux camper dans une autre région'],
+                ],
+            ],
+        };
     }
 
     // ── Q&A about a specific zone / centre ──────────────────────────────────────
@@ -669,6 +661,14 @@ PROMPT;
         // Pre-score (PHP recommendation engine)
         $scoredZones = $this->recommender->scoreZones($profile, $zones);
         $scoredGear  = $this->recommender->scoreGear($profile, $gear);
+
+        // Exclude the last-recommended zone for alternative-request turns.
+        if ($this->excludeRecommendedId !== null) {
+            $filtered = $scoredZones->filter(fn ($z) => $z->id !== $this->excludeRecommendedId);
+            if ($filtered->isNotEmpty()) {
+                $scoredZones = $filtered->values();
+            }
+        }
 
         // Regional reorder — destination overrides score
         $mentionedRegion = $this->extractMentionedRegion($message);
@@ -948,6 +948,14 @@ PROMPT;
             $this->extractMentionedRegion($message) ?? $region
         );
 
+        // Exclude last-recommended centre on alternative-request turns.
+        if ($this->excludeRecommendedId !== null) {
+            $filtered = $centres->filter(fn ($c) => ($c['id'] ?? null) !== $this->excludeRecommendedId);
+            if ($filtered->isNotEmpty()) {
+                $centres = $filtered->values();
+            }
+        }
+
         if ($centres->isEmpty()) {
             // No partner centre — fall back to external discovery for the region
             $external = $this->externalCentreFlow($profile, $intent, $message, $history, $region);
@@ -981,6 +989,14 @@ PROMPT;
 
         $partners  = $this->reorderCentresByRegion($this->centreLookup->findPartnerCentres($region), $mentioned);
         $externals = $this->reorderCentresByRegion($this->centreLookup->findExternalCentres($region), $mentioned);
+
+        // Exclude last-recommended centre on alternative-request turns.
+        if ($this->excludeRecommendedId !== null) {
+            $filtered = $partners->filter(fn ($c) => ($c['id'] ?? null) !== $this->excludeRecommendedId);
+            if ($filtered->isNotEmpty()) {
+                $partners = $filtered->values();
+            }
+        }
 
         // No partner → recommendation becomes external, no alternatives
         if ($partners->isEmpty()) {
@@ -1590,6 +1606,16 @@ PROMPT;
         };
 
         return <<<PROMPT
+LANGUAGE RULE (highest priority, overrides everything):
+Detect the language of the user's message and respond in that exact language throughout your entire response.
+French message → French response.
+English message → English response.
+Arabic message → Arabic response.
+Tunisian dialect → respond in Tunisian dialect or French.
+Mixed language → use the dominant language.
+This applies to zone_why, ai_summary, gear_reasons, and weather_warning. Every field must be in the same language.
+Never mix languages within a single response.
+
 You are TunisiaCamp's camping assistant. The PHP backend has already decided:
 - Which zone or centre to recommend
 - Which gear to suggest
@@ -1776,6 +1802,49 @@ PROMPT;
             }
         }
 
+        return false;
+    }
+
+    /**
+     * True when the user wants a different recommendation within the same trip context.
+     * "recommend another centre", "une autre option", "show me something else".
+     */
+    private function isAlternativeRequest(string $message): bool
+    {
+        $lower   = mb_strtolower(trim($message));
+        $signals = [
+            'another', 'other option', 'different', 'alternative', 'show me more',
+            'une autre', 'autre option', 'autre centre', 'autre zone',
+            'montre-moi autre', 'différent', 'propose-moi autre', 'montre autre',
+            'خيار آخر', 'غير هذا', 'بديل', 'شيء آخر', 'اقتراح آخر',
+        ];
+        foreach ($signals as $signal) {
+            if (str_contains($lower, $signal)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * True when the user explicitly wants to modify/change the current plan.
+     * Triggered by the frontend "Modifier le plan" button which sends a known phrase.
+     */
+    private function isModifyRequest(string $message): bool
+    {
+        $lower   = mb_strtolower(trim($message));
+        $signals = [
+            'modifier le plan', 'changer le plan',
+            'je veux modifier', 'je veux changer',
+            'modify the plan', 'change the plan',
+            'i want to modify', 'i want to change',
+            'أريد التعديل', 'أريد تغيير الخطة',
+        ];
+        foreach ($signals as $signal) {
+            if (str_contains($lower, $signal)) {
+                return true;
+            }
+        }
         return false;
     }
 

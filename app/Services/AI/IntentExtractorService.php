@@ -94,6 +94,10 @@ Tunisia has five camping regions (use the region name as destination):
   Côte Est:    Sousse, Nabeul, Hammamet, Monastir, Mahdia
   Centre:      Kairouan, Sfax, Sidi Bouzid, Gafsa
   Sud:         Tozeur, Douz, Djerba, Gabès, Médenine, Tataouine, Kébili
+
+If the user says they want to modify, change, or try something different (e.g. "je veux modifier",
+"change the plan", "أريد تغيير"), set is_new_trip=false and destination="" so the system
+asks for a new destination without resetting other preferences.
 PROMPT;
     }
 

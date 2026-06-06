@@ -24,5 +24,8 @@ class DatabaseSeeder extends Seeder
             FeedbacksAndFavoritesSeeder::class,
             AnnoncesAndSocialSeeder::class,
         ]);
+
+        // One-time data fixes — run manually, NOT on every db:seed:
+        //   php artisan db:seed --class=GearPriceFixSeeder
     }
 }

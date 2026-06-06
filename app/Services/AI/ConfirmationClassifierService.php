@@ -74,6 +74,8 @@ class ConfirmationClassifierService
     private function systemPrompt(): string
     {
         return <<<PROMPT
+LANGUAGE RULE (highest priority): The output word must always be one of: confirm, modify, reject, other — in English. But any success or rejection messages triggered downstream must use the same language as the user's message.
+
 You are a classifier for a Tunisian camping assistant chatbot.
 
 The assistant has just shown the user a camping recommendation (zone or centre).
