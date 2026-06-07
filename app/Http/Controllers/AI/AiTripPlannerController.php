@@ -26,7 +26,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
-
+use App\Models\Balance;
 class AiTripPlannerController extends Controller
 {
     public function __construct(
@@ -190,56 +190,71 @@ class AiTripPlannerController extends Controller
      *   - Wraps all DB writes in a single transaction (all or nothing).
      *   - Deletes the cached summary on success.
      */
+
     public function confirmBooking(Request $request): JsonResponse
     {
         if (! config('ai.features.trip_planner')) {
             return response()->json(['error' => 'Feature disabled'], 503);
         }
-
+    
         $request->validate([
             'check_in'        => ['nullable', 'date'],
             'check_out'       => ['nullable', 'date', 'after:check_in'],
             'gear_item_ids'   => ['nullable', 'array'],
             'gear_item_ids.*' => ['integer', 'min:1'],
         ]);
-
+    
         $user        = Auth::user();
-
-        // TEMPORARY — debug logging; remove after the booking flow is confirmed.
+    
         Log::debug('confirmBooking_called', [
-            'user_id'    => $user->id,
+            'user_id'     => $user->id,
             'has_summary' => Cache::has('booking_summary:' . $user->id),
-            'summary'    => Cache::get('booking_summary:' . $user->id),
         ]);
-
+    
         $summaryData = Cache::get('booking_summary:' . $user->id);
-
+    
         if ($summaryData === null) {
             return response()->json([
                 'error' => 'Session expirée. Veuillez demander une nouvelle recommandation.',
             ], 422);
         }
-
+    
         $summary = BookingSummary::fromArray($summaryData);
-
+    
         if ($summary->isExpired()) {
             return response()->json([
                 'error' => 'La session de réservation a expiré. Veuillez demander une nouvelle recommandation.',
             ], 422);
         }
-
+    
         if (! $summary->is_bookable) {
             return response()->json([
                 'error' => $summary->not_bookable_reason ?? 'Cette réservation n\'est pas disponible.',
             ], 422);
         }
-
-        // ── Apply optional overrides ─────────────────────────────────────────
+    
+        // ── Balance check BEFORE any DB writes ───────────────────────────────────
+        $balance          = Balance::forUser($user->id);
+        $soldeDisponible  = (float) $balance->solde_disponible;
+        $totalRequired    = $summary->total;
+    
+        if ($soldeDisponible < $totalRequired) {
+            $shortfall = round($totalRequired - $soldeDisponible, 2);
+            return response()->json([
+                'error'            => 'INSUFFICIENT_BALANCE',
+                'required_amount'  => $totalRequired,
+                'available_amount' => $soldeDisponible,
+                'shortfall'        => $shortfall,
+                'message'          => "Solde insuffisant. Il vous manque {$shortfall} TND pour confirmer cette réservation.",
+            ], 422);
+        }
+    
+        // ── Apply optional overrides ──────────────────────────────────────────────
         $checkIn  = $request->input('check_in',  $summary->check_in);
         $checkOut = $request->input('check_out', $summary->check_out);
         $nights   = (int) Carbon::parse($checkIn)->diffInDays(Carbon::parse($checkOut));
         $nights   = max(1, $nights);
-
+    
         $gearItems = $summary->gear_items;
         if ($request->filled('gear_item_ids')) {
             $allowedIds = array_map('intval', $request->input('gear_item_ids'));
@@ -247,26 +262,26 @@ class AiTripPlannerController extends Controller
                 array_filter($gearItems, fn ($g) => in_array((int) $g['id'], $allowedIds, true))
             );
         }
-
+    
         // Fee rate stored as decimal in summary (e.g. 0.03); DB columns expect percentage (3.0)
         $feeRateDb = round($summary->platform_fee_rate * 100, 2);
-
+    
         try {
             Log::debug('transaction_starting', ['booking_type' => $summary->booking_type, 'nbr_place' => $summary->nbr_place]);
             DB::beginTransaction();
-
+    
             $centreReservationId = null;
             $gearReservationIds  = [];
-
-            // ── Centre reservation ──────────────────────────────────────────
+    
+            // ── Centre reservation ──────────────────────────────────────────────
             if ($summary->booking_type === 'centre_partner') {
-                $centreBase      = $summary->accommodation_total;
-                $centreFeeAmt    = round($centreBase * $summary->platform_fee_rate, 2);
+                $centreBase       = $summary->accommodation_total;
+                $centreFeeAmt     = round($centreBase * $summary->platform_fee_rate, 2);
                 $centreTotalPrice = round($centreBase + $centreFeeAmt, 2);
-
+    
                 $centreRes = Reservations_centre::create([
                     'user_id'             => $user->id,
-                    'centre_id'           => $summary->centre_user_id,  // users.id of owner
+                    'centre_id'           => $summary->centre_user_id,
                     'date_debut'          => $checkIn,
                     'date_fin'            => $checkOut,
                     'nbr_place'           => $summary->nbr_place,
@@ -277,19 +292,18 @@ class AiTripPlannerController extends Controller
                     'platform_fee_rate'   => $feeRateDb,
                     'platform_fee_amount' => $centreFeeAmt,
                 ]);
-
+    
                 $centreReservationId = $centreRes->id;
             }
-
-            // ── Gear reservations ───────────────────────────────────────────
+    
+            // ── Gear reservations ───────────────────────────────────────────────
             foreach ($gearItems as $gearItem) {
-                // findOrFail throws ModelNotFoundException → rolls back transaction
                 $materielle = Materielles::findOrFail((int) $gearItem['id']);
-
+    
                 $itemBase   = round((float) $gearItem['tarif_nuit'] * $nights, 2);
                 $itemFeeAmt = round($itemBase * $summary->platform_fee_rate, 2);
                 $itemTotal  = round($itemBase + $itemFeeAmt, 2);
-
+    
                 $gearRes = Reservations_materielles::create([
                     'materielle_id'       => $materielle->id,
                     'user_id'             => $user->id,
@@ -306,48 +320,71 @@ class AiTripPlannerController extends Controller
                     'platform_fee_amount' => $itemFeeAmt,
                     'platform_fee_rate'   => $feeRateDb,
                 ]);
-
+    
                 $gearReservationIds[] = $gearRes->id;
             }
-
+    
+            // ── Lock funds atomically inside the transaction ────────────────────
+            // Uses a raw UPDATE so it participates in the DB transaction and
+            // rolls back automatically if anything above throws.
+            DB::table('balances')
+                ->where('user_id', $user->id)
+                // Double-check balance inside the transaction to guard race conditions
+                ->where('solde_disponible', '>=', $totalRequired)
+                ->update([
+                    'solde_disponible'     => DB::raw("solde_disponible - {$totalRequired}"),
+                    'solde_en_attente'     => DB::raw("solde_en_attente + {$totalRequired}"),
+                    'dernier_mouvement_at' => now(),
+                ]);
+    
+            // Verify the update actually matched a row (race-condition guard)
+            $updatedRows = DB::select(
+                'SELECT id FROM balances WHERE user_id = ? AND solde_disponible >= 0 LIMIT 1',
+                [$user->id]
+            );
+    
+            if (empty($updatedRows) && $totalRequired > 0) {
+                DB::rollBack();
+                return response()->json([
+                    'error'   => 'INSUFFICIENT_BALANCE',
+                    'message' => 'Solde insuffisant au moment de la confirmation (condition de concurrence). Veuillez réessayer.',
+                ], 422);
+            }
+    
             DB::commit();
-            Log::debug('transaction_committed', ['centre_reservation_id' => $centreReservationId, 'gear_ids' => $gearReservationIds]);
-
-            // Invalidate the behavioral profile so the next recommendation
-            // immediately reflects the new completed booking.
+            Log::debug('transaction_committed', [
+                'centre_reservation_id' => $centreReservationId,
+                'gear_ids'              => $gearReservationIds,
+                'locked_amount'         => $totalRequired,
+            ]);
+    
             $this->behavioralProfileService->invalidate($user->id);
-
-            // Invalidate the summary — it cannot be used again
             Cache::forget('booking_summary:' . $user->id);
-
-            // ── Shape 2: booking_confirmed ──────────────────────────────────
-            // Primary reservation ID: centre reservation if it exists, else first gear.
+    
             $primaryReservationId = $centreReservationId ?? ($gearReservationIds[0] ?? null);
-
-            // Gather context for LLM message generation.
-            // last_recommendation is still cached — use it for the place name.
+    
             $lastRec     = Cache::get('last_recommendation:' . $user->id);
             $recommended = $lastRec['recommended'] ?? $lastRec['recommended_zone'] ?? [];
             $placeNom    = $summary->centre_nom
                         ?? ($recommended['nom']    ?? null)
                         ?? ($recommended['region'] ?? 'votre destination');
-
+    
             $nextStep = in_array($summary->booking_type, ['zone_with_gear', 'zone_no_gear'], true)
                 ? 'Votre demande de location de matériel est en attente de confirmation du fournisseur.'
                 : 'Le centre dispose de 48h pour valider votre demande.';
-
+    
             $confirmContext = [
                 'reservation_id' => $primaryReservationId,
                 'place_nom'      => $placeNom,
                 'total'          => $summary->total,
                 'next_step'      => $nextStep,
             ];
-
+    
             $confirmMessage = $this->tripPlannerService->generateReservationConfirmationMessage(
                 (int) ($primaryReservationId ?? 0),
                 $confirmContext,
             );
-
+    
             return response()->json([
                 'success'              => true,
                 'booking_confirmed'    => true,
@@ -355,14 +392,14 @@ class AiTripPlannerController extends Controller
                 'gear_reservation_ids' => $gearReservationIds,
                 'message'              => $confirmMessage,
             ]);
-
+    
         } catch (\Throwable $e) {
             DB::rollBack();
             Log::error('booking_confirm_failed', [
                 'user_id' => $user->id,
                 'error'   => $e->getMessage(),
             ]);
-
+    
             return response()->json([
                 'error' => 'Une erreur est survenue lors de la création de la réservation. Veuillez réessayer.',
             ], 500);

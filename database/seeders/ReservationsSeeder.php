@@ -21,7 +21,7 @@ class ReservationsSeeder extends Seeder
         $roles         = DB::table('roles')->pluck('id', 'name');
         $campeurRoleId = $roles['campeur'];
         $centreRoleId  = $roles['centre'];
-        $groupeRoleId  = $roles['groupe'];
+        $groupeRoleId  = $roles['organizer'];
 
         // ── Load campeurs with archetype ──────────────────────────────────────
         $campeurs = DB::table('users')

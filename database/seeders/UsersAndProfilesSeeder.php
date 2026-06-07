@@ -4,7 +4,7 @@ namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
-
+use Illuminate\Support\Str; 
 class UsersAndProfilesSeeder extends Seeder
 {
     public function run(): void
@@ -27,6 +27,7 @@ class UsersAndProfilesSeeder extends Seeder
 
         // ── Insert users ──────────────────────────────────────────────────────
         $userRows = array_map(fn($r) => [
+            'uuid'              => (string) Str::uuid(),
             'first_name'        => explode(' ', $r['name'], 2)[0],
             'last_name'         => explode(' ', $r['name'], 2)[1] ?? '',
             'email'             => $r['email'],
@@ -56,8 +57,7 @@ class UsersAndProfilesSeeder extends Seeder
         // ── Insert profiles ───────────────────────────────────────────────────
         $profileRows = array_map(fn($r) => [
             'user_id'    => $userIds[$r['email']],
-            'type'       => in_array($r['role'], ['campeur','guide','centre','fournisseur','groupe'])
-                                ? $r['role'] : 'campeur',
+            'type' => $r['role'] === 'organizer' ? 'centre' : (in_array($r['role'], ['campeur','guide','centre','fournisseur']) ? $r['role'] : 'campeur'),
             'bio'        => $r['bio'],
             'city'       => $r['ville'],
             'address'    => $r['ville'] . ', Tunisie',
@@ -81,7 +81,7 @@ class UsersAndProfilesSeeder extends Seeder
             $uid = $userIds[$r['email']];
             $pid = $profileByUser[$uid];
 
-            if ($r['role'] === 'groupe') {
+            if ($r['role'] === 'organizer') {
                 $groupeRows[] = [
                     'profile_id'  => $pid,
                     'nom_groupe'  => $r['nom_groupe'],
@@ -267,12 +267,12 @@ class UsersAndProfilesSeeder extends Seeder
         return [
             ['name'=>'Aziz Ferchichi','email'=>'aziz.ferchichi@gmail.com','phone'=>'+216 22 600 001','ville'=>'Tunis','dob'=>'2002-03-10','sexe'=>'homme','role'=>'campeur','archetype'=>'F','bio'=>'Étudiant aventurier, rejoint tous les groupes de camping de Tunis.','balance'=>10.00],
             ['name'=>'Khalil Dridi','email'=>'khalil.dridi@gmail.com','phone'=>'+216 22 600 002','ville'=>'Sfax','dob'=>'2003-07-25','sexe'=>'homme','role'=>'campeur','archetype'=>'F','bio'=>'Étudiant passionné de plein air, toujours partant pour une nouvelle aventure.','balance'=>15.00],
-            ['name'=>'Hamza Ben Ali','email'=>'hamza.benali@gmail.com','phone'=>'+216 22 600 003','ville'=>'Monastir','dob'=>'2001-11-08','sexe'=>'homme','role'=>'campeur','archetype'=>'F','bio'=>'Membre actif des clubs nature de Monastir, adore le camping en groupe.','balance'=>8.00],
+            ['name'=>'Hamza Ben Ali','email'=>'hamza.benali@gmail.com','phone'=>'+216 22 600 003','ville'=>'Monastir','dob'=>'2001-11-08','sexe'=>'homme','role'=>'campeur','archetype'=>'F','bio'=>'Membre actif des clubs nature de Monastir, adore le camping en organizer.','balance'=>8.00],
             ['name'=>'Elyes Trabelsi','email'=>'elyes.trabelsi@outlook.com','phone'=>'+216 22 600 004','ville'=>'Tunis','dob'=>'2004-01-15','sexe'=>'homme','role'=>'campeur','archetype'=>'F','bio'=>'Jeune étudiant fan de sorties nature et d\'événements camping.','balance'=>12.00],
             ['name'=>'Yassine Slama','email'=>'yassine.slama@gmail.com','phone'=>'+216 22 600 005','ville'=>'Sfax','dob'=>'2002-05-19','sexe'=>'homme','role'=>'campeur','archetype'=>'F','bio'=>'Étudiant dynamique, suit de nombreux groupes et participe à leurs événements.','balance'=>20.00],
-            ['name'=>'Amal Ferchichi','email'=>'amal.ferchichi@gmail.com','phone'=>'+216 22 600 006','ville'=>'Tunis','dob'=>'2003-09-02','sexe'=>'femme','role'=>'campeur','archetype'=>'F','bio'=>'Étudiante active dans les clubs nature, camping budget en groupe.','balance'=>5.00],
+            ['name'=>'Amal Ferchichi','email'=>'amal.ferchichi@gmail.com','phone'=>'+216 22 600 006','ville'=>'Tunis','dob'=>'2003-09-02','sexe'=>'femme','role'=>'campeur','archetype'=>'F','bio'=>'Étudiante active dans les clubs nature, camping budget en organizer.','balance'=>5.00],
             ['name'=>'Rania Dridi','email'=>'rania.dridi@gmail.com','phone'=>'+216 22 600 007','ville'=>'Sfax','dob'=>'2002-12-27','sexe'=>'femme','role'=>'campeur','archetype'=>'F','bio'=>'Jeune exploratrice étudiante, adore les sorties organisées par les groupes.','balance'=>18.00],
-            ['name'=>'Marwa Belhaj','email'=>'marwa.belhaj@gmail.com','phone'=>'+216 22 600 008','ville'=>'Monastir','dob'=>'2001-06-14','sexe'=>'femme','role'=>'campeur','archetype'=>'F','bio'=>'Étudiante passionnée de nature, toujours partante pour un camping de groupe.','balance'=>9.00],
+            ['name'=>'Marwa Belhaj','email'=>'marwa.belhaj@gmail.com','phone'=>'+216 22 600 008','ville'=>'Monastir','dob'=>'2001-06-14','sexe'=>'femme','role'=>'campeur','archetype'=>'F','bio'=>'Étudiante passionnée de nature, toujours partante pour un camping de organizer.','balance'=>9.00],
             ['name'=>'Lina Chaari','email'=>'lina.chaari@outlook.com','phone'=>'+216 22 600 009','ville'=>'Tunis','dob'=>'2003-02-28','sexe'=>'femme','role'=>'campeur','archetype'=>'F','bio'=>'Étudiante aventurière, suit les groupes outdoor de la capitale.','balance'=>14.00],
             ['name'=>'Syrine Nasr','email'=>'syrine.nasr@gmail.com','phone'=>'+216 22 600 010','ville'=>'Sfax','dob'=>'2004-08-11','sexe'=>'femme','role'=>'campeur','archetype'=>'F','bio'=>'Jeune étudiante fan de camping et de nouvelles rencontres en nature.','balance'=>7.00],
         ];
@@ -282,24 +282,24 @@ class UsersAndProfilesSeeder extends Seeder
     private function groupes(): array
     {
         return [
-            ['name'=>'Club Aventure Tunis','email'=>'club.aventure.tunis@gmail.com','phone'=>'+216 71 300 001','ville'=>'Tunis','dob'=>'1990-01-01','sexe'=>'homme','role'=>'groupe','bio'=>'Club de randonnée et camping basé à Tunis, plus de 500 membres actifs.','nom_groupe'=>'Club Aventure Tunis','balance'=>350.00],
-            ['name'=>'Randonneurs du Nord','email'=>'randonneurs.nord@gmail.com','phone'=>'+216 72 300 002','ville'=>'Bizerte','dob'=>'1988-01-01','sexe'=>'homme','role'=>'groupe','bio'=>'Association de randonnée dans le nord de la Tunisie, forêts et montagnes.','nom_groupe'=>'Les Randonneurs du Nord','balance'=>220.00],
-            ['name'=>'Désert Explorers Tozeur','email'=>'desert.explorers.tozeur@gmail.com','phone'=>'+216 76 300 003','ville'=>'Tozeur','dob'=>'1992-01-01','sexe'=>'homme','role'=>'groupe','bio'=>'Club spécialisé dans les expéditions désertiques du sud tunisien.','nom_groupe'=>'Désert Explorers Tozeur','balance'=>180.00],
-            ['name'=>'Mer et Montagne Bizerte','email'=>'mer.montagne.bizerte@gmail.com','phone'=>'+216 72 300 004','ville'=>'Bizerte','dob'=>'1985-01-01','sexe'=>'homme','role'=>'groupe','bio'=>'Explorations côtières et montagnardes autour de Bizerte.','nom_groupe'=>'Mer et Montagne Bizerte','balance'=>290.00],
-            ['name'=>'Camp Family Nabeul','email'=>'camp.family.nabeul@gmail.com','phone'=>'+216 72 300 005','ville'=>'Nabeul','dob'=>'1995-01-01','sexe'=>'femme','role'=>'groupe','bio'=>'Sorties camping familiales sur les plages de Cap Bon.','nom_groupe'=>'Camp Family Nabeul','balance'=>160.00],
-            ['name'=>'Aventure Sfax','email'=>'aventure.sfax@gmail.com','phone'=>'+216 74 300 006','ville'=>'Sfax','dob'=>'1989-01-01','sexe'=>'homme','role'=>'groupe','bio'=>'Club outdoor de Sfax, randonnées et camping dans le centre-est tunisien.','nom_groupe'=>'Aventure Sfax','balance'=>200.00],
-            ['name'=>'Trek Sud Tunisie','email'=>'trek.sud.tunisie@gmail.com','phone'=>'+216 76 300 007','ville'=>'Gafsa','dob'=>'1991-01-01','sexe'=>'homme','role'=>'groupe','bio'=>'Trekking dans le désert et les montagnes du sud tunisien.','nom_groupe'=>'Trek Sud Tunisie','balance'=>140.00],
-            ['name'=>'Nature Lovers Sousse','email'=>'nature.lovers.sousse@gmail.com','phone'=>'+216 73 300 008','ville'=>'Sousse','dob'=>'1993-01-01','sexe'=>'femme','role'=>'groupe','bio'=>'Amoureux de la nature côtière et forestière autour de Sousse.','nom_groupe'=>'Nature Lovers Sousse','balance'=>175.00],
-            ['name'=>'Mountain Climbers Béja','email'=>'mountain.climbers.beja@gmail.com','phone'=>'+216 78 300 009','ville'=>'Béja','dob'=>'1987-01-01','sexe'=>'homme','role'=>'groupe','bio'=>'Escalade et trekking dans les massifs montagneux de Béja.','nom_groupe'=>'Mountain Climbers Béja','balance'=>210.00],
-            ['name'=>'Bivouac Sahara Club','email'=>'bivouac.sahara@gmail.com','phone'=>'+216 76 300 010','ville'=>'Tozeur','dob'=>'1994-01-01','sexe'=>'homme','role'=>'groupe','bio'=>'Club de bivouac désertique, expéditions nocturnes et stargazing.','nom_groupe'=>'Bivouac Sahara Club','balance'=>130.00],
-            ['name'=>'Randonneurs Kairouan','email'=>'randonneurs.kairouan@gmail.com','phone'=>'+216 77 300 011','ville'=>'Kairouan','dob'=>'1990-01-01','sexe'=>'homme','role'=>'groupe','bio'=>'Randonnées culturelles et naturelles autour de Kairouan.','nom_groupe'=>'Randonneurs Kairouan','balance'=>165.00],
-            ['name'=>'Coastal Explorers Mahdia','email'=>'coastal.explorers.mahdia@gmail.com','phone'=>'+216 73 300 012','ville'=>'Mahdia','dob'=>'1996-01-01','sexe'=>'femme','role'=>'groupe','bio'=>'Exploration côtière de Mahdia, plongée et camping plage.','nom_groupe'=>'Coastal Explorers Mahdia','balance'=>245.00],
-            ['name'=>'Jeunesse Nature Monastir','email'=>'jeunesse.nature.monastir@gmail.com','phone'=>'+216 73 300 013','ville'=>'Monastir','dob'=>'1998-01-01','sexe'=>'femme','role'=>'groupe','bio'=>'Club jeunesse nature de Monastir, sorties pédagogiques et camping.','nom_groupe'=>'Jeunesse Nature Monastir','balance'=>120.00],
-            ['name'=>'Sahara Trek Gabès','email'=>'sahara.trek.gabes@gmail.com','phone'=>'+216 75 300 014','ville'=>'Gabès','dob'=>'1992-01-01','sexe'=>'homme','role'=>'groupe','bio'=>'Trekking entre oasis, désert et montagne dans la région de Gabès.','nom_groupe'=>'Sahara Trek Gabès','balance'=>155.00],
-            ['name'=>'Aventuriers du Kef','email'=>'aventuriers.kef@gmail.com','phone'=>'+216 78 300 015','ville'=>'Le Kef','dob'=>'1988-01-01','sexe'=>'homme','role'=>'groupe','bio'=>'Randonnées et camping dans les montagnes du nord-ouest tunisien.','nom_groupe'=>'Aventuriers du Kef','balance'=>190.00],
-            ['name'=>'Ecotourisme Jendouba','email'=>'ecotourisme.jendouba@gmail.com','phone'=>'+216 78 300 016','ville'=>'Jendouba','dob'=>'1993-01-01','sexe'=>'femme','role'=>'groupe','bio'=>'Écotourisme et randonnée dans les forêts de la Kroumirie.','nom_groupe'=>'Ecotourisme Jendouba','balance'=>100.00],
-            ['name'=>'Outdoor Club Siliana','email'=>'outdoor.club.siliana@gmail.com','phone'=>'+216 78 300 017','ville'=>'Siliana','dob'=>'1991-01-01','sexe'=>'homme','role'=>'groupe','bio'=>'Club outdoor de Siliana, randonnée et camping dans la Dorsale tunisienne.','nom_groupe'=>'Outdoor Club Siliana','balance'=>145.00],
-            ['name'=>'Wilderness Tunis','email'=>'wilderness.tunis@gmail.com','phone'=>'+216 71 300 018','ville'=>'Tunis','dob'=>'1995-01-01','sexe'=>'femme','role'=>'groupe','bio'=>'Wilderness camping et survie en nature pour aventuriers tunisois.','nom_groupe'=>'Wilderness Tunis','balance'=>280.00],
+            ['name'=>'Club Aventure Tunis','email'=>'club.aventure.tunis@gmail.com','phone'=>'+216 71 300 001','ville'=>'Tunis','dob'=>'1990-01-01','sexe'=>'homme','role'=>'organizer','bio'=>'Club de randonnée et camping basé à Tunis, plus de 500 membres actifs.','nom_groupe'=>'Club Aventure Tunis','balance'=>350.00],
+            ['name'=>'Randonneurs du Nord','email'=>'randonneurs.nord@gmail.com','phone'=>'+216 72 300 002','ville'=>'Bizerte','dob'=>'1988-01-01','sexe'=>'homme','role'=>'organizer','bio'=>'Association de randonnée dans le nord de la Tunisie, forêts et montagnes.','nom_groupe'=>'Les Randonneurs du Nord','balance'=>220.00],
+            ['name'=>'Désert Explorers Tozeur','email'=>'desert.explorers.tozeur@gmail.com','phone'=>'+216 76 300 003','ville'=>'Tozeur','dob'=>'1992-01-01','sexe'=>'homme','role'=>'organizer','bio'=>'Club spécialisé dans les expéditions désertiques du sud tunisien.','nom_groupe'=>'Désert Explorers Tozeur','balance'=>180.00],
+            ['name'=>'Mer et Montagne Bizerte','email'=>'mer.montagne.bizerte@gmail.com','phone'=>'+216 72 300 004','ville'=>'Bizerte','dob'=>'1985-01-01','sexe'=>'homme','role'=>'organizer','bio'=>'Explorations côtières et montagnardes autour de Bizerte.','nom_groupe'=>'Mer et Montagne Bizerte','balance'=>290.00],
+            ['name'=>'Camp Family Nabeul','email'=>'camp.family.nabeul@gmail.com','phone'=>'+216 72 300 005','ville'=>'Nabeul','dob'=>'1995-01-01','sexe'=>'femme','role'=>'organizer','bio'=>'Sorties camping familiales sur les plages de Cap Bon.','nom_groupe'=>'Camp Family Nabeul','balance'=>160.00],
+            ['name'=>'Aventure Sfax','email'=>'aventure.sfax@gmail.com','phone'=>'+216 74 300 006','ville'=>'Sfax','dob'=>'1989-01-01','sexe'=>'homme','role'=>'organizer','bio'=>'Club outdoor de Sfax, randonnées et camping dans le centre-est tunisien.','nom_groupe'=>'Aventure Sfax','balance'=>200.00],
+            ['name'=>'Trek Sud Tunisie','email'=>'trek.sud.tunisie@gmail.com','phone'=>'+216 76 300 007','ville'=>'Gafsa','dob'=>'1991-01-01','sexe'=>'homme','role'=>'organizer','bio'=>'Trekking dans le désert et les montagnes du sud tunisien.','nom_groupe'=>'Trek Sud Tunisie','balance'=>140.00],
+            ['name'=>'Nature Lovers Sousse','email'=>'nature.lovers.sousse@gmail.com','phone'=>'+216 73 300 008','ville'=>'Sousse','dob'=>'1993-01-01','sexe'=>'femme','role'=>'organizer','bio'=>'Amoureux de la nature côtière et forestière autour de Sousse.','nom_groupe'=>'Nature Lovers Sousse','balance'=>175.00],
+            ['name'=>'Mountain Climbers Béja','email'=>'mountain.climbers.beja@gmail.com','phone'=>'+216 78 300 009','ville'=>'Béja','dob'=>'1987-01-01','sexe'=>'homme','role'=>'organizer','bio'=>'Escalade et trekking dans les massifs montagneux de Béja.','nom_groupe'=>'Mountain Climbers Béja','balance'=>210.00],
+            ['name'=>'Bivouac Sahara Club','email'=>'bivouac.sahara@gmail.com','phone'=>'+216 76 300 010','ville'=>'Tozeur','dob'=>'1994-01-01','sexe'=>'homme','role'=>'organizer','bio'=>'Club de bivouac désertique, expéditions nocturnes et stargazing.','nom_groupe'=>'Bivouac Sahara Club','balance'=>130.00],
+            ['name'=>'Randonneurs Kairouan','email'=>'randonneurs.kairouan@gmail.com','phone'=>'+216 77 300 011','ville'=>'Kairouan','dob'=>'1990-01-01','sexe'=>'homme','role'=>'organizer','bio'=>'Randonnées culturelles et naturelles autour de Kairouan.','nom_groupe'=>'Randonneurs Kairouan','balance'=>165.00],
+            ['name'=>'Coastal Explorers Mahdia','email'=>'coastal.explorers.mahdia@gmail.com','phone'=>'+216 73 300 012','ville'=>'Mahdia','dob'=>'1996-01-01','sexe'=>'femme','role'=>'organizer','bio'=>'Exploration côtière de Mahdia, plongée et camping plage.','nom_groupe'=>'Coastal Explorers Mahdia','balance'=>245.00],
+            ['name'=>'Jeunesse Nature Monastir','email'=>'jeunesse.nature.monastir@gmail.com','phone'=>'+216 73 300 013','ville'=>'Monastir','dob'=>'1998-01-01','sexe'=>'femme','role'=>'organizer','bio'=>'Club jeunesse nature de Monastir, sorties pédagogiques et camping.','nom_groupe'=>'Jeunesse Nature Monastir','balance'=>120.00],
+            ['name'=>'Sahara Trek Gabès','email'=>'sahara.trek.gabes@gmail.com','phone'=>'+216 75 300 014','ville'=>'Gabès','dob'=>'1992-01-01','sexe'=>'homme','role'=>'organizer','bio'=>'Trekking entre oasis, désert et montagne dans la région de Gabès.','nom_groupe'=>'Sahara Trek Gabès','balance'=>155.00],
+            ['name'=>'Aventuriers du Kef','email'=>'aventuriers.kef@gmail.com','phone'=>'+216 78 300 015','ville'=>'Le Kef','dob'=>'1988-01-01','sexe'=>'homme','role'=>'organizer','bio'=>'Randonnées et camping dans les montagnes du nord-ouest tunisien.','nom_groupe'=>'Aventuriers du Kef','balance'=>190.00],
+            ['name'=>'Ecotourisme Jendouba','email'=>'ecotourisme.jendouba@gmail.com','phone'=>'+216 78 300 016','ville'=>'Jendouba','dob'=>'1993-01-01','sexe'=>'femme','role'=>'organizer','bio'=>'Écotourisme et randonnée dans les forêts de la Kroumirie.','nom_groupe'=>'Ecotourisme Jendouba','balance'=>100.00],
+            ['name'=>'Outdoor Club Siliana','email'=>'outdoor.club.siliana@gmail.com','phone'=>'+216 78 300 017','ville'=>'Siliana','dob'=>'1991-01-01','sexe'=>'homme','role'=>'organizer','bio'=>'Club outdoor de Siliana, randonnée et camping dans la Dorsale tunisienne.','nom_groupe'=>'Outdoor Club Siliana','balance'=>145.00],
+            ['name'=>'Wilderness Tunis','email'=>'wilderness.tunis@gmail.com','phone'=>'+216 71 300 018','ville'=>'Tunis','dob'=>'1995-01-01','sexe'=>'femme','role'=>'organizer','bio'=>'Wilderness camping et survie en nature pour aventuriers tunisois.','nom_groupe'=>'Wilderness Tunis','balance'=>280.00],
         ];
     }
 
