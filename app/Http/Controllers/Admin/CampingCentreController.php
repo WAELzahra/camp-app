@@ -81,7 +81,7 @@ class CampingCentreController extends Controller
 
         // ── Return only type='centre' rows — excludes hors_centre and anything else ──
         $centres = CampingCentre::with(['user', 'profileCentre'])
-            ->where('type', 'centre')
+            ->whereNotNull('profile_centre_id')  // Only show partner centres
             ->get();
 
         return response()->json([

@@ -184,7 +184,9 @@ class CenterServiceApiController extends Controller
             'contact_email'    => $center->contact_email,
             'contact_phone'    => $center->contact_phone,
             'manager_name'     => $center->manager_name,
-            'established_date' => $center->established_date?->format('Y-m-d'),
+            'established_date' => $center->established_date 
+                ? (is_string($center->established_date) ? $center->established_date : $center->established_date->format('Y-m-d'))
+                : null,
             'average_rating'   => $avgRating  ? round((float) $avgRating, 2) : null,
             'review_count'     => $reviewCount,
             'profile' => [

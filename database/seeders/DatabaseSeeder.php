@@ -15,8 +15,6 @@ class DatabaseSeeder extends Seeder
             UsersAndProfilesSeeder::class,
             ProfileCampeursSeeder::class,
             CampingCentresSeeder::class,
-            CentreProfilesSeeder::class,
-            PartnerCentresSeeder::class,
             PartnerCentreSeeder::class,
             BoutiquesAndMateriellesSeeder::class,
             GroupesAndEventsSeeder::class,

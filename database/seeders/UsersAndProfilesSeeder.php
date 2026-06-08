@@ -147,7 +147,6 @@ class UsersAndProfilesSeeder extends Seeder
             $this->campeursE(),
             $this->campeursF(),
             $this->groupes(),
-            $this->centres(),
             $this->fournisseurs(),
             $this->guides(),
         );
