@@ -5,14 +5,14 @@ namespace Database\Seeders;
 use Illuminate\Database\Seeder;
 use App\Models\Feedbacks;
 use App\Models\User;
-use App\Models\Camping_zones;
+use App\Models\CampingZone;
 
 class FeedbacksZonesSeeder extends Seeder
 {
     public function run(): void
     {
         $user = User::first();
-        $zone = Camping_zones::first();
+        $zone = CampingZone::first();
 
         Feedbacks::create([
             'user_id' => $user->id,

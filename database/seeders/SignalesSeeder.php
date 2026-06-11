@@ -5,7 +5,7 @@ namespace Database\Seeders;
 use Illuminate\Database\Seeder;
 use App\Models\Signales;
 use App\Models\User;
-use App\Models\Camping_zones;
+use App\Models\CampingZone;
 
 class SignalesSeeder extends Seeder
 {
@@ -14,7 +14,7 @@ class SignalesSeeder extends Seeder
         Signales::truncate();
 
         $users = User::pluck('id')->toArray();
-        $zones = Camping_zones::pluck('id')->toArray();
+        $zones = CampingZone::pluck('id')->toArray();
         $adminId = User::whereHas('role', fn($q) => $q->where('name', 'admin'))->value('id')
             ?? User::first()->id;
 

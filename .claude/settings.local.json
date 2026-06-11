@@ -22,7 +22,11 @@
       "Bash(Get-ChildItem -Force -Recurse -Directory)",
       "Bash(Select-Object -First 20 FullName)",
       "Bash(git commit -m 'fix: return full storage URLs for avatar in API responses *)",
-      "Bash(git commit -m 'debug: enable R2 throw and catch avatar upload errors to surface R2 issue *)"
+      "Bash(git commit -m 'debug: enable R2 throw and catch avatar upload errors to surface R2 issue *)",
+      "Bash(grep -l 'protected $table' app/Models/CampingZone.php app/Models/Feedbacks.php app/Models/Feedback.php app/Models/Payments.php app/Models/Reservations_events.php app/Models/Annonce.php app/Models/Photo.php app/Models/Balance.php app/Models/WithdrawalRequest.php)",
+      "Bash(grep -h 'protected $table' app/Models/CampingZone.php app/Models/Feedbacks.php app/Models/Feedback.php app/Models/Payments.php app/Models/Reservations_events.php app/Models/Annonce.php app/Models/Photo.php app/Models/Balance.php app/Models/WithdrawalRequest.php app/Models/Favorite.php)",
+      "Bash(python -)",
+      "Bash(php -v)"
     ]
   }
 }

@@ -31,8 +31,9 @@ class ProfileCentreSeeder extends Seeder
             return;
         }
 
-        // Create sample centers with full service system
-        // All centers should be owned by the center manager (njkhouja@gmail.com)
+        // Create sample centers with full service system.
+        // profile_centres.profile_id is UNIQUE: one centre per profile, so every
+        // centre after the first gets its own dedicated manager user + profile.
         $centers = [
             [
                 'user_email' => 'njkhouja@gmail.com', // Center Manager
@@ -112,9 +113,9 @@ class ProfileCentreSeeder extends Seeder
 
         $centerIndex = 1; // Track center index for profile_center_id
 
-        foreach ($centers as $centerData) {
+        foreach ($centers as $i => $centerData) {
             $user = $users[$centerData['user_email']] ?? null;
-            
+
             if (!$user) {
                 $this->command->error("User with email {$centerData['user_email']} not found!");
                 continue;
@@ -127,9 +128,42 @@ class ProfileCentreSeeder extends Seeder
                 continue;
             }
 
+            // First centre uses the main manager profile; the rest get a
+            // dedicated manager user + profile (profile_id is unique).
+            if ($i === 0) {
+                $profile = $centerManagerProfile;
+            } else {
+                $managerId = DB::table('users')->insertGetId([
+                    'uuid'              => (string) \Illuminate\Support\Str::uuid(),
+                    'first_name'        => 'Manager',
+                    'last_name'         => $centerData['name'],
+                    'email'             => 'centre' . ($i + 1) . '@tunisiacamp.tn',
+                    'email_verified_at' => Carbon::now(),
+                    'password'          => bcrypt('password'),
+                    'phone_number'      => '+2165012350' . $i,
+                    'ville'             => explode(', ', $centerData['address'])[1] ?? 'Tunis',
+                    'role_id'           => 3,
+                    'is_active'         => 1,
+                    'first_login'       => 0,
+                    'created_at'        => Carbon::now(),
+                    'updated_at'        => Carbon::now(),
+                ]);
+                $user = User::find($managerId);
+
+                $profile = Profile::create([
+                    'user_id'     => $managerId,
+                    'bio'         => $centerData['bio'],
+                    'cover_image' => null,
+                    'type'        => 'centre',
+                    'activities'  => json_encode(['accueil', 'restauration', 'animation']),
+                    'created_at'  => Carbon::now(),
+                    'updated_at'  => Carbon::now(),
+                ]);
+            }
+
             // Create center in profile_centres table
             $profileCentre = ProfileCentre::create([
-                'profile_id' => $centerManagerProfile->id,
+                'profile_id' => $profile->id,
                 'name' => $centerData['name'],
                 'capacite' => $centerData['capacity'],
                 'price_per_night' => $centerData['price_per_night'],

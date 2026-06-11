@@ -5,6 +5,7 @@ namespace Database\Seeders;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 use Carbon\Carbon;
 
 class UserSeeder extends Seeder
@@ -259,6 +260,13 @@ class UserSeeder extends Seeder
             ],
         ];
 
+        // La colonne uuid est NOT NULL + unique : DB::table() contourne le boot()
+        // du modèle User, il faut donc la générer ici.
+        foreach ($users as &$user) {
+            $user['uuid'] = (string) Str::uuid();
+        }
+        unset($user);
+
         // Insérer les utilisateurs
         DB::table('users')->insert($users);
 
@@ -320,7 +328,7 @@ class UserSeeder extends Seeder
                     $this->createFournisseurProfile($profileId, $user);
                     break;
                 case 'campeur':
-                    // Rien à faire
+                    $this->createCampeurProfile($profileId, $user);
                     break;
             }
         }
@@ -350,21 +358,9 @@ class UserSeeder extends Seeder
      */
     private function createCentreProfile($profileId, $user)
     {
-        try {
-            DB::table('profile_centres')->insert([
-                'profile_id' => $profileId,
-                'capacite' => rand(50, 500),
-                'document_legal' => $this->getDocumentPath('legal', $user->id),
-                'document_legal_type' => $this->getRandomLegalDocumentType(),
-                'document_legal_expiration' => $this->getRandomExpirationDate(),
-                'document_legal_filename' => $this->getDocumentFilename('legal', $user->first_name, $user->last_name),
-                'disponibilite' => (bool)rand(0, 1),
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
-        } catch (\Exception $e) {
-            // Ignorer si la table n'existe pas
-        }
+        // profile_centres a une contrainte unique sur profile_id : on laisse
+        // ProfileCentreSeeder créer la fiche complète du centre (services,
+        // équipements, tarifs). Rien à faire ici.
     }
 
     /**
@@ -376,13 +372,36 @@ class UserSeeder extends Seeder
             DB::table('profile_groupes')->insert([
                 'profile_id' => $profileId,
                 'nom_groupe' => $this->generateGroupName($user),
-                'cin_responsable' => $this->generateCinNumber(),
+                'patente_path' => $this->getDocumentPath('patente', $user->id),
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
         } catch (\Exception $e) {
             // Ignorer si la table n'existe pas
         }
+    }
+
+    /**
+     * Créer le profil campeur
+     */
+    private function createCampeurProfile($profileId, $user)
+    {
+        $skills   = ['beginner', 'intermediate', 'advanced', 'expert'];
+        $comforts = ['basic', 'standard', 'glamping'];
+        $budgets  = ['budget', 'moderate', 'premium'];
+
+        DB::table('profile_campeurs')->insert([
+            'profile_id'            => $profileId,
+            'skill_level'           => $skills[array_rand($skills)],
+            'comfort_level'         => $comforts[array_rand($comforts)],
+            'budget_range'          => $budgets[array_rand($budgets)],
+            'preferred_trip_styles' => json_encode(['camping', 'hiking']),
+            'preferred_activities'  => json_encode(['randonnée', 'photographie', 'feu de camp']),
+            'gear_preferences'      => json_encode(['tente', 'sac de couchage']),
+            'total_trips'           => rand(0, 20),
+            'created_at'            => now(),
+            'updated_at'            => now(),
+        ]);
     }
 
     /**
