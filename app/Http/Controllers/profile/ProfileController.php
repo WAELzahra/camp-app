@@ -1813,7 +1813,9 @@ class ProfileController extends Controller
                 ->where('profile_center_id', $centerId)
                 ->firstOrFail();
 
-            if ($service->is_standard) {
+            // Standard service can only be deleted through the explicit
+            // deactivation flow (basic camping toggled off in ServicesTab).
+            if ($service->is_standard && !request()->boolean('deactivate_standard')) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Cannot delete standard service'
