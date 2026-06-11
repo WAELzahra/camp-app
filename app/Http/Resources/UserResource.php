@@ -26,6 +26,7 @@ class UserResource extends BaseApiResource
 
         // Private fields — only the owning user sees these
         return array_merge($data, [
+            'id'                => $this->id,
             'email'             => $this->email,
             'email_verified_at' => $this->email_verified_at,
             'phone_number'      => $this->phone_number,
