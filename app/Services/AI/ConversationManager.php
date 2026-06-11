@@ -222,7 +222,15 @@ PROMPT;
         // Effective partner choice: turn value overrides persisted.
         $effectivePartner = $s['partner_choice']
             ?? ($persisted['partner_choice'] ?? null);
-
+        // ── Platform FAQ detection ──────────────────────────────────────────────
+        if ($s['intent'] === 'other' || $s['intent'] === 'question' || $s['intent'] === 'plan_trip') {
+            $faq = $this->isPlatformFaq($s, $persisted);
+            if ($faq) {
+                $s['next_action'] = 'platform_faq';
+                $s['reply'] = null;
+                return $s;  // skip all destination/accommodation logic
+            }
+        }
         // Hard invariants — in priority order.
         if ($s['intent'] === 'question' && ($s['question_target'] ?? null) !== null) {
             $s['next_action'] = 'answer';
@@ -244,7 +252,22 @@ PROMPT;
 
         return $s;
     }
-
+    private function isPlatformFaq(array $s, array $persisted): bool
+    {
+        $destination = $s['destination'] ?? $persisted['destination'] ?? null;
+        
+        // If user specified a destination, it's a trip plan, not a FAQ
+        if ($destination !== null) {
+            return false;
+        }
+        
+        // If user wants to camp or plan, let the normal flow handle it
+        if ($s['intent'] === 'plan_trip' && $s['destination'] !== null) {
+            return false;
+        }
+        
+        return true; 
+    }
     /**
      * Resolve a free-text destination to a canonical region. Exact/substring
      * first, then a fuzzy pass (Levenshtein) so typos like "touzer"/"binzert"
@@ -316,7 +339,7 @@ PROMPT;
         $questionTarget = $this->detectQuestionTarget($message);
         $intent = $questionTarget !== null
             ? 'question'
-            : ($this->isGreeting($lowerMsg) ? 'greeting' : 'plan_trip');
+            : ($this->isGreeting($lowerMsg) ? 'greeting' : 'other');
 
         return [
             'language'           => $this->detectLanguage($userText),

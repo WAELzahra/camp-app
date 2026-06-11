@@ -13,6 +13,19 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Decision backend
+    |--------------------------------------------------------------------------
+    | "php"    — decisions computed by the in-app rule engines / classical ML.
+    | "python" — decisions delegated to the ai-research FastAPI model service
+    |            (with automatic PHP fallback if it is unreachable).
+    */
+    'decision_backend'  => env('AI_DECISION_BACKEND', 'php'),
+    'inference_url'     => env('AI_INFERENCE_URL', 'http://localhost:8008'),
+    'inference_key'     => env('AI_SERVICE_KEY', ''),
+    'inference_timeout' => env('AI_INFERENCE_TIMEOUT', 3),
+
+    /*
+    |--------------------------------------------------------------------------
     | Response Cache TTL
     |--------------------------------------------------------------------------
     | Identical prompts from the same user are cached for this many seconds.

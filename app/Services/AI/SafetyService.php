@@ -138,6 +138,30 @@ class SafetyService
             $score = $this->calculateScore($factors);
             $label = $this->scoreToLabel($score);
 
+            // ── Optional: delegate the score/label to the Python model service ──
+            // When ai.decision_backend = 'python', the trained safety classifier
+            // (LightGBM) makes the call; the PHP factors/summary are kept. Any
+            // failure falls back to the rule-based score above.
+            $modelSource = 'rule_engine';
+            $client = app(\App\Services\AI\AiInferenceClient::class);
+            if ($client->enabled()) {
+                $weather = $this->resolveWeatherLevel($forecast);
+                $pred = $client->safety([
+                    'skill'      => $profile->skill_level ?? 'beginner',
+                    'difficulty' => $zone->difficulty ?? 'easy',
+                    'danger'     => $zone->danger_level ?? 'low',
+                    'group_size' => $groupSize,
+                    'weather'    => $weather,
+                    'comfort'    => $profile->comfort_level ?? 'standard',
+                    'terrain'    => $zone->terrain_type ?? 'plain',
+                ]);
+                if ($pred !== null && isset($pred['label'], $pred['score'])) {
+                    $label       = $pred['label'];
+                    $score       = (int) $pred['score'];
+                    $modelSource = 'python:' . ($pred['model'] ?? 'model');
+                }
+            }
+
             [$summary, $llmEnriched] = $this->buildSummary($label, $factors);
 
             $assessment = new SafetyAssessment(
@@ -151,13 +175,14 @@ class SafetyService
             );
 
             Log::info('safety_assessment', [
-                'zone_id'      => $zone->id,
-                'profile_id'   => $profile->profile_id ?? null,
-                'score'        => $assessment->score,
-                'label'        => $assessment->label,
-                'factors'      => count($assessment->factors),
-                'llm_enriched' => $assessment->llm_enriched,
-                'cached'       => false,
+                'zone_id'         => $zone->id,
+                'profile_id'      => $profile->profile_id ?? null,
+                'score'           => $assessment->score,
+                'label'           => $assessment->label,
+                'factors'         => count($assessment->factors),
+                'llm_enriched'    => $assessment->llm_enriched,
+                'decision_source' => $modelSource,
+                'cached'          => false,
             ]);
 
             return $assessment;
@@ -323,6 +348,22 @@ class SafetyService
         if ($score <= 35) return 'caution';
         if ($score <= 65) return 'warning';
         return 'danger';
+    }
+
+    /** Highest weather risk level across the forecast (for the Python model). */
+    private function resolveWeatherLevel(?WeatherForecast $forecast): string
+    {
+        if ($forecast === null) {
+            return 'low';
+        }
+        $priority = ['extreme' => 4, 'high' => 3, 'moderate' => 2, 'low' => 1];
+        $max = 'low';
+        foreach ($forecast->daily as $day) {
+            if (($priority[$day->riskLevel] ?? 0) > ($priority[$max] ?? 0)) {
+                $max = $day->riskLevel;
+            }
+        }
+        return $max;
     }
 
     // ── Summary: LLM or rule-based fallback ──────────────────────────────────

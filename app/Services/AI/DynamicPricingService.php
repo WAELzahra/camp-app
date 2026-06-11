@@ -60,6 +60,9 @@ class DynamicPricingService
             if ($entityType === 'zone') {
                 return $this->buildZoneMarketOverview();
             }
+            if ($entityType === 'centre') {
+                return $this->buildCentreMarketOverview();
+            }
             return $this->buildMaterielleMarketOverview();
         });
     }
@@ -74,7 +77,60 @@ class DynamicPricingService
         if ($entityType === 'zone') {
             return $this->buildZoneDemandSignal($entityId, $trendingTags, $season);
         }
+        if ($entityType === 'centre') {
+            return $this->buildCentreDemandSignal($entityId, $trendingTags, $season);
+        }
         return $this->buildMaterielleDemandSignal($entityId, $trendingTags, $season);
+    }
+
+    private function buildCentreDemandSignal(int $entityId, array $trendingTags, string $season): DemandSignal
+    {
+        $centre = DB::table('camping_centres')->where('id', $entityId)->first();
+        $pc     = $centre
+            ? DB::table('profile_centres')->where('id', $centre->profile_centre_id)->first()
+            : null;
+
+        $currentPrice = (float) ($pc->price_per_night ?? 0.0);
+
+        // Centre reservations are keyed by the centre's user_id.
+        $recentBookings = 0;
+        if ($centre) {
+            try {
+                $recentBookings = (int) Reservations_centre::where('centre_id', $centre->user_id)
+                    ->where('created_at', '>=', now()->subDays(30))
+                    ->count();
+            } catch (\Throwable) {}
+        }
+
+        $recentFavorites = 0;
+        try {
+            $recentFavorites = (int) Favorite::where('favoritable_type', 'centre')
+                ->where('favoritable_id', $entityId)
+                ->where('created_at', '>=', now()->subDays(30))
+                ->count();
+        } catch (\Throwable) {}
+
+        $avgCategoryPrice = $currentPrice;
+        try {
+            $avg = DB::table('profile_centres')->where('price_per_night', '>', 0)->avg('price_per_night');
+            if ($avg !== null) {
+                $avgCategoryPrice = (float) $avg;
+            }
+        } catch (\Throwable) {}
+
+        return new DemandSignal(
+            entityId:         $entityId,
+            entityType:       'centre',
+            recentBookings:   $recentBookings,
+            recentFavorites:  $recentFavorites,
+            avgRating:        0.0,
+            reviewCount:      0,
+            avgCategoryPrice: $avgCategoryPrice,
+            currentPrice:     $currentPrice,
+            demandLevel:      $this->calcDemandLevel($recentBookings, $recentFavorites),
+            trendingTags:     $trendingTags,
+            season:           $season,
+        );
     }
 
     private function buildZoneDemandSignal(int $entityId, array $trendingTags, string $season): DemandSignal
@@ -347,6 +403,49 @@ class DynamicPricingService
                 'max_rating'   => (float) $r->max_rating,
                 'zone_count'   => (int)   $r->zone_count,
             ])->values()->toArray(),
+            'trending_tags' => $this->getTrendingTripTags(),
+            'generated_at'  => now()->toISOString(),
+        ];
+    }
+
+    private function buildCentreMarketOverview(): array
+    {
+        // camping_centres has no region column, so benchmark by price tier.
+        $prices = DB::table('camping_centres as c')
+            ->join('profile_centres as pc', 'pc.id', '=', 'c.profile_centre_id')
+            ->where('pc.price_per_night', '>', 0)
+            ->pluck('pc.price_per_night');
+
+        $tiers = [
+            'Budget (< 50 TND)'      => [],
+            'Standard (50–100 TND)'  => [],
+            'Premium (> 100 TND)'    => [],
+        ];
+        foreach ($prices as $p) {
+            $p = (float) $p;
+            if ($p < 50)        { $tiers['Budget (< 50 TND)'][]     = $p; }
+            elseif ($p <= 100)  { $tiers['Standard (50–100 TND)'][] = $p; }
+            else                { $tiers['Premium (> 100 TND)'][]   = $p; }
+        }
+
+        $byCategory = [];
+        foreach ($tiers as $name => $arr) {
+            if (empty($arr)) {
+                continue;
+            }
+            $byCategory[] = [
+                'category_id'   => 0,
+                'category_name' => $name,
+                'avg_price'     => round(array_sum($arr) / count($arr), 2),
+                'min_price'     => (float) min($arr),
+                'max_price'     => (float) max($arr),
+                'item_count'    => count($arr),
+            ];
+        }
+
+        return [
+            'entity_type'   => 'centre',
+            'by_category'   => $byCategory,
             'trending_tags' => $this->getTrendingTripTags(),
             'generated_at'  => now()->toISOString(),
         ];

@@ -160,14 +160,15 @@ class GroupMatchingService
             $profileClusterMap[$a['id']] = $a['cluster_id'];
         }
 
-        // Step 5 — Fetch groupe users from DB (role is on User, not Profile)
-        // Primary: groupe role users that have a ProfileCampeur
-        $groupeUsers = User::whereHas('role', fn ($q) => $q->where('name', 'groupe'))
+        // Step 5 — Fetch group users from DB (role is on User, not Profile).
+        // The group role is named "organizer" in this schema (legacy aliases:
+        // "groupe"/"group"); query all of them so real groups are matched.
+        $groupeUsers = User::whereHas('role', fn ($q) => $q->whereIn('name', ['organizer', 'groupe', 'group']))
             ->with(['profile.profileCampeur'])
             ->get()
             ->filter(fn ($u) => $u->profile?->profileCampeur !== null);
 
-        // Fallback: if no groupe users have ProfileCampeur, match against campeur users
+        // Fallback: if no group users have a ProfileCampeur, match against campeur users
         if ($groupeUsers->isEmpty()) {
             $groupeUsers = User::whereHas('role', fn ($q) => $q->where('name', 'campeur'))
                 ->with(['profile.profileCampeur'])
@@ -234,9 +235,17 @@ class GroupMatchingService
 
             $memberProfiles = $this->buildMemberProfileSummary($c['profile']);
 
+            // Real display name: groupe accounts store their org name across
+            // first_name/last_name (e.g. "Club Aventure Tunis"); fall back to a
+            // generic label only when both are empty.
+            $displayName = trim(($c['user']->first_name ?? '') . ' ' . ($c['user']->last_name ?? ''));
+            if ($displayName === '') {
+                $displayName = "Groupe #{$c['user']->id}";
+            }
+
             $matches[] = new GroupMatch(
                 groupId:          $c['user']->id,
-                groupName:        $c['user']->name ?? "Groupe #{$c['user']->id}",
+                groupName:        $displayName,
                 clusterId:        $c['clusterId'],
                 similarityScore:  round($c['similarity'], 4),
                 compatibilityPct: round($c['similarity'] * 100, 1),

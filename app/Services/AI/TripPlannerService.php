@@ -54,6 +54,7 @@ class TripPlannerService
         private readonly BehavioralProfileService    $behavioralProfileService,
         private readonly GroupACollectorService      $groupACollector,
         private readonly BookingPreparationService   $bookingPreparation,
+        private readonly PlatformKnowledgeService $platformKnowledge, 
     ) {}
 
     public function plan(User $user, string $message, array $history = []): array
@@ -134,6 +135,9 @@ class TripPlannerService
 
         // ── 5. Dispatch on next_action ──────────────────────────────────────────
         // Chat and Q&A actions do not require Group A — let them through.
+        if ($state['next_action'] === 'platform_faq') {
+           return $this->answerPlatformFaq($state, $message, $history);
+        }
         if ($state['next_action'] === 'chat') {
             return ['chat_message' => $state['reply'] ?? $this->fallbackGreeting($lang)];
         }
@@ -1813,7 +1817,11 @@ PROMPT;
     {
         $lower   = mb_strtolower(trim($message));
         $signals = [
-            'another', 'other option', 'different', 'alternative', 'show me more',
+            'another', 'other option', 'different', 'diffrent', 'diferent', 'differnt',
+            'alternative', 'show me more', 'show me another', 'show another',
+            'a different', 'a diffrent', 'different one', 'diffrent one',
+            'different center', 'diffrent center', 'different centre', 'diffrent centre',
+            'want another', 'just want a', 'other center', 'other centre',
             'une autre', 'autre option', 'autre centre', 'autre zone',
             'montre-moi autre', 'différent', 'propose-moi autre', 'montre autre',
             'خيار آخر', 'غير هذا', 'بديل', 'شيء آخر', 'اقتراح آخر',
@@ -2022,5 +2030,47 @@ PROMPT;
         $content = preg_replace('/^```(?:json)?\s*/i', '', trim($content));
         $content = preg_replace('/\s*```$/', '', $content ?? '');
         return trim($content ?? '');
+    }
+    private function answerPlatformFaq(array $state, string $message, array $history): array
+    {
+        $lang = $state['language'] ?? 'fr';
+
+        // Get relevant platform knowledge from Qdrant
+        $context = $this->platformKnowledge->getRelevantContext($message);
+
+        $systemPrompt = <<<PROMPT
+You are TunisiaCamp's friendly customer support assistant.
+
+RULES (strictly follow all):
+1. LANGUAGE: Respond in the exact same language as the user (French → French, English → English, Arabic → Arabic).
+2. NON-TECHNICAL: You are talking to regular campers, not developers. NEVER mention API routes, HTTP methods (GET/POST/DELETE/PUT), database table names, controller names, middleware, or any developer/technical term. Describe features using plain everyday words.
+3. NAVIGATION PATH: Only include a page path when it directly helps the user find what they asked about. Use EXACTLY ONE path — copy it exactly as it appears in the context, do NOT add extra words before or after the path within the same "/" segment. For account/personal questions (wallet, reservations, payments, bookings, profile) use the matching /settings/* path. For browsing/discovery questions use a public path (/centres, /zones, /materials, etc.). Never concatenate two paths together.
+4. ACCURATE: Only state information that appears in the platform context below. Never invent fees, amounts, dates, limits, or features.
+5. CONCISE: Answer in 2-4 clear, friendly sentences. If the context does not contain enough information to answer, say so honestly and suggest contacting support@tunisiacamp.com.
+
+=== PLATFORM INFORMATION ===
+{$context}
+=== END PLATFORM INFORMATION ===
+PROMPT;
+
+        try {
+            $answer = trim($this->llm->complete($systemPrompt, $message, 350, []));
+            if ($answer !== '') {
+                return [
+                    'chat_message' => $answer,
+                    'type'         => 'platform_faq',
+                ];
+            }
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('platform_faq_failed', [
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        return ['chat_message' => match ($lang) {
+            'en' => "I'd be happy to help! Could you rephrase your question?",
+            'ar' => "يسعدني مساعدتك! هل يمكنك إعادة صياغة سؤالك؟",
+            default => "Je serais ravi de vous aider ! Pouvez-vous reformuler votre question ?",
+        }];
     }
 }

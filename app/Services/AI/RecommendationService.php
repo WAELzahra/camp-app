@@ -53,6 +53,21 @@ class RecommendationService
     private const DIFF_ENC   = ['easy' => 0.0, 'medium' => 0.5, 'hard' => 1.0];
     private const COND_ENC   = ['new' => 1.0, 'like_new' => 0.75, 'good' => 0.5, 'fair' => 0.25];
 
+    /**
+     * Maps each English terrain_type to the French + English keywords campers
+     * actually use in their preferred_trip_styles. Without this, a camper who
+     * likes "montagne" never matches a "mountain" zone (str_contains fails
+     * across languages), so terrain personalisation silently collapses to 0.
+     */
+    private const TERRAIN_SYNONYMS = [
+        'mountain' => ['mountain', 'montagne', 'montagnes', 'massif', 'jebel', 'sommet', 'alpin'],
+        'forest'   => ['forest', 'forêt', 'foret', 'bois', 'sylvestre', 'kroumirie'],
+        'desert'   => ['desert', 'désert', 'sahara', 'dune', 'dunes', 'oasis', 'saharien'],
+        'coastal'  => ['coastal', 'côtier', 'cotier', 'plage', 'mer', 'littoral', 'marin', 'baignade', 'côte'],
+        'plain'    => ['plain', 'plaine', 'prairie', 'champ', 'campagne'],
+        'wetland'  => ['wetland', 'humide', 'lac', 'marais', 'marécage', 'étang', 'lagune', 'sebkha'],
+    ];
+
     // ── Public API (signatures unchanged) ────────────────────────────────────
 
     public function scoreZones(ProfileCampeur $profile, Collection $zones): Collection
@@ -138,6 +153,130 @@ class RecommendationService
             })
             ->sortByDesc('score')
             ->take(10)
+            ->values();
+    }
+
+    /**
+     * Score partner centres for a camper.
+     *
+     * Centres lack the rating/terrain signals zones have, so this is a
+     * transparent weighted blend rather than a cosine:
+     *   score = budget_fit*0.45 + equipment_richness*0.35 + capacity_fit*0.20
+     *
+     * Accepts the array shape produced by CentreLookupService::findPartnerCentres
+     * and returns the same arrays enriched with `score` + `score_breakdown`.
+     */
+    public function scoreCentres(ProfileCampeur $profile, Collection $centres): Collection
+    {
+        $budget     = $profile->budget_range ?? 'moderate';
+        $idealPrice = match ($budget) {
+            'budget'  => 40.0,
+            'premium' => 120.0,
+            default   => 75.0,
+        };
+        $group = (int) ($profile->getAttribute('inferred_group_size') ?? 2);
+
+        return $centres
+            ->map(function ($c) use ($idealPrice, $group) {
+                $price     = (float) ($c['price_per_night'] ?? 0);
+                $budgetFit = $price > 0
+                    ? max(0.0, 1.0 - min(abs($price - $idealPrice) / $idealPrice, 1.0))
+                    : 0.4;
+
+                $equipList     = $c['equipment_list'] ?? [];
+                $equip         = is_array($equipList) ? count($equipList) : 0;
+                $equipRichness = min($equip / 8.0, 1.0);
+
+                $cap    = $c['capacite'] ?? null;
+                $capFit = $cap === null ? 0.5 : ((int) $cap >= max($group, 2) ? 1.0 : 0.5);
+
+                $score = ($budgetFit * 0.45) + ($equipRichness * 0.35) + ($capFit * 0.20);
+
+                $c['score']           = round($score, 4);
+                $c['score_breakdown'] = [
+                    'budget_fit'         => round($budgetFit, 3),
+                    'equipment_richness' => round($equipRichness, 3),
+                    'capacity_fit'       => round($capFit, 3),
+                ];
+
+                return $c;
+            })
+            ->sortByDesc('score')
+            ->take(6)
+            ->values();
+    }
+
+    /**
+     * Score upcoming events for a camper.
+     *   score = difficulty_fit*0.30 + budget_fit*0.25 + tag_match*0.45
+     * tag_match reuses the terrain synonym resolver so French event tags
+     * ("montagne") align with the camper's preferred styles. Expects stdClass /
+     * array rows (status=scheduled, remaining_spots>0 filtered by the caller).
+     */
+    public function scoreEvents(ProfileCampeur $profile, Collection $events): Collection
+    {
+        $skill  = $profile->skill_level ?? 'beginner';
+        $budget = $profile->budget_range ?? 'moderate';
+        $styles = array_merge(
+            $this->toArray($profile->preferred_trip_styles),
+            $this->toArray($profile->preferred_activities),
+        );
+
+        $skillTier = ['beginner' => 1, 'intermediate' => 2, 'advanced' => 3, 'expert' => 4][$skill] ?? 1;
+        $idealMax  = match ($budget) { 'budget' => 30.0, 'premium' => 200.0, default => 70.0 };
+        $diffTiers = ['easy' => 1, 'moderate' => 2, 'difficult' => 3, 'expert' => 4];
+
+        return $events
+            ->map(function ($e) use ($skillTier, $idealMax, $styles, $diffTiers) {
+                $e = (array) $e;
+
+                // Difficulty fit (camping/no-difficulty events are neutral).
+                $diff = $e['difficulty'] ?? null;
+                if ($diff === null || ! isset($diffTiers[$diff])) {
+                    $difficultyFit = 0.6;
+                } else {
+                    $gap           = abs($skillTier - $diffTiers[$diff]);
+                    $difficultyFit = max(0.0, 1.0 - $gap * 0.34);
+                }
+
+                // Budget fit (free events score full).
+                $price     = (float) ($e['price'] ?? 0);
+                $budgetFit = $price <= 0 ? 1.0
+                    : ($price <= $idealMax ? 1.0 : max(0.0, 1.0 - ($price - $idealMax) / $idealMax));
+
+                // Tag match via terrain keys + substring (French↔French and FR↔EN).
+                $tags    = $this->toArray($e['tags'] ?? []);
+                $matched = 0;
+                foreach ($tags as $tag) {
+                    $t    = strtolower(trim((string) $tag));
+                    $tKey = $this->terrainKey($t);
+                    foreach ($styles as $style) {
+                        $s = strtolower(trim((string) $style));
+                        if ($s === '') {
+                            continue;
+                        }
+                        if (($tKey !== null && $this->terrainKey($s) === $tKey) ||
+                            str_contains($t, $s) || str_contains($s, $t)) {
+                            $matched++;
+                            break;
+                        }
+                    }
+                }
+                $tagMatch = count($tags) > 0 ? min($matched / count($tags), 1.0) : 0.0;
+
+                $score = ($difficultyFit * 0.30) + ($budgetFit * 0.25) + ($tagMatch * 0.45);
+
+                $e['score']           = round($score, 4);
+                $e['score_breakdown'] = [
+                    'difficulty_fit' => round($difficultyFit, 3),
+                    'budget_fit'     => round($budgetFit, 3),
+                    'tag_match'      => round($tagMatch, 3),
+                ];
+
+                return $e;
+            })
+            ->sortByDesc('score')
+            ->take(6)
             ->values();
     }
 
@@ -303,14 +442,24 @@ class RecommendationService
             return 0.0;
         }
 
-        if ($inferredTerrain !== null && strtolower($zoneTerrain) === strtolower($inferredTerrain)) {
+        $zt = strtolower($zoneTerrain);
+
+        // Strongest signal: behavioral inferred terrain matches exactly.
+        if ($inferredTerrain !== null && $zt === strtolower($inferredTerrain)) {
             return 1.0;
         }
 
+        // Static preferred styles, matched via French/English synonyms.
+        $synonyms = self::TERRAIN_SYNONYMS[$zt] ?? [$zt];
         foreach ($staticStyles as $style) {
-            if (str_contains(strtolower($style), strtolower($zoneTerrain)) ||
-                str_contains(strtolower($zoneTerrain), strtolower($style))) {
-                return 0.5;
+            $s = strtolower(trim((string) $style));
+            if ($s === '') {
+                continue;
+            }
+            foreach ($synonyms as $syn) {
+                if ($s === $syn || str_contains($s, $syn) || str_contains($syn, $s)) {
+                    return 0.8;
+                }
             }
         }
 
@@ -318,8 +467,31 @@ class RecommendationService
     }
 
     /**
+     * Resolve a free-text term (French or English) to its English terrain key.
+     * Lets us compare French gear tags ("montagne") with English behavioral
+     * terrain ("mountain") — they both resolve to the "mountain" key.
+     */
+    private function terrainKey(string $term): ?string
+    {
+        $t = strtolower(trim($term));
+        if ($t === '') {
+            return null;
+        }
+        foreach (self::TERRAIN_SYNONYMS as $key => $syns) {
+            foreach ($syns as $syn) {
+                if ($t === $syn || str_contains($t, $syn) || str_contains($syn, $t)) {
+                    return $key;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
      * Compute terrain match from gear trip_type_tags vs user terrain context.
-     *   1.0 – a tag exactly matches the inferred terrain
+     * Language-proof: a French tag ("montagne") matches an English behavioral
+     * terrain ("mountain") and vice-versa, via shared terrain keys.
+     *   1.0 – a tag matches the inferred terrain
      *   0.5 – a tag matches any static preferred style
      *   0.0 – no match
      */
@@ -329,18 +501,29 @@ class RecommendationService
             return 0.0;
         }
 
+        $infKey = $inferredTerrain !== null ? $this->terrainKey($inferredTerrain) : null;
+
         foreach ($tags as $tag) {
-            if ($inferredTerrain !== null &&
-                (str_contains(strtolower($tag), strtolower($inferredTerrain)) ||
-                 str_contains(strtolower($inferredTerrain), strtolower($tag)))) {
+            $tagStr = strtolower((string) $tag);
+            if ($inferredTerrain !== null && (
+                ($infKey !== null && $this->terrainKey($tagStr) === $infKey) ||
+                str_contains($tagStr, strtolower($inferredTerrain)) ||
+                str_contains(strtolower($inferredTerrain), $tagStr)
+            )) {
                 return 1.0;
             }
         }
 
         foreach ($tags as $tag) {
+            $tagStr = strtolower((string) $tag);
+            $tagKey = $this->terrainKey($tagStr);
             foreach ($styles as $style) {
-                if (str_contains(strtolower($tag), strtolower($style)) ||
-                    str_contains(strtolower($style), strtolower($tag))) {
+                $s = strtolower(trim((string) $style));
+                if ($s === '') {
+                    continue;
+                }
+                if (($tagKey !== null && $this->terrainKey($s) === $tagKey) ||
+                    str_contains($tagStr, $s) || str_contains($s, $tagStr)) {
                     return 0.5;
                 }
             }

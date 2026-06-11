@@ -75,6 +75,7 @@ class ConversationStateService
                 'wants_gear',
                 'partner_choice',
                 'last_recommended_id',
+                'start_date',
             ];
 
             foreach ($slots as $slot) {
@@ -180,6 +181,7 @@ class ConversationStateService
             'wants_gear'          => null,    // null = not yet asked
             'partner_choice'      => null,
             'last_recommended_id' => null,    // for "another option" exclusion
+            'start_date'          => null,    // optional trip start date (YYYY-MM-DD)
         ];
     }
 }

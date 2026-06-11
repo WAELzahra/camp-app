@@ -1500,6 +1500,7 @@ Route::middleware(['auth:sanctum', 'throttle:ai'])
         Route::post('/trip-planner/group-a',            [AiTripPlannerController::class, 'groupA']);
         Route::post('/trip-planner/prepare-booking',    [AiTripPlannerController::class, 'prepareBooking']);
         Route::post('/trip-planner/confirm-booking',    [AiTripPlannerController::class, 'confirmBooking']);
+        Route::post('/trip-planner/clear',              [AiTripPlannerController::class, 'clearConversation']);
         Route::get('/status/{jobId}',                   [AiTripPlannerController::class, 'status']);
         Route::get('/recommendations',                  [AiTripPlannerController::class, 'recommendations']);
     });

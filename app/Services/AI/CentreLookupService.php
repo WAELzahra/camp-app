@@ -40,7 +40,7 @@ class CentreLookupService
      *
      * @return Collection<int, array<string, mixed>>
      */
-    public function findPartnerCentres(?string $region, int $limit = 5): Collection
+    public function findPartnerCentres(?string $region, int $limit = 10): Collection
     {
         try {
             $query = CampingCentre::query()

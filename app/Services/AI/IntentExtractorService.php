@@ -123,7 +123,8 @@ PROMPT;
             implode(' ', array_column($history, 'content')) . ' ' . $message
         );
         $lowerMsg = mb_strtolower($message);
-
+        $nextAction     = $this->detectNextAction($lowerMsg);
+        $questionTarget = $this->detectQuestionTarget($lowerMsg);
         return [
             'destination'                => '', // authoritative region detection lives in TripPlannerService
             'budget'                     => $this->detectBudget($combined, $profile),
@@ -132,6 +133,8 @@ PROMPT;
             'trip_style'                 => $this->detectTripStyle($combined),
             'accommodation_type'         => $this->detectAccommodation($combined),
             'post_recommendation_action' => null,  // set by ConfirmationClassifierService, never by LLM
+            'next_action'                => $nextAction,
+            'question_target'            => $questionTarget,
         ];
     }
 
@@ -263,6 +266,8 @@ PROMPT;
             'trip_style'                 => $tripStyle,
             'accommodation_type'         => $accommodation,
             'post_recommendation_action' => null,  // always null; classifier sets this, not LLM
+            'next_action'     => $decoded['next_action'] ?? $fallback['next_action'],
+            'question_target' => $decoded['question_target'] ?? $fallback['question_target'],   
         ];
     }
 
@@ -282,5 +287,44 @@ PROMPT;
         }
 
         return is_array($decoded) ? $decoded : null;
+    }
+    private function detectNextAction(string $text): string
+    {
+        // Platform FAQ signals (questions about how the platform works)
+        $faq = [
+            'comment', 'how', 'where', 'où', 'quand', 'when', 'pourquoi',
+            'prix', 'price', 'coût', 'cost', 'payer', 'pay', 'paiement', 'payment',
+            'compte', 'account', 'inscrire', 'register', 'login', 'connexion',
+            'annuler', 'cancel', 'rembourser', 'refund', 'réservation', 'reservation',
+            'wallet', 'portefeuille', 'solde', 'balance',
+            'fonctionne', 'works', 'marche', 'comment ça marche',
+            'équipement', 'equipment', 'matériel', 'gear', 'louer', 'rent',
+            'partenaire', 'partner', 'centre partenaire', 'devenir partenaire',
+            'retirer', 'withdraw', 'déposer', 'deposit',
+            'كيف', 'أين', 'متى', 'سعر', 'دفع', 'حساب', 'إلغاء',
+        ];
+        foreach ($faq as $kw) {
+            if (str_contains($text, $kw)) {
+                return 'platform_faq';
+            }
+        }
+
+        return 'plan';
+    }
+
+    private function detectQuestionTarget(string $text): ?string
+    {
+        $places = [
+            'bouhertma', 'ichkeul', 'zaghouan', 'tabarka', 'douz',
+            'djerba', 'tozeur', 'nefta', 'ksar ghilane', 'ain draham',
+            'bizerte', 'nabeul', 'hammamet', 'sousse', 'mahdia',
+            'jendouba', 'kairouan', 'tataouine', 'gafsa', 'kebili',
+        ];
+        foreach ($places as $place) {
+            if (str_contains($text, $place)) {
+                return $place;
+            }
+        }
+        return 'current';
     }
 }

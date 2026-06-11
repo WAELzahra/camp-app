@@ -14,6 +14,7 @@ class DatabaseSeeder extends Seeder
             FixCampingZonesSeeder::class,
             UsersAndProfilesSeeder::class,
             ProfileCampeursSeeder::class,
+            GroupeProfileCampeursSeeder::class,
             CampingCentresSeeder::class,
             PartnerCentreSeeder::class,
             BoutiquesAndMateriellesSeeder::class,
@@ -21,8 +22,11 @@ class DatabaseSeeder extends Seeder
             // ── NEW: additional campaign events (run BEFORE ReservationsSeeder
             //         so that the existing seeder can also reserve them if needed)
             CampingEventsSeeder::class,
+            AdditionalCampingEventsSeeder::class,
+            CancellationPolicySeeder::class,
             ReservationsSeeder::class,
             FeedbacksAndFavoritesSeeder::class,
+            DenseFavoritesSeeder::class,
             AnnoncesAndSocialSeeder::class,
             // ── NEW: campaign-specific event reservations, feedbacks & notifications
             //         These target only the events created by CampingEventsSeeder

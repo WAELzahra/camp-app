@@ -81,10 +81,15 @@ class GroupACollectorService
             default => "Pour planifier votre séjour à {$destination} :",
         };
 
+        // Always append start_date as an optional field if not yet set.
+        $dateField = $this->buildField('start_date');
+        $fields    = array_values(array_map([$this, 'buildField'], $missing));
+        $fields[]  = $dateField;
+
         return [
             'type'         => 'group_a_modal',
             'chat_message' => $modalMessage,
-            'fields'       => array_values(array_map([$this, 'buildField'], $missing)),
+            'fields'       => $fields,
         ];
     }
 
@@ -131,6 +136,7 @@ class GroupACollectorService
                                         ? $formData['accommodation_type']
                                         : null,
             'wants_gear'         => $this->parseBool($formData['wants_gear'] ?? null),
+            'start_date'         => $this->parseDate($formData['start_date'] ?? null),
         ];
 
         return $this->conversationState->merge($userId, $delta);
@@ -201,8 +207,27 @@ class GroupACollectorService
                     ['label' => '🎒 J\'apporte mon propre matériel',  'value' => 'false'],
                 ],
             ],
+            'start_date' => [
+                'id'       => 'start_date',
+                'label'    => 'Date de début (optionnel)',
+                'type'     => 'date',
+                'default'  => '',
+                'optional' => true,
+            ],
             default => [],
         };
+    }
+
+    private function parseDate(mixed $value): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+        $str = trim((string) $value);
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $str)) {
+            return $str;
+        }
+        return null;
     }
 
     private function parseInt(mixed $value, int $min, int $max): ?int

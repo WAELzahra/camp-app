@@ -164,7 +164,16 @@ class ReservationsSeeder extends Seeder
         string $now,
         array &$rows
     ): void {
-        $archetypeCentres = $this->archetypeCentres();
+        // Pool of REAL centre user IDs. The platform's centre accounts use
+        // slug-based emails (e.g. "bouhertma-outdoors-1@tunisiacamp.tn"), so the
+        // legacy archetype→gmail map never resolved and produced zero rows.
+        // We assign each campeur centres deterministically from the live pool;
+        // archetype still drives nights, price, skill level and trip purpose.
+        $centreIds = array_values($centreUsers);
+        if (empty($centreIds)) {
+            $this->command?->warn('⚠️  No centre users found — skipping centre reservations.');
+            return;
+        }
 
         // Take a representative subset — skip F mostly (they book fewer centres)
         $targetCount = 50;
@@ -190,14 +199,13 @@ class ReservationsSeeder extends Seeder
             if ($added >= $targetCount) break;
 
             $arch    = $c->archetype;
-            $centres = $archetypeCentres[$arch] ?? $archetypeCentres['C'];
 
             // Each campeur gets 1 or 2 reservations
             $numRes = ($i % 3 === 0) ? 2 : 1;
 
             for ($r = 0; $r < $numRes && $added < $targetCount; $r++) {
-                $centreEmail = $centres[($c->id + $r) % count($centres)];
-                $centreId    = $centreUsers[$centreEmail] ?? null;
+                // Deterministic spread across the real centre pool.
+                $centreId = $centreIds[($c->id + $r + $i) % count($centreIds)];
                 if (! $centreId) continue;
 
                 // Determine if past or future

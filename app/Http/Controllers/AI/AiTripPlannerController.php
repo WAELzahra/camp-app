@@ -107,6 +107,7 @@ class AiTripPlannerController extends Controller
             'fields.duration_nights'    => ['nullable', 'integer', 'min:1', 'max:30'],
             'fields.accommodation_type' => ['nullable', 'string', 'in:zone,centre'],
             'fields.wants_gear'         => ['nullable'],
+            'fields.start_date'         => ['nullable', 'date_format:Y-m-d'],
         ]);
 
         if (! config('ai.features.trip_planner')) {
@@ -443,8 +444,20 @@ class AiTripPlannerController extends Controller
         $user           = Auth::user();
         $campeurProfile = $user->profile?->profileCampeur;
 
+        // Non-camper roles (centre, fournisseur, guide, groupe) have no
+        // ProfileCampeur. Rather than 404, fall back to a neutral default so
+        // every authenticated user gets generic discovery recommendations.
+        // Campers still get fully personalised results.
         if (! $campeurProfile) {
-            return response()->json(['error' => 'Campeur profile not found'], 404);
+            $campeurProfile = new \App\Models\ProfileCampeur([
+                'skill_level'           => 'beginner',
+                'comfort_level'         => 'standard',
+                'budget_range'          => 'moderate',
+                'preferred_trip_styles' => [],
+                'preferred_activities'  => [],
+                'gear_preferences'      => [],
+                'total_trips'           => 0,
+            ]);
         }
 
         $cacheKey = 'recommendations:' . $user->id;
@@ -453,13 +466,16 @@ class AiTripPlannerController extends Controller
 
         $result = Cache::remember($cacheKey, 1800, function () use ($campeurProfile, $explainService) {
             // DB queries run inside the closure so they are skipped on cache hits
+            // Score the full active catalogue (not the first N by id) so terrain
+            // personalisation can surface the camper's preferred regions/terrain
+            // rather than whatever zones happen to have the lowest ids.
             $zones = CampingZone::where('status', 1)
                 ->where('is_closed', 0)
                 ->select([
                     'id', 'nom', 'region', 'terrain_type', 'difficulty',
                     'is_beginner_friendly', 'rating', 'activities', 'reviews_count',
                 ])
-                ->limit(50)
+                ->limit(500)
                 ->get();
 
             $gear = Materielles::where('status', 'up')
@@ -469,7 +485,7 @@ class AiTripPlannerController extends Controller
                     'id', 'nom', 'brand', 'trip_type_tags', 'tarif_nuit',
                     'condition', 'is_rentable', 'category_id',
                 ])
-                ->limit(50)
+                ->limit(200)
                 ->get();
 
             $scoredZones = $this->recommender->scoreZones($campeurProfile, $zones)->take(5);
@@ -486,15 +502,73 @@ class AiTripPlannerController extends Controller
                 return $arr;
             })->values();
 
+            // ── Partner centre recommendations ────────────────────────────────
+            $centreLookup  = app(\App\Services\AI\CentreLookupService::class);
+            $partnerCentres = $centreLookup->findPartnerCentres(null, 30);
+            $scoredCentres  = $this->recommender->scoreCentres($campeurProfile, $partnerCentres)->take(6);
+
+            $centresWithExplanations = $scoredCentres->map(function ($c) {
+                $bd      = $c['score_breakdown'] ?? [];
+                $factors = [];
+                if (($bd['budget_fit'] ?? 0) >= 0.6)         { $factors[] = 'Tarif adapté à votre budget'; }
+                if (($bd['equipment_richness'] ?? 0) >= 0.5) { $factors[] = 'Bien équipé pour votre séjour'; }
+                if (($bd['capacity_fit'] ?? 0) >= 1.0)       { $factors[] = 'Capacité adaptée à votre groupe'; }
+
+                $c['explanation'] = [
+                    'why'             => 'Ce centre correspond à votre profil de campeur.',
+                    'factors'         => $factors,
+                    'confidence'      => (float) ($c['score'] ?? 0.5),
+                    'source'          => 'recommendation',
+                    'detailAvailable' => ! empty($factors),
+                    'llmEnriched'     => false,
+                ];
+                return $c;
+            })->values();
+
+            // ── Upcoming event recommendations ────────────────────────────────
+            $events = \Illuminate\Support\Facades\DB::table('events')
+                ->where('status', 'scheduled')
+                ->where('remaining_spots', '>', 0)
+                ->select([
+                    'id', 'title', 'event_type', 'difficulty', 'price', 'tags',
+                    'address', 'start_date', 'capacity', 'remaining_spots',
+                ])
+                ->limit(200)
+                ->get();
+
+            $scoredEvents = $this->recommender->scoreEvents($campeurProfile, $events)->take(6);
+
+            $eventsWithExplanations = $scoredEvents->map(function ($e) {
+                $bd      = $e['score_breakdown'] ?? [];
+                $factors = [];
+                if (($bd['difficulty_fit'] ?? 0) >= 0.6) { $factors[] = 'Difficulté adaptée à votre niveau'; }
+                if (($bd['budget_fit'] ?? 0) >= 0.8)     { $factors[] = 'Dans votre budget'; }
+                if (($bd['tag_match'] ?? 0) >= 0.3)      { $factors[] = 'Correspond à vos centres d\'intérêt'; }
+
+                $e['explanation'] = [
+                    'why'             => 'Cet événement correspond à votre profil de campeur.',
+                    'factors'         => $factors,
+                    'confidence'      => (float) ($e['score'] ?? 0.5),
+                    'source'          => 'recommendation',
+                    'detailAvailable' => ! empty($factors),
+                    'llmEnriched'     => false,
+                ];
+                return $e;
+            })->values();
+
             return [
-                'zones' => $zonesWithExplanations,
-                'gear'  => $scoredGear->values(),
+                'zones'   => $zonesWithExplanations,
+                'centres' => $centresWithExplanations,
+                'gear'    => $scoredGear->values(),
+                'events'  => $eventsWithExplanations,
             ];
         });
 
         return response()->json([
             'zones'           => $result['zones'],
+            'centres'         => $result['centres'] ?? [],
             'gear'            => $result['gear'],
+            'events'          => $result['events'] ?? [],
             'profile_summary' => [
                 'skill_level'   => $campeurProfile->skill_level,
                 'budget_range'  => $campeurProfile->budget_range,
@@ -619,5 +693,18 @@ class AiTripPlannerController extends Controller
         } catch (\RuntimeException $e) {
             return response()->json(['error' => $e->getMessage()], 429);
         }
+    }
+
+    /**
+     * POST /api/ai/trip-planner/clear
+     *
+     * Resets the conversation state for the current user so they can start fresh.
+     */
+    public function clearConversation(): JsonResponse
+    {
+        $user = Auth::user();
+        $this->conversationState->reset($user->id);
+
+        return response()->json(['success' => true]);
     }
 }

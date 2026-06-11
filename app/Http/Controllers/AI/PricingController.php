@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Log;
 
 class PricingController extends Controller
 {
-    private const VALID_TYPES = ['zone', 'materielle'];
+    private const VALID_TYPES = ['zone', 'materielle', 'centre'];
 
     public function __construct(
         private readonly DynamicPricingService $pricingService,
@@ -22,7 +22,7 @@ class PricingController extends Controller
     public function suggest(Request $request, string $entityType, int $entityId): JsonResponse
     {
         if (! in_array($entityType, self::VALID_TYPES, true)) {
-            return response()->json(['error' => 'Invalid entity type. Use: zone or materielle'], 422);
+            return response()->json(['error' => 'Invalid entity type. Use: zone, materielle or centre'], 422);
         }
 
         if (! config('ai.features.pricing', true)) {
@@ -31,8 +31,11 @@ class PricingController extends Controller
 
         $role = Auth::user()->role?->name ?? '';
 
-        if (! in_array($role, ['fournisseur', 'admin'], true)) {
-            return response()->json(['error' => 'Fournisseur or admin role required'], 403);
+        // Centre pricing is for centre owners (or admin); gear/zone pricing is
+        // for fournisseurs (or admin).
+        $allowedRoles = $entityType === 'centre' ? ['centre', 'admin'] : ['fournisseur', 'admin'];
+        if (! in_array($role, $allowedRoles, true)) {
+            return response()->json(['error' => 'Not authorized for this pricing type'], 403);
         }
 
         // Ownership check — fournisseurs can only analyze their own materielles
@@ -43,6 +46,17 @@ class PricingController extends Controller
             }
             if ((int) $item->fournisseur_id !== (int) Auth::id()) {
                 return response()->json(['error' => 'You can only request pricing suggestions for your own listings'], 403);
+            }
+        }
+
+        // Ownership check — centre owners can only analyze their own centre
+        if ($role === 'centre' && $entityType === 'centre') {
+            $centre = \Illuminate\Support\Facades\DB::table('camping_centres')->where('id', $entityId)->first();
+            if (! $centre) {
+                return response()->json(['error' => 'Centre not found'], 404);
+            }
+            if ((int) $centre->user_id !== (int) Auth::id()) {
+                return response()->json(['error' => 'You can only request pricing suggestions for your own centre'], 403);
             }
         }
 
@@ -58,12 +72,13 @@ class PricingController extends Controller
     public function market(string $entityType): JsonResponse
     {
         if (! in_array($entityType, self::VALID_TYPES, true)) {
-            return response()->json(['error' => 'Invalid entity type. Use: zone or materielle'], 422);
+            return response()->json(['error' => 'Invalid entity type. Use: zone, materielle or centre'], 422);
         }
 
-        $role = Auth::user()->role?->name ?? '';
-        if (! in_array($role, ['fournisseur', 'admin'], true)) {
-            return response()->json(['error' => 'Fournisseur or admin role required'], 403);
+        $role          = Auth::user()->role?->name ?? '';
+        $allowedRoles  = $entityType === 'centre' ? ['centre', 'admin'] : ['fournisseur', 'admin'];
+        if (! in_array($role, $allowedRoles, true)) {
+            return response()->json(['error' => 'Not authorized for this market overview'], 403);
         }
 
         try {
