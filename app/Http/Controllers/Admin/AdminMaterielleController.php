@@ -13,7 +13,7 @@ class AdminMaterielleController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Materielles::with(['fournisseur:id,first_name,last_name,email', 'category:id,nom', 'photos'])
+        $query = Materielles::with(['fournisseur:id,first_name,last_name,email', 'category:id,nom', 'photos', 'seasonalRates'])
             ->orderByDesc('created_at');
 
         if ($request->filled('search')) {
@@ -92,6 +92,11 @@ class AdminMaterielleController extends Controller
     {
         $mat = Materielles::findOrFail($id);
 
+        // seasonal_rates may arrive as a JSON string
+        if (is_string($request->input('seasonal_rates'))) {
+            $request->merge(['seasonal_rates' => json_decode($request->input('seasonal_rates'), true)]);
+        }
+
         $request->validate([
             'status'           => 'sometimes|in:up,down',
             'nom'              => 'sometimes|string|max:255',
@@ -101,20 +106,54 @@ class AdminMaterielleController extends Controller
             'trip_type_tags.*' => 'string|max:100',
             'weight_kg'        => 'sometimes|nullable|numeric|min:0',
             'condition'        => 'sometimes|nullable|in:new,like_new,good,fair',
+            'rental_unit'      => 'sometimes|nullable|in:night,hour',
             'tarif_nuit'       => 'sometimes|nullable|numeric|min:0',
+            'tarif_heure'      => 'sometimes|nullable|numeric|min:0',
             'prix_vente'       => 'sometimes|nullable|numeric|min:0',
             'is_rentable'      => 'sometimes|boolean',
             'is_sellable'      => 'sometimes|boolean',
             'quantite_dispo'   => 'sometimes|integer|min:0',
+            'seasonal_rates'                 => 'sometimes|nullable|array|max:12',
+            'seasonal_rates.*.name'          => 'required|string|max:100',
+            'seasonal_rates.*.start_month'   => 'required|integer|between:1,12',
+            'seasonal_rates.*.start_day'     => 'required|integer|between:1,31',
+            'seasonal_rates.*.end_month'     => 'required|integer|between:1,12',
+            'seasonal_rates.*.end_day'       => 'required|integer|between:1,31',
+            'seasonal_rates.*.price_weekday' => 'required|numeric|min:0',
+            'seasonal_rates.*.price_weekend' => 'nullable|numeric|min:0',
         ]);
 
         $mat->update($request->only([
             'status', 'nom', 'brand', 'description', 'trip_type_tags', 'weight_kg',
-            'condition', 'tarif_nuit', 'prix_vente', 'is_rentable', 'is_sellable',
-            'quantite_dispo',
+            'condition', 'rental_unit', 'tarif_nuit', 'tarif_heure', 'prix_vente',
+            'is_rentable', 'is_sellable', 'quantite_dispo',
         ]));
 
-        return response()->json(['success' => true, 'data' => $mat->fresh(['fournisseur:id,first_name,last_name,email', 'category:id,nom'])]);
+        // Replace seasonal rates when the key is present
+        if ($request->has('seasonal_rates')) {
+            $rates = $request->input('seasonal_rates');
+            $mat->seasonalRates()->delete();
+            if (is_array($rates)) {
+                foreach ($rates as $rate) {
+                    if (!isset($rate['name'], $rate['start_month'], $rate['start_day'],
+                               $rate['end_month'], $rate['end_day'], $rate['price_weekday'])) {
+                        continue;
+                    }
+                    $mat->seasonalRates()->create([
+                        'name'          => substr((string) $rate['name'], 0, 100),
+                        'start_month'   => (int) $rate['start_month'],
+                        'start_day'     => (int) $rate['start_day'],
+                        'end_month'     => (int) $rate['end_month'],
+                        'end_day'       => (int) $rate['end_day'],
+                        'price_weekday' => (float) $rate['price_weekday'],
+                        'price_weekend' => isset($rate['price_weekend']) && $rate['price_weekend'] !== ''
+                            ? (float) $rate['price_weekend'] : null,
+                    ]);
+                }
+            }
+        }
+
+        return response()->json(['success' => true, 'data' => $mat->fresh(['fournisseur:id,first_name,last_name,email', 'category:id,nom', 'seasonalRates'])]);
     }
 
     public function destroy($id)

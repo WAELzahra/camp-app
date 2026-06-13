@@ -130,20 +130,12 @@ class Photo extends Model
 
     /**
      * Get the full URL of the photo.
+     * Delegates to the storage_url() helper, which is R2-aware
+     * (uses R2_PUBLIC_URL in production, local /storage in dev).
      */
     public function getUrlAttribute()
     {
-        if (!$this->path_to_img) {
-            return null;
-        }
-        
-        // Check if it's already a full URL
-        if (filter_var($this->path_to_img, FILTER_VALIDATE_URL)) {
-            return $this->path_to_img;
-        }
-        
-        // Return the full URL with storage path
-        return Storage::disk('public')->url($this->path_to_img);
+        return storage_url($this->path_to_img);
     }
     // Add this method to Photo model
     public function campingZone()

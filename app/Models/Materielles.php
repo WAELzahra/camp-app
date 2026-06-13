@@ -20,10 +20,12 @@ class Materielles extends Model
         'condition',
         // Pricing
         'tarif_nuit',       // rental price per night (nullable if not rentable)
+        'tarif_heure',      // rental price per hour (when rental_unit = 'hour')
         'prix_vente',       // sale price (nullable if not sellable)
         // Listing type
         'is_rentable',
         'is_sellable',
+        'rental_unit',      // 'night' | 'hour'
         // Stock
         'quantite_total',
         'quantite_dispo',
@@ -39,6 +41,7 @@ class Materielles extends Model
         'is_sellable'          => 'boolean',
         'livraison_disponible' => 'boolean',
         'tarif_nuit'           => 'float',
+        'tarif_heure'          => 'float',
         'prix_vente'           => 'float',
         'frais_livraison'      => 'float',
         'weight_kg'            => 'float',
@@ -69,6 +72,14 @@ class Materielles extends Model
     public function photos()
     {
         return $this->hasMany(Photo::class, 'materielle_id');
+    }
+
+    /**
+     * Recurring seasonal rate overrides for this materiel.
+     */
+    public function seasonalRates()
+    {
+        return $this->hasMany(MaterielleSeasonalRate::class, 'materielle_id');
     }
 
     /**

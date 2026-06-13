@@ -89,8 +89,11 @@ class ReservationMaterielleController extends Controller
             'type_reservation'  => 'required|in:location,achat',
             'date_debut'        => 'required_if:type_reservation,location|nullable|date|after_or_equal:today',
             'date_fin'          => 'required_if:type_reservation,location|nullable|date|after_or_equal:date_debut',
+            'hours'             => 'nullable|integer|min:1|max:24',
             'quantite'          => 'required|integer|min:1',
-            'montant_total'     => 'required|numeric|min:0',
+            // Kept for backward compatibility but no longer trusted — the
+            // total is recomputed server-side from the stored rates.
+            'montant_total'     => 'nullable|numeric|min:0',
             'mode_livraison'    => 'required|in:pickup,delivery',
             'adresse_livraison' => 'required_if:mode_livraison,delivery|nullable|string|max:500',
             'frais_livraison'   => 'nullable|numeric|min:0',
@@ -160,10 +163,37 @@ class ReservationMaterielleController extends Controller
             return response()->json(['status' => 'error', 'message' => "Insufficient stock. Available: {$materielle->quantite_dispo}."], 422);
         }
 
+        // ── Recompute the amount server-side — never trust the client total ───────
+        // Rentals are priced from the stored rates (seasonal + weekday/weekend);
+        // purchases use prix_vente. Delivery fee is added on top.
+        $deliveryFee = $validated['mode_livraison'] === 'delivery'
+            ? (float) ($materielle->frais_livraison ?? $validated['frais_livraison'] ?? 0)
+            : 0;
+
+        if ($isRental) {
+            try {
+                $quote = \App\Services\MaterielPricingService::quoteRental(
+                    $materielle,
+                    $validated['date_debut'] ?? null,
+                    $validated['date_fin'] ?? null,
+                    (int) $validated['quantite'],
+                    isset($validated['hours']) ? (int) $validated['hours'] : null
+                );
+            } catch (\InvalidArgumentException $e) {
+                return response()->json(['status' => 'error', 'message' => $e->getMessage()], 422);
+            }
+            $computedBase = $quote['subtotal'];
+        } else {
+            $computedBase = round((float) ($materielle->prix_vente ?? 0) * (int) $validated['quantite'], 2);
+        }
+
         // Apply promo code if provided
         $promoCodeId    = null;
         $discountAmount = 0;
-        $montantTotal   = (float) $validated['montant_total'];
+        $serviceFeeRate = CommissionService::serviceFeeRate();
+        // Base + delivery, then platform service fee on top — mirrors the client display.
+        $montantBeforeFee = round($computedBase + $deliveryFee, 2);
+        $montantTotal     = round($montantBeforeFee * (1 + $serviceFeeRate), 2);
         if (!empty($validated['promo_code'])) {
             $promo = PromoCode::where('code', strtoupper(trim($validated['promo_code'])))->first();
             if (!$promo) {
@@ -179,7 +209,6 @@ class ReservationMaterielleController extends Controller
         }
 
         // ── Wallet balance check (escrow deduction) ──────────────────────────────
-        $serviceFeeRate = CommissionService::serviceFeeRate();
         // Reverse-calculate base from totalWithFee: base = total / (1 + feeRate)
         $platformFeeAmt  = round($montantTotal * $serviceFeeRate / (1 + $serviceFeeRate), 2);
         $platformFeeRate = round($serviceFeeRate * 100, 2);
@@ -216,6 +245,8 @@ class ReservationMaterielleController extends Controller
                 'type_reservation'   => $validated['type_reservation'],
                 'date_debut'         => $validated['date_debut'] ?? null,
                 'date_fin'           => $validated['date_fin'] ?? null,
+                'hours'              => $isRental && $materielle->rental_unit === 'hour'
+                    ? (int) ($validated['hours'] ?? 1) : null,
                 'quantite'           => $validated['quantite'],
                 'montant_total'      => $montantTotal,
                 'mode_livraison'     => $validated['mode_livraison'],

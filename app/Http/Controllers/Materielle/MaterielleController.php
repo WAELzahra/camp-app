@@ -8,11 +8,90 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use App\Models\Photo;
 use App\Models\Materielles;
+use App\Models\MaterielleSeasonalRate;
 use App\Models\Boutiques;
+use App\Services\MaterielPricingService;
 use App\Http\Controllers\Controller;
 
 class MaterielleController extends Controller
 {
+    /**
+     * Validation rules for the seasonal_rates payload (shared by store/update).
+     */
+    private const SEASONAL_RATE_RULES = [
+        'seasonal_rates'                 => 'nullable|array|max:12',
+        'seasonal_rates.*.name'          => 'required|string|max:100',
+        'seasonal_rates.*.start_month'   => 'required|integer|between:1,12',
+        'seasonal_rates.*.start_day'     => 'required|integer|between:1,31',
+        'seasonal_rates.*.end_month'     => 'required|integer|between:1,12',
+        'seasonal_rates.*.end_day'       => 'required|integer|between:1,31',
+        'seasonal_rates.*.price_weekday' => 'required|numeric|min:0',
+        'seasonal_rates.*.price_weekend' => 'nullable|numeric|min:0',
+    ];
+
+    /**
+     * Replace a materiel's seasonal rates with the submitted set.
+     * Accepts a JSON string (multipart forms) or an array.
+     */
+    private function syncSeasonalRates(Materielles $materielle, $rates): void
+    {
+        if (is_string($rates)) {
+            $rates = json_decode($rates, true);
+        }
+        if (!is_array($rates)) return;
+
+        $materielle->seasonalRates()->delete();
+        foreach ($rates as $rate) {
+            if (!isset($rate['name'], $rate['start_month'], $rate['start_day'],
+                       $rate['end_month'], $rate['end_day'], $rate['price_weekday'])) {
+                continue;
+            }
+            MaterielleSeasonalRate::create([
+                'materielle_id' => $materielle->id,
+                'name'          => substr((string) $rate['name'], 0, 100),
+                'start_month'   => (int) $rate['start_month'],
+                'start_day'     => (int) $rate['start_day'],
+                'end_month'     => (int) $rate['end_month'],
+                'end_day'       => (int) $rate['end_day'],
+                'price_weekday' => (float) $rate['price_weekday'],
+                'price_weekend' => isset($rate['price_weekend']) && $rate['price_weekend'] !== ''
+                    ? (float) $rate['price_weekend'] : null,
+            ]);
+        }
+    }
+
+    /**
+     * GET /materielles/{id}/quote — server-side rental price quote.
+     * Query: date_debut, date_fin (night unit) | date_debut + hours (hour unit), quantite
+     */
+    public function quote(Request $request, int $id)
+    {
+        $materielle = Materielles::with('seasonalRates')->find($id);
+        if (!$materielle) {
+            return response()->json(['status' => 'error', 'message' => 'Materielle not found.'], 404);
+        }
+
+        $validated = $request->validate([
+            'date_debut' => 'nullable|date',
+            'date_fin'   => 'nullable|date|after_or_equal:date_debut',
+            'quantite'   => 'nullable|integer|min:1',
+            'hours'      => 'nullable|integer|min:1|max:24',
+        ]);
+
+        try {
+            $quote = MaterielPricingService::quoteRental(
+                $materielle,
+                $validated['date_debut'] ?? null,
+                $validated['date_fin']   ?? null,
+                (int) ($validated['quantite'] ?? 1),
+                isset($validated['hours']) ? (int) $validated['hours'] : null
+            );
+            return response()->json(['status' => 'success', 'data' => $quote]);
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 422);
+        }
+    }
+
     /**
      * List all materiels belonging to a fournisseur.
      */
@@ -59,7 +138,7 @@ class MaterielleController extends Controller
     public function show(int $materielle_id)
     {
         try {
-            $materielle = Materielles::with(['photos', 'category', 'feedbacks', 'fournisseur.profile'])
+            $materielle = Materielles::with(['photos', 'category', 'feedbacks', 'fournisseur.profile', 'seasonalRates'])
                 ->find($materielle_id);
 
             if (!$materielle) {
@@ -84,7 +163,7 @@ class MaterielleController extends Controller
     public function edit(int $materielle_id)
     {
         try {
-            $materielle = Materielles::with('photos')->find($materielle_id);
+            $materielle = Materielles::with(['photos', 'seasonalRates'])->find($materielle_id);
 
             if (!$materielle) {
                 return response()->json(['status' => 'error', 'message' => 'Materielle not found.'], 404);
@@ -135,7 +214,12 @@ class MaterielleController extends Controller
      */
     public function store(Request $request)
     {
-        $validated = $request->validate([
+        // seasonal_rates arrives as a JSON string in multipart forms — decode before validating
+        if (is_string($request->input('seasonal_rates'))) {
+            $request->merge(['seasonal_rates' => json_decode($request->input('seasonal_rates'), true)]);
+        }
+
+        $validated = $request->validate(array_merge([
             'category_id'          => 'required|exists:materielles_categories,id',
             'nom'                  => 'required|string|max:255',
             'brand'                => 'nullable|string|max:255',
@@ -146,17 +230,20 @@ class MaterielleController extends Controller
             'condition'            => 'nullable|in:new,like_new,good,fair',
             'is_rentable'          => 'boolean',
             'is_sellable'          => 'boolean',
+            'rental_unit'          => 'nullable|in:night,hour',
             'tarif_nuit'           => 'nullable|numeric|min:0',
+            'tarif_heure'          => 'nullable|numeric|min:0',
             'prix_vente'           => 'nullable|numeric|min:0',
             'quantite_total'       => 'required|integer|min:1',
             'quantite_dispo'       => 'required|integer|min:0',
             'livraison_disponible' => 'boolean',
             'frais_livraison'      => 'nullable|numeric|min:0',
             'image'                => 'required|image|mimes:jpeg,png,jpg,webp|max:5120',
-        ]);
+        ], self::SEASONAL_RATE_RULES));
 
         $isRentable = $request->boolean('is_rentable', true);
         $isSellable = $request->boolean('is_sellable', false);
+        $rentalUnit = $validated['rental_unit'] ?? 'night';
 
         if (!$isRentable && !$isSellable) {
             return response()->json([
@@ -165,10 +252,17 @@ class MaterielleController extends Controller
             ], 422);
         }
 
-        if ($isRentable && empty($validated['tarif_nuit'])) {
+        if ($isRentable && $rentalUnit === 'night' && empty($validated['tarif_nuit'])) {
             return response()->json([
                 'status'  => 'error',
                 'message' => 'tarif_nuit est requis pour un matériel en location.',
+            ], 422);
+        }
+
+        if ($isRentable && $rentalUnit === 'hour' && empty($validated['tarif_heure'])) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'tarif_heure est requis pour une location à l\'heure.',
             ], 422);
         }
 
@@ -206,7 +300,9 @@ class MaterielleController extends Controller
                 'condition'            => $validated['condition'] ?? 'new',
                 'is_rentable'          => $isRentable,
                 'is_sellable'          => $isSellable,
-                'tarif_nuit'           => $isRentable ? $validated['tarif_nuit'] : null,
+                'rental_unit'          => $rentalUnit,
+                'tarif_nuit'           => $isRentable && $rentalUnit === 'night' ? $validated['tarif_nuit'] : null,
+                'tarif_heure'          => $isRentable && $rentalUnit === 'hour'  ? $validated['tarif_heure'] : null,
                 'prix_vente'           => $isSellable ? $validated['prix_vente'] : null,
                 'quantite_total'       => $validated['quantite_total'],
                 'quantite_dispo'       => $validated['quantite_dispo'],
@@ -219,6 +315,10 @@ class MaterielleController extends Controller
                 'materielle_id' => $materielle->id,
                 'path_to_img'   => $imagePath,
             ]);
+
+            if ($isRentable && !empty($validated['seasonal_rates'])) {
+                $this->syncSeasonalRates($materielle, $validated['seasonal_rates']);
+            }
 
             DB::commit();
 
@@ -252,7 +352,12 @@ class MaterielleController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Unauthorized.'], 403);
         }
 
-        $validated = $request->validate([
+        // seasonal_rates arrives as a JSON string in multipart forms — decode before validating
+        if (is_string($request->input('seasonal_rates'))) {
+            $request->merge(['seasonal_rates' => json_decode($request->input('seasonal_rates'), true)]);
+        }
+
+        $validated = $request->validate(array_merge([
             'category_id'          => 'sometimes|exists:materielles_categories,id',
             'nom'                  => 'sometimes|string|max:255',
             'brand'                => 'sometimes|nullable|string|max:255',
@@ -263,7 +368,9 @@ class MaterielleController extends Controller
             'condition'            => 'sometimes|nullable|in:new,like_new,good,fair',
             'is_rentable'          => 'boolean',
             'is_sellable'          => 'boolean',
+            'rental_unit'          => 'nullable|in:night,hour',
             'tarif_nuit'           => 'nullable|numeric|min:0',
+            'tarif_heure'          => 'nullable|numeric|min:0',
             'prix_vente'           => 'nullable|numeric|min:0',
             'quantite_total'       => 'sometimes|integer|min:1',
             'quantite_dispo'       => 'sometimes|integer|min:0',
@@ -273,7 +380,7 @@ class MaterielleController extends Controller
             'images.*'             => 'image|mimes:jpeg,png,jpg,webp|max:5120',
             'existing_photo_ids'   => 'nullable|array',
             'existing_photo_ids.*' => 'integer|exists:photos,id',
-        ]);
+        ], self::SEASONAL_RATE_RULES));
 
         $isRentable = $request->has('is_rentable') ? $request->boolean('is_rentable') : $materielle->is_rentable;
         $isSellable = $request->has('is_sellable') ? $request->boolean('is_sellable') : $materielle->is_sellable;
@@ -335,7 +442,9 @@ class MaterielleController extends Controller
                 'condition'            => array_key_exists('condition', $validated) ? $validated['condition'] : $materielle->condition,
                 'is_rentable'          => $isRentable,
                 'is_sellable'          => $isSellable,
+                'rental_unit'          => $validated['rental_unit'] ?? $materielle->rental_unit ?? 'night',
                 'tarif_nuit'           => $isRentable ? ($validated['tarif_nuit'] ?? $materielle->tarif_nuit) : null,
+                'tarif_heure'          => $isRentable ? ($validated['tarif_heure'] ?? $materielle->tarif_heure) : null,
                 'prix_vente'           => $isSellable ? ($validated['prix_vente'] ?? $materielle->prix_vente) : null,
                 'quantite_total'       => $validated['quantite_total']  ?? $materielle->quantite_total,
                 'quantite_dispo'       => $validated['quantite_dispo']  ?? $materielle->quantite_dispo,
@@ -345,12 +454,17 @@ class MaterielleController extends Controller
                 'frais_livraison'      => $validated['frais_livraison'] ?? $materielle->frais_livraison,
             ]);
 
+            // Replace seasonal rates whenever the key is present in the request
+            if ($request->has('seasonal_rates')) {
+                $this->syncSeasonalRates($materielle, $request->input('seasonal_rates'));
+            }
+
             DB::commit();
 
             return response()->json([
                 'status'     => 'success',
                 'message'    => 'Matériel mis à jour avec succès.',
-                'materielle' => $materielle->fresh('photos'),
+                'materielle' => $materielle->fresh(['photos', 'seasonalRates']),
             ]);
 
         } catch (\Exception $e) {
@@ -454,7 +568,7 @@ class MaterielleController extends Controller
     {
         $perPage = min((int) $request->get('per_page', 12), 48);
  
-        $query = Materielles::with(['photos', 'category', 'fournisseur:id,first_name,last_name,avatar'])
+        $query = Materielles::with(['photos', 'category', 'fournisseur:id,first_name,last_name,avatar', 'seasonalRates'])
             ->where('status', 'up');
  
         if ($request->filled('q')) {
@@ -525,7 +639,9 @@ class MaterielleController extends Controller
                 'description'          => $m->description,
                 'is_rentable'          => $m->is_rentable,
                 'is_sellable'          => $m->is_sellable,
+                'rental_unit'          => $m->rental_unit ?? 'night',
                 'tarif_nuit'           => $m->tarif_nuit,
+                'tarif_heure'          => $m->tarif_heure,
                 'prix_vente'           => $m->prix_vente,
                 'quantite_dispo'       => $m->quantite_dispo,
                 'livraison_disponible' => $m->livraison_disponible,
@@ -542,6 +658,15 @@ class MaterielleController extends Controller
                     'last_name'  => $m->fournisseur->last_name,
                     'avatar'     => $m->fournisseur->avatar,
                 ] : null,
+                'seasonal_rates'       => $m->seasonalRates->map(fn($r) => [
+                    'name'          => $r->name,
+                    'start_month'   => $r->start_month,
+                    'start_day'     => $r->start_day,
+                    'end_month'     => $r->end_month,
+                    'end_day'       => $r->end_day,
+                    'price_weekday' => $r->price_weekday,
+                    'price_weekend' => $r->price_weekend,
+                ])->values(),
                 'created_at'           => $m->created_at,
             ];
         });

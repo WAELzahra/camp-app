@@ -174,6 +174,7 @@ Route::get('/boutiques/{fournisseur_id}', [BoutiqueController::class, 'show'])->
 Route::get('/materielles/categories', [MaterielleController::class, 'categories']);
 Route::get('/materielles/fournisseur/{fournisseur_id}', [MaterielleController::class, 'index']);
 Route::get('/materielles/{materielle_id}', [MaterielleController::class, 'show'])->where('materielle_id', '[0-9]+');
+Route::get('/materielles/{materielle_id}/quote', [MaterielleController::class, 'quote'])->where('materielle_id', '[0-9]+');
 Route::get('/materielles/compare/{id1}/{id2}', [MaterielleController::class, 'compare']);
 Route::get('/materielles', [MaterielleController::class, 'marketplace']);
 
@@ -297,7 +298,12 @@ Route::middleware('auth:sanctum')->group(function () {
             : response()->json(null, 204);
     });
     Route::get('/materielles/me', function (Request $request) {
-        $materielles = \App\Models\Materielles::where('fournisseur_id', $request->user()->id)->get();
+        $materielles = \App\Models\Materielles::with(['photos', 'category', 'seasonalRates'])
+            ->where('fournisseur_id', $request->user()->id)
+            ->get();
+        // Append the R2-aware absolute URL to each photo so the frontend
+        // never has to resolve storage paths itself.
+        $materielles->each(fn($m) => $m->photos->each->append('url'));
         return response()->json(['data' => $materielles]);
     });
     Route::get('/groupes/my/co-owners', function (Request $request) {

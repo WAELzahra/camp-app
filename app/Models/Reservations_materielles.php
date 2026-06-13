@@ -20,6 +20,7 @@ class Reservations_materielles extends Model
         // Dates (rentals only)
         'date_debut',
         'date_fin',
+        'hours',                // hourly rentals only (rental_unit = 'hour')
         // Quantity & amount
         'quantite',
         'montant_total',        // renamed from montant_payer for clarity
