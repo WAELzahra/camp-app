@@ -11,11 +11,11 @@ class Kernel extends ConsoleKernel
      * Define the application's command schedule.
      */
     protected function schedule(Schedule $schedule)
-{
-    $schedule->command('events:send-reminders')->dailyAt('08:00'); // ex: chaque jour à 8h
-    $schedule->command('users:clean-status')->everyFiveMinutes();
-
-}
+    {
+        $schedule->command('events:send-reminders')->dailyAt('08:00');
+        $schedule->command('users:clean-status')->everyFiveMinutes();
+        $schedule->command('payments:cancel-overdue-balances')->dailyAt('02:00');
+    }
 
 
     /**

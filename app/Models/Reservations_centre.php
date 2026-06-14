@@ -33,6 +33,14 @@ class Reservations_centre extends Model
         'last_modified_at',
         'group_skill_level',
         'trip_purpose',
+        'payment_reference',
+        'payment_option',
+        'amount_now',
+        'amount_later',
+        'balance_due_at',
+        'payment_submitted_at',
+        'payment_confirmed_at',
+        'confirmed_by',
     ];
 
     protected $casts = [

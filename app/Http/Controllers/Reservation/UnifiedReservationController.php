@@ -265,6 +265,11 @@ class UnifiedReservationController extends Controller
             'commission_amount'   => $commissionAmt,
             'commission_rate'     => $commissionRate,
             'payment_method'      => $reservation->payment_method ?? 'wallet',
+            'payment_reference'   => $reservation->payment_reference ?? null,
+            'payment_option'      => $reservation->payment_option ?? null,
+            'amount_now'          => $reservation->amount_now ?? null,
+            'amount_later'        => $reservation->amount_later ?? null,
+            'balance_due_at'      => $reservation->balance_due_at ?? null,
             'user' => $this->safeUserRef($reservation->user),
             'event' => $event ? [
                 'id'          => $event->id,
@@ -360,6 +365,11 @@ class UnifiedReservationController extends Controller
             'commission_amount'   => $commissionAmt,
             'commission_rate'     => $commissionRate,
             'payment_method'      => $reservation->payment_method ?? 'wallet',
+            'payment_reference'   => $reservation->payment_reference ?? null,
+            'payment_option'      => $reservation->payment_option ?? null,
+            'amount_now'          => $reservation->amount_now ?? null,
+            'amount_later'        => $reservation->amount_later ?? null,
+            'balance_due_at'      => $reservation->balance_due_at ?? null,
             'user' => $this->safeUserRef($reservation->user),
             'supplier' => $reservation->fournisseur ? (function($f) {
                 $pf = $f->profile?->profileFournisseur ?? null;
@@ -443,7 +453,12 @@ class UnifiedReservationController extends Controller
             'total_price' => $reservation->total_price,
             'platform_fee_amount' => $reservation->platform_fee_amount ?? 0,
             'platform_fee_rate' => $reservation->platform_fee_rate ?? 0,
-            'payment_method' => $reservation->payment_method ?? 'wallet',
+            'payment_method'    => $reservation->payment_method ?? 'wallet',
+            'payment_reference' => $reservation->payment_reference ?? null,
+            'payment_option'    => $reservation->payment_option ?? null,
+            'amount_now'        => $reservation->amount_now ?? null,
+            'amount_later'      => $reservation->amount_later ?? null,
+            'balance_due_at'    => $reservation->balance_due_at ?? null,
             'discount_amount' => $reservation->discount_amount ?? 0,
             'commission_amount' => $centreTx
                 ? (float) $centreTx->commission_amount
@@ -577,52 +592,74 @@ class UnifiedReservationController extends Controller
     private function mapEventStatus($status)
     {
         $map = [
-            'en_attente_paiement' => 'Pending Payment',
-            'confirmée' => 'Confirmed',
-            'en_attente_validation' => 'Under Review',
-            'refusée' => 'Rejected',
-            'annulée_par_utilisateur' => 'Cancelled by User',
-            'annulée_par_organisateur' => 'Cancelled by Organizer',
-            'remboursement_en_attente' => 'Refund Pending',
-            'remboursée_partielle' => 'Partially Refunded',
-            'remboursée_totale' => 'Fully Refunded',
-            'modified' => 'Modified',
+            'en_attente_paiement'          => 'Pending Payment',
+            'confirmée'                    => 'Confirmed',
+            'en_attente_validation'        => 'Under Review',
+            'refusée'                      => 'Rejected',
+            'annulée_par_utilisateur'      => 'Cancelled by User',
+            'annulée_par_organisateur'     => 'Cancelled by Organizer',
+            'remboursement_en_attente'     => 'Refund Pending',
+            'remboursée_partielle'         => 'Partially Refunded',
+            'remboursée_totale'            => 'Fully Refunded',
+            'modified'                     => 'Modified',
+            // Manual payment statuses
+            'pending'                      => 'Pending',
+            'paiement_soumis'              => 'Transfer Submitted',
+            'paiement_invalide'            => 'Transfer Rejected',
+            'confirmée_solde_en_attente'   => 'Deposit Confirmed — Balance Due',
+            'solde_soumis'                 => 'Balance Transfer Submitted',
+            'entièrement_payée'            => 'Fully Paid',
+            'annulée_solde_impayé'         => 'Cancelled — Balance Unpaid',
         ];
         return $map[$status] ?? ucfirst(str_replace('_', ' ', $status));
     }
-    
+
     /**
      * Map materiel status to display label
      */
     private function mapMaterielStatus($status)
     {
         $map = [
-            'pending' => 'Pending',
-            'confirmed' => 'Confirmed',
-            'paid' => 'Paid',
-            'retrieved' => 'Retrieved',
-            'returned' => 'Returned',
-            'rejected' => 'Rejected',
-            'canceled' => 'Cancelled',
-            'cancelled_by_camper' => 'Cancelled by Camper',
-            'cancelled_by_fournisseur' => 'Cancelled by Supplier',
-            'disputed' => 'Disputed',
-            'modified' => 'Modified',
+            'pending'                    => 'Pending',
+            'confirmed'                  => 'Confirmed',
+            'paid'                       => 'Paid',
+            'retrieved'                  => 'Retrieved',
+            'returned'                   => 'Returned',
+            'rejected'                   => 'Rejected',
+            'canceled'                   => 'Cancelled',
+            'cancelled_by_camper'        => 'Cancelled by Camper',
+            'cancelled_by_fournisseur'   => 'Cancelled by Supplier',
+            'disputed'                   => 'Disputed',
+            'modified'                   => 'Modified',
+            // Manual payment statuses
+            'paiement_soumis'            => 'Transfer Submitted',
+            'paiement_invalide'          => 'Transfer Rejected',
+            'confirmée_solde_en_attente' => 'Deposit Confirmed — Balance Due',
+            'solde_soumis'               => 'Balance Transfer Submitted',
+            'entièrement_payée'          => 'Fully Paid',
+            'annulée_solde_impayé'       => 'Cancelled — Balance Unpaid',
         ];
         return $map[$status] ?? ucfirst(str_replace('_', ' ', $status));
     }
-    
+
     /**
      * Map centre status to display label
      */
     private function mapCentreStatus($status)
     {
         $map = [
-            'pending' => 'Pending',
-            'approved' => 'Confirmed',
-            'modified' => 'Modified',
-            'rejected' => 'Rejected',
-            'canceled' => 'Cancelled',
+            'pending'                    => 'Pending',
+            'approved'                   => 'Confirmed',
+            'modified'                   => 'Modified',
+            'rejected'                   => 'Rejected',
+            'canceled'                   => 'Cancelled',
+            // Manual payment statuses
+            'paiement_soumis'            => 'Transfer Submitted',
+            'paiement_invalide'          => 'Transfer Rejected',
+            'confirmée_solde_en_attente' => 'Deposit Confirmed — Balance Due',
+            'solde_soumis'               => 'Balance Transfer Submitted',
+            'entièrement_payée'          => 'Fully Paid',
+            'annulée_solde_impayé'       => 'Cancelled — Balance Unpaid',
         ];
         return $map[$status] ?? ucfirst(str_replace('_', ' ', $status));
     }

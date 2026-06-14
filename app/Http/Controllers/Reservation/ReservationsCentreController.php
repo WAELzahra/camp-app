@@ -27,6 +27,8 @@ use App\Models\RefundRequest;
 use App\Models\WalletTransaction;
 use App\Services\CommissionService;
 use App\Services\CancellationPolicyService;
+use App\Services\ManualPaymentService;
+use App\Services\PaymentReferenceService;
 use Carbon\Carbon;
 class ReservationsCentreController extends Controller
 {
@@ -122,7 +124,8 @@ class ReservationsCentreController extends Controller
             'note' => 'nullable|string',
             'group_skill_level' => 'nullable|in:beginner,intermediate,advanced,mixed',
             'trip_purpose' => 'nullable|string|max:255',
-            'payment_method' => 'nullable|in:card,wallet',
+            'payment_method' => 'nullable|in:card,wallet,manual',
+            'payment_option' => 'nullable|in:full,deposit',
             'promo_code' => 'nullable|string|max:50',
             'service_items' => 'required|array|min:1',
             'service_items.*.profile_center_service_id' => 'required|exists:profile_center_services,id',
@@ -204,8 +207,14 @@ class ReservationsCentreController extends Controller
             }
             $type = !empty($serviceTypes) ? implode(', ', array_unique($serviceTypes)) : 'Multiple Services';
 
-            // Escrow: check and lock camper funds before creating reservation
+            // Escrow: check and lock camper funds (wallet only; manual skips wallet entirely)
             $paymentMethod = $request->input('payment_method', 'wallet');
+
+            if ($paymentMethod === 'manual' && !ManualPaymentService::isEnabled()) {
+                DB::rollBack();
+                return response()->json(['message' => 'Le paiement manuel n\'est pas disponible pour le moment.'], 422);
+            }
+
             if ($paymentMethod === 'wallet' && $totalWithFee > 0) {
                 $camperBal = Balance::forUser($userId);
                 if ($camperBal->solde_disponible < $totalWithFee) {
@@ -214,6 +223,27 @@ class ReservationsCentreController extends Controller
                         'message' => "Solde wallet insuffisant. Disponible : {$camperBal->solde_disponible} TND, requis : {$totalWithFee} TND.",
                     ], 422);
                 }
+            }
+
+            $manualAmounts = [];
+            if ($paymentMethod === 'manual') {
+                $requestedOption = $request->input('payment_option');
+                $computed        = ManualPaymentService::computeAmounts((int) $request->centre_id, $totalWithFee);
+                if ($requestedOption === 'full' && $computed['payment_option'] === 'deposit') {
+                    $computed = ['payment_option' => 'full', 'amount_now' => $totalWithFee, 'amount_later' => 0.0, 'deposit_pct' => null];
+                } elseif ($requestedOption && $requestedOption !== $computed['payment_option']) {
+                    $err = ManualPaymentService::validateOption($requestedOption, (int) $request->centre_id, $totalWithFee);
+                    if ($err) { DB::rollBack(); return response()->json(['message' => $err], 422); }
+                }
+                $manualAmounts = $computed;
+            }
+
+            $balanceDueAt = null;
+            if ($paymentMethod === 'manual' && ($manualAmounts['payment_option'] ?? 'full') === 'deposit') {
+                // 7 days before check-in, but never in the past — a near-term booking
+                // still gets a 48h window to pay the balance before auto-cancellation.
+                $due = Carbon::parse($request->date_debut)->subDays(7);
+                $balanceDueAt = $due->isPast() ? now()->addDays(2)->toDateString() : $due->toDateString();
             }
 
             // Create the main reservation (total_price includes camper platform fee)
@@ -236,9 +266,18 @@ class ReservationsCentreController extends Controller
                 'discount_amount'      => $discountAmount,
                 'platform_fee_rate'    => $platformFeeRate,
                 'platform_fee_amount'  => $platformFeeAmt,
+                'payment_option'       => $paymentMethod === 'manual' ? ($manualAmounts['payment_option'] ?? 'full') : null,
+                'amount_now'           => $paymentMethod === 'manual' ? ($manualAmounts['amount_now'] ?? $totalWithFee) : null,
+                'amount_later'         => $paymentMethod === 'manual' ? ($manualAmounts['amount_later'] ?? 0) : null,
+                'balance_due_at'       => $balanceDueAt,
             ]);
 
-            // Lock funds in escrow immediately (camper cannot spend them while pending)
+            if ($paymentMethod === 'manual') {
+                $reservationCentre->payment_reference = PaymentReferenceService::forReservation($reservationCentre->id);
+                $reservationCentre->save();
+            }
+
+            // Lock funds in escrow immediately (wallet only)
             if ($paymentMethod === 'wallet' && $totalWithFee > 0) {
                 Balance::forUser($userId)->lockFunds($totalWithFee);
                 WalletTransaction::logDebit(
@@ -293,10 +332,21 @@ class ReservationsCentreController extends Controller
                 \Log::error('Failed to send reservation confirmation to camper: ' . $e->getMessage());
             }
 
-            return response()->json([
-                'message' => 'Reservation created successfully.',
-                'reservation' => $reservationCentre->load('serviceItems')
-            ], 201);
+            $resp = [
+                'message'     => 'Reservation created successfully.',
+                'reservation' => $reservationCentre->load('serviceItems'),
+            ];
+            if ($paymentMethod === 'manual') {
+                $resp['payment_info'] = [
+                    'reference'      => $reservationCentre->payment_reference,
+                    'option'         => $reservationCentre->payment_option,
+                    'amount_now'     => $reservationCentre->amount_now,
+                    'amount_later'   => $reservationCentre->amount_later,
+                    'balance_due_at' => $reservationCentre->balance_due_at,
+                    'flouci_link'    => ManualPaymentService::flouciLink(),
+                ];
+            }
+            return response()->json($resp, 201);
             
         } catch (\Illuminate\Database\QueryException $e) {
             DB::rollBack();

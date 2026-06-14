@@ -9,6 +9,31 @@ use Illuminate\Http\Request;
 
 class AdminSettingsController extends Controller
 {
+    /** Keys managed by the payment endpoint (non-sensitive subset exposed to public) */
+    private const PAYMENT_KEYS = [
+        'payment_link_flouci',
+        'manual_payment_enabled',
+        'deposit_min_percentage',
+        'deposit_max_percentage',
+        'deposit_min_total',
+    ];
+
+    private const PAYMENT_DEFAULTS = [
+        'payment_link_flouci'    => '',
+        'manual_payment_enabled' => false,
+        'deposit_min_percentage' => 20,
+        'deposit_max_percentage' => 80,
+        'deposit_min_total'      => 150,
+    ];
+
+    /** Keys exposed publicly (booking modals need these, but NOT the Flouci link) */
+    private const PAYMENT_PUBLIC_KEYS = [
+        'manual_payment_enabled',
+        'deposit_min_percentage',
+        'deposit_max_percentage',
+        'deposit_min_total',
+    ];
+
     /** Keys managed by the commissions endpoint */
     private const COMMISSION_KEYS = [
         'commission_camper',
@@ -80,7 +105,75 @@ class AdminSettingsController extends Controller
         // Ensure platform name
         $data['platform_name'] = PlatformSetting::get('platform_name', 'TunisiaCamp');
 
+        // Payment settings needed by booking modals (flouci link excluded — admin-only)
+        foreach (self::PAYMENT_PUBLIC_KEYS as $key) {
+            $raw = PlatformSetting::get($key);
+            $data[$key] = $raw ?? self::PAYMENT_DEFAULTS[$key] ?? null;
+        }
+
         return response()->json(['data' => $data]);
+    }
+
+    /**
+     * GET /admin/settings/payment
+     * Full payment settings including the Flouci link (admin-only).
+     */
+    public function getPaymentSettings(): JsonResponse
+    {
+        $data = [];
+        foreach (self::PAYMENT_KEYS as $key) {
+            $raw = PlatformSetting::get($key);
+            $data[$key] = $raw ?? self::PAYMENT_DEFAULTS[$key] ?? null;
+        }
+        return response()->json(['data' => $data]);
+    }
+
+    /**
+     * PUT /admin/settings/payment
+     * Update payment settings with admin password verification.
+     */
+    public function updatePaymentSettings(Request $request): JsonResponse
+    {
+        $request->validate([
+            'password'               => 'required|string',
+            'payment_link_flouci'    => 'sometimes|nullable|string|max:2000',
+            'manual_payment_enabled' => 'sometimes|boolean',
+            'deposit_min_percentage' => 'sometimes|integer|min:1|max:99',
+            'deposit_max_percentage' => 'sometimes|integer|min:1|max:99',
+            'deposit_min_total'      => 'sometimes|integer|min:0',
+        ]);
+
+        if ($request->password !== '50734671') {
+            return response()->json(['message' => 'Mot de passe incorrect.'], 403);
+        }
+
+        // Validate percentage order when both are present
+        $minPct = $request->input('deposit_min_percentage');
+        $maxPct = $request->input('deposit_max_percentage');
+        if ($minPct !== null && $maxPct !== null && (int)$minPct >= (int)$maxPct) {
+            return response()->json(['message' => 'Le pourcentage minimum doit être inférieur au maximum.'], 422);
+        }
+
+        foreach (self::PAYMENT_KEYS as $key) {
+            if (!$request->has($key)) continue;
+
+            $value   = $request->input($key);
+            $setting = PlatformSetting::where('key', $key)->first();
+
+            if (!$setting) {
+                $setting = PlatformSetting::create([
+                    'key'   => $key,
+                    'label' => ucwords(str_replace('_', ' ', $key)),
+                    'type'  => $this->inferPaymentType($key),
+                    'group' => 'payment',
+                    'value' => null,
+                ]);
+            }
+
+            $setting->update(['value' => $this->encodeValue($setting->type, $value)]);
+        }
+
+        return response()->json(['message' => 'Paramètres de paiement enregistrés avec succès.']);
     }
 
     /**
@@ -220,5 +313,12 @@ class AdminSettingsController extends Controller
         if (str_starts_with($key, 'withdrawal_'))  return 'withdrawal';
         if (str_starts_with($key, 'gateway_'))     return 'gateway';
         return 'general';
+    }
+
+    private function inferPaymentType(string $key): string
+    {
+        if (str_ends_with($key, '_enabled'))                          return 'boolean';
+        if (in_array($key, ['deposit_min_percentage', 'deposit_max_percentage', 'deposit_min_total'])) return 'integer';
+        return 'string';
     }
 }

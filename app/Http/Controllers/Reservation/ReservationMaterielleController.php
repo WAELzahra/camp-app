@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Reservation;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\Auth;
 use App\Models\Reservations_materielles;
 use App\Models\Materielles;
@@ -22,6 +23,8 @@ use App\Mail\ReservationDisputedToFournisseur;
 use App\Models\Balance;
 use App\Models\WalletTransaction;
 use App\Services\CommissionService;
+use App\Services\ManualPaymentService;
+use App\Services\PaymentReferenceService;
 
 class ReservationMaterielleController extends Controller
 {
@@ -88,7 +91,10 @@ class ReservationMaterielleController extends Controller
             'fournisseur_id'    => 'required|exists:users,id',
             'type_reservation'  => 'required|in:location,achat',
             'date_debut'        => 'required_if:type_reservation,location|nullable|date|after_or_equal:today',
-            'date_fin'          => 'required_if:type_reservation,location|nullable|date|after_or_equal:date_debut',
+            'date_fin'          => [
+                Rule::requiredIf(fn () => $request->type_reservation === 'location' && !$request->filled('hours')),
+                'nullable', 'date', 'after_or_equal:date_debut',
+            ],
             'hours'             => 'nullable|integer|min:1|max:24',
             'quantite'          => 'required|integer|min:1',
             // Kept for backward compatibility but no longer trusted — the
@@ -98,7 +104,8 @@ class ReservationMaterielleController extends Controller
             'adresse_livraison' => 'required_if:mode_livraison,delivery|nullable|string|max:500',
             'frais_livraison'   => 'nullable|numeric|min:0',
             'promo_code'        => 'nullable|string|max:50',
-            'payment_method'    => 'nullable|in:wallet,card',
+            'payment_method'    => 'nullable|in:wallet,card,manual',
+            'payment_option'    => 'nullable|in:full,deposit',
         ]);
 
         // Prevent duplicate active reservations (rejected/cancelled ones are allowed to re-book)
@@ -117,12 +124,22 @@ class ReservationMaterielleController extends Controller
             ], 422);
         }
 
+        $paymentMethod = $validated['payment_method'] ?? 'wallet';
+
         // Card payment not available in v1
-        if (($validated['payment_method'] ?? 'wallet') === 'card') {
+        if ($paymentMethod === 'card') {
             return response()->json([
                 'status'      => 'error',
                 'message'     => 'Le paiement en ligne par carte sera bientôt disponible. Veuillez utiliser votre wallet.',
                 'coming_soon' => true,
+            ], 422);
+        }
+
+        // Manual payment gate
+        if ($paymentMethod === 'manual' && !ManualPaymentService::isEnabled()) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Le paiement manuel n\'est pas disponible pour le moment.',
             ], 422);
         }
 
@@ -213,7 +230,8 @@ class ReservationMaterielleController extends Controller
         $platformFeeAmt  = round($montantTotal * $serviceFeeRate / (1 + $serviceFeeRate), 2);
         $platformFeeRate = round($serviceFeeRate * 100, 2);
 
-        if ($montantTotal > 0) {
+        // Manual payments skip the wallet — the bank transfer is verified externally by admin
+        if ($paymentMethod !== 'manual' && $montantTotal > 0) {
             $camperBalance = Balance::forUser($user->id);
             if ($camperBalance->solde_disponible < $montantTotal) {
                 return response()->json([
@@ -223,10 +241,28 @@ class ReservationMaterielleController extends Controller
             }
         }
 
+        // Compute manual payment split (amounts, option) before the transaction
+        $manualAmounts = [];
+        if ($paymentMethod === 'manual') {
+            $requestedOption = $validated['payment_option'] ?? null;
+            $computed        = ManualPaymentService::computeAmounts((int) $validated['fournisseur_id'], $montantTotal);
+            if ($requestedOption && $requestedOption !== $computed['payment_option']) {
+                $err = ManualPaymentService::validateOption($requestedOption, (int) $validated['fournisseur_id'], $montantTotal);
+                if ($err) {
+                    return response()->json(['status' => 'error', 'message' => $err], 422);
+                }
+                // Camper chose 'full' even when deposit was available — override
+                if ($requestedOption === 'full') {
+                    $computed = ['payment_option' => 'full', 'amount_now' => $montantTotal, 'amount_later' => 0.0, 'deposit_pct' => null];
+                }
+            }
+            $manualAmounts = $computed;
+        }
+
         DB::beginTransaction();
         try {
-            // Lock funds in escrow immediately — supplier is paid only after confirmation
-            if ($montantTotal > 0) {
+            // Lock funds in escrow immediately — wallet payments only
+            if ($paymentMethod !== 'manual' && $montantTotal > 0) {
                 Balance::forUser($user->id)->lockFunds($montantTotal);
                 WalletTransaction::logDebit(
                     $user->id, 'reservation_payment', $montantTotal,
@@ -236,6 +272,15 @@ class ReservationMaterielleController extends Controller
                     $platformFeeRate,
                     $platformFeeAmt
                 );
+            }
+
+            $balanceDueAt = null;
+            if ($paymentMethod === 'manual' && ($manualAmounts['payment_option'] ?? 'full') === 'deposit') {
+                // 7 days before start (or +14d when no start date), but never in the past —
+                // a near-term booking still gets a 48h window to pay the balance.
+                $startDate    = !empty($validated['date_debut']) ? \Carbon\Carbon::parse($validated['date_debut']) : now()->addDays(14);
+                $due          = $startDate->subDays(7);
+                $balanceDueAt = $due->isPast() ? now()->addDays(2)->toDateString() : $due->toDateString();
             }
 
             $reservation = Reservations_materielles::create([
@@ -256,13 +301,23 @@ class ReservationMaterielleController extends Controller
                 'status'             => 'pending',
                 'promo_code_id'      => $promoCodeId,
                 'discount_amount'    => $discountAmount,
-                'payment_method'     => 'wallet',
+                'payment_method'     => $paymentMethod,
                 'platform_fee_amount'=> $montantTotal > 0 ? $platformFeeAmt  : null,
                 'platform_fee_rate'  => $montantTotal > 0 ? $platformFeeRate : null,
+                'payment_option'     => $paymentMethod === 'manual' ? ($manualAmounts['payment_option'] ?? 'full') : null,
+                'amount_now'         => $paymentMethod === 'manual' ? ($manualAmounts['amount_now'] ?? $montantTotal) : null,
+                'amount_later'       => $paymentMethod === 'manual' ? ($manualAmounts['amount_later'] ?? 0) : null,
+                'balance_due_at'     => $balanceDueAt,
             ]);
 
+            // Set the payment reference now that we have the ID
+            if ($paymentMethod === 'manual') {
+                $reservation->payment_reference = PaymentReferenceService::forReservation($reservation->id);
+                $reservation->save();
+            }
+
             // Update wallet transaction reference with real reservation ID
-            if ($montantTotal > 0) {
+            if ($paymentMethod !== 'manual' && $montantTotal > 0) {
                 WalletTransaction::where('user_id', $user->id)
                     ->where('type', 'debit')
                     ->where('category', 'reservation_payment')
@@ -291,12 +346,25 @@ class ReservationMaterielleController extends Controller
                 'Payment will be released to the provider after delivery is confirmed via your PIN code.',
             ];
 
-            return response()->json([
+            $response = [
                 'status'      => 'success',
                 'message'     => 'Reservation submitted successfully.',
                 'reservation' => $reservation,
                 'policies'    => $policies,
-            ], 201);
+            ];
+
+            if ($paymentMethod === 'manual') {
+                $response['payment_info'] = [
+                    'reference'      => $reservation->payment_reference,
+                    'option'         => $reservation->payment_option,
+                    'amount_now'     => $reservation->amount_now,
+                    'amount_later'   => $reservation->amount_later,
+                    'balance_due_at' => $reservation->balance_due_at,
+                    'flouci_link'    => ManualPaymentService::flouciLink(),
+                ];
+            }
+
+            return response()->json($response, 201);
         } catch (\Throwable $e) {
             DB::rollBack();
             return response()->json(['status' => 'error', 'message' => 'An unexpected error occurred. Please try again.'], 500);

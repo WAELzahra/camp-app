@@ -990,6 +990,27 @@ Route::middleware(['auth:sanctum', 'fournisseur'])->group(function () {
 });
 
 // Camping Center Reservations
+// ── Provider public payment preferences (no auth) ───────────────────────────
+Route::get('/providers/{userId}/payment-preferences', [\App\Http\Controllers\Reservation\ManualPaymentController::class, 'providerPreferences']);
+
+// ── Manual payment lifecycle (camper) ────────────────────────────────────────
+Route::middleware(['auth:sanctum'])->prefix('my')->group(function () {
+    Route::post('/reservations/{type}/{id}/payment-submitted', [\App\Http\Controllers\Reservation\ManualPaymentController::class, 'submitProof'])
+        ->middleware('throttle:30,1')
+        ->where('type', 'events|centres|materielles');
+    Route::get('/reservations/{type}/{id}/payment-info', [\App\Http\Controllers\Reservation\ManualPaymentController::class, 'paymentInfo'])
+        ->where('type', 'events|centres|materielles');
+    Route::get('/payment-preferences',  [\App\Http\Controllers\Reservation\ManualPaymentController::class, 'getPreferences']);
+    Route::put('/payment-preferences',  [\App\Http\Controllers\Reservation\ManualPaymentController::class, 'updatePreferences']);
+
+    // ── Wallet recharge via manual transfer ────────────────────────────────
+    Route::post('/wallet/recharge',              [\App\Http\Controllers\Reservation\WalletRechargeController::class, 'initiate'])
+        ->middleware('throttle:15,1');
+    Route::post('/wallet/recharge/{id}/submit',  [\App\Http\Controllers\Reservation\WalletRechargeController::class, 'submit'])
+        ->middleware('throttle:30,1');
+    Route::get('/wallet/recharges',              [\App\Http\Controllers\Reservation\WalletRechargeController::class, 'list']);
+});
+
 Route::middleware(['auth:sanctum'])->prefix('reservation')->group(function () {
     // ✅ Put specific routes BEFORE wildcard routes
     Route::get('/all', [UnifiedReservationController::class, 'getAllReservations']);
@@ -1241,8 +1262,17 @@ Route::prefix('annonces')->group(function () {
     Route::prefix('payments')->group(function () {
         Route::get('/',              [AdminPaymentController::class, 'index']);
         Route::get('/stats',         [AdminPaymentController::class, 'stats']);
+        // /pending must come before /{id} to avoid the wildcard swallowing it
+        Route::get('/pending',       [\App\Http\Controllers\Admin\AdminPaymentReviewController::class, 'pending']);
         Route::get('/{id}',          [AdminPaymentController::class, 'show']);
         Route::put('/{id}/status',   [AdminPaymentController::class, 'updateStatus']);
+        // Manual payment review — confirm / reject
+        Route::post('/{type}/{id}/confirm', [\App\Http\Controllers\Admin\AdminPaymentReviewController::class, 'confirm'])
+            ->where('type', 'events|centres|materielles');
+        Route::post('/{type}/{id}/reject',  [\App\Http\Controllers\Admin\AdminPaymentReviewController::class, 'reject'])
+            ->where('type', 'events|centres|materielles');
+        Route::post('/wallet/{id}/confirm', [\App\Http\Controllers\Admin\AdminPaymentReviewController::class, 'confirmWallet']);
+        Route::post('/wallet/{id}/reject',  [\App\Http\Controllers\Admin\AdminPaymentReviewController::class, 'rejectWallet']);
     });
 
     // -------------------- REFUND REQUESTS --------------------
@@ -1283,6 +1313,8 @@ Route::prefix('annonces')->group(function () {
         Route::put('/',              [\App\Http\Controllers\Admin\AdminSettingsController::class, 'update']);
         Route::get('/commissions',   [\App\Http\Controllers\Admin\AdminSettingsController::class, 'getCommissions']);
         Route::put('/commissions',   [\App\Http\Controllers\Admin\AdminSettingsController::class, 'updateCommissions']);
+        Route::get('/payment',       [\App\Http\Controllers\Admin\AdminSettingsController::class, 'getPaymentSettings']);
+        Route::put('/payment',       [\App\Http\Controllers\Admin\AdminSettingsController::class, 'updatePaymentSettings']);
     });
 
     // -------------------- CUSTOM COMMISSION RULES --------------------

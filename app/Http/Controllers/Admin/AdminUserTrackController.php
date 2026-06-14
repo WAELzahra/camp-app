@@ -7,6 +7,7 @@ use App\Models\Balance;
 use App\Models\Reservations_centre;
 use App\Models\Reservations_events;
 use App\Models\Reservations_materielles;
+use App\Models\WalletRechargeRequest;
 use App\Models\User;
 use App\Models\WalletTransaction;
 use Illuminate\Http\Request;
@@ -122,6 +123,33 @@ class AdminUserTrackController extends Controller
             ->where('category', 'refund_in')
             ->sum('amount_gross');
 
+        // ── Manual payment reservations ───────────────────────────────────────
+        $manualFields = ['id', 'payment_reference', 'payment_option', 'payment_method',
+                         'amount_now', 'amount_later', 'balance_due_at', 'status',
+                         'payment_submitted_at', 'payment_confirmed_at', 'created_at'];
+
+        $manualEvents = Reservations_events::where('user_id', $userId)
+            ->where('payment_method', 'manual')
+            ->latest()->get($manualFields)
+            ->map(fn($r) => array_merge($r->toArray(), ['reservation_type' => 'event']));
+
+        $manualCentres = Reservations_centre::where('user_id', $userId)
+            ->where('payment_method', 'manual')
+            ->latest()->get($manualFields)
+            ->map(fn($r) => array_merge($r->toArray(), ['reservation_type' => 'centre']));
+
+        $manualMaterielles = Reservations_materielles::where('user_id', $userId)
+            ->where('payment_method', 'manual')
+            ->latest()->get($manualFields)
+            ->map(fn($r) => array_merge($r->toArray(), ['reservation_type' => 'materiel']));
+
+        $allManualReservations = $manualEvents->concat($manualCentres)->concat($manualMaterielles)
+            ->sortByDesc('created_at')->values();
+
+        $walletRecharges = WalletRechargeRequest::where('user_id', $userId)
+            ->latest()->get(['id', 'amount', 'payment_reference', 'status', 'submitted_at', 'confirmed_at', 'created_at'])
+            ->map(fn($r) => $r->toArray());
+
         return response()->json([
             'user' => [
                 'id'         => $user->id,
@@ -159,6 +187,10 @@ class AdminUserTrackController extends Controller
                 'reservations_as_camper'   => $reservationCountsCamper,
                 'reservations_as_supplier' => $reservationsAsSupplier,
                 'reservations_as_centre'   => $reservationsAsCentre,
+            ],
+            'manual_payments' => [
+                'reservations'    => $allManualReservations,
+                'wallet_recharges'=> $walletRecharges,
             ],
         ]);
     }

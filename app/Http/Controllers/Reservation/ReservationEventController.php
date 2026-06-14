@@ -30,7 +30,8 @@ use App\Models\Materielles;
 use App\Models\OrganizerSupplierLink;
 use App\Services\CancellationPolicyService;
 use App\Services\CommissionService;
-
+use App\Services\ManualPaymentService;
+use App\Services\PaymentReferenceService;
 
 class ReservationEventController extends Controller
 {
@@ -529,7 +530,8 @@ public function updateManualParticipant(Request $request, $reservationId)
             'name'              => 'nullable|string|max:255',
             'email'             => 'nullable|email|max:255',
             'phone'             => 'nullable|string|max:50',
-            'payment_method'    => 'nullable|in:wallet,card',
+            'payment_method'    => 'nullable|in:wallet,card,manual',
+            'payment_option'    => 'nullable|in:full,deposit',
             'group_skill_level' => 'nullable|in:beginner,intermediate,advanced,mixed',
             'trip_purpose'      => 'nullable|string|max:255',
             'materials'         => 'nullable|array',
@@ -541,12 +543,20 @@ public function updateManualParticipant(Request $request, $reservationId)
             'services.*.notes'          => 'nullable|string|max:500',
         ]);
 
-        // Card payment is not available in v1
-        if ($request->payment_method === 'card') {
+        $eventPaymentMethod = $request->input('payment_method', 'wallet');
+
+        if ($eventPaymentMethod === 'card') {
             return response()->json([
                 'success' => false,
                 'message' => 'Le paiement en ligne par carte sera bientôt disponible. Veuillez utiliser votre wallet.',
                 'coming_soon' => true,
+            ], 422);
+        }
+
+        if ($eventPaymentMethod === 'manual' && !ManualPaymentService::isEnabled()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Le paiement manuel n\'est pas disponible pour le moment.',
             ], 422);
         }
 
@@ -637,8 +647,8 @@ public function updateManualParticipant(Request $request, $reservationId)
         $platformFeeAmt  = $feeData['fee_amount'];
         $platformFeeRate = round($feeData['fee_rate'] * 100, 2);
 
-        // ── Check balance upfront so camper knows before submitting ─────────────
-        if ($totalToPay > 0) {
+        // ── Check balance upfront (wallet only; manual skips wallet) ────────────
+        if ($eventPaymentMethod !== 'manual' && $totalToPay > 0) {
             $camperBalance = Balance::forUser($user->id);
             if ($camperBalance->solde_disponible < $totalToPay) {
                 return response()->json([
@@ -646,6 +656,28 @@ public function updateManualParticipant(Request $request, $reservationId)
                     'message' => "Solde wallet insuffisant. Disponible : {$camperBalance->solde_disponible} TND, requis : {$totalToPay} TND.",
                 ], 422);
             }
+        }
+
+        // Compute manual payment split before the DB transaction
+        $manualAmounts = [];
+        if ($eventPaymentMethod === 'manual') {
+            $requestedOption = $request->input('payment_option');
+            $computed        = ManualPaymentService::computeAmounts((int) $request->group_id, $totalToPay);
+            if ($requestedOption === 'full' && $computed['payment_option'] === 'deposit') {
+                $computed = ['payment_option' => 'full', 'amount_now' => $totalToPay, 'amount_later' => 0.0, 'deposit_pct' => null];
+            } elseif ($requestedOption && $requestedOption !== $computed['payment_option']) {
+                $err = ManualPaymentService::validateOption($requestedOption, (int) $request->group_id, $totalToPay);
+                if ($err) { return response()->json(['success' => false, 'message' => $err], 422); }
+            }
+            $manualAmounts = $computed;
+        }
+
+        // Balance deadline for deposit bookings: 7 days before the event, but never
+        // in the past — a near-term event still gives the camper 48h to pay the balance.
+        $balanceDueAt = null;
+        if ($eventPaymentMethod === 'manual' && ($manualAmounts['payment_option'] ?? 'full') === 'deposit') {
+            $due = \Carbon\Carbon::parse($event->start_date)->subDays(7);
+            $balanceDueAt = $due->isPast() ? now()->addDays(2)->toDateString() : $due->toDateString();
         }
 
         // ── Create reservation and lock funds in escrow immediately ──────────────
@@ -674,11 +706,15 @@ public function updateManualParticipant(Request $request, $reservationId)
                 'created_by'           => $user->id,
                 'promo_code_id'        => $promoCodeId,
                 'discount_amount'      => $discountAmount,
-                'payment_method'       => 'wallet',
+                'payment_method'       => $eventPaymentMethod,
                 'platform_fee_amount'  => $platformFeeAmt,
                 'platform_fee_rate'    => $platformFeeRate,
                 'group_skill_level'    => $request->input('group_skill_level'),
                 'trip_purpose'         => $request->input('trip_purpose'),
+                'payment_option'       => $eventPaymentMethod === 'manual' ? ($manualAmounts['payment_option'] ?? 'full') : null,
+                'amount_now'           => $eventPaymentMethod === 'manual' ? ($manualAmounts['amount_now'] ?? $totalToPay) : null,
+                'amount_later'         => $eventPaymentMethod === 'manual' ? ($manualAmounts['amount_later'] ?? 0) : null,
+                'balance_due_at'       => $balanceDueAt,
             ]);
 
             // ── Create material line items ────────────────────────────────────────
@@ -711,8 +747,8 @@ public function updateManualParticipant(Request $request, $reservationId)
                 ]);
             }
 
-            // Escrow: lock funds immediately so camper cannot spend them on other reservations
-            if ($totalToPay > 0) {
+            // Escrow: lock funds immediately (wallet only)
+            if ($eventPaymentMethod !== 'manual' && $totalToPay > 0) {
                 Balance::forUser($user->id)->lockFunds($totalToPay);
                 WalletTransaction::logDebit(
                     $user->id, 'reservation_payment', $totalToPay,
@@ -722,6 +758,12 @@ public function updateManualParticipant(Request $request, $reservationId)
                     $platformFeeRate,
                     $platformFeeAmt
                 );
+            }
+
+            // Set payment reference after we have the ID
+            if ($eventPaymentMethod === 'manual') {
+                $reservation->payment_reference = PaymentReferenceService::forReservation($reservation->id);
+                $reservation->save();
             }
 
             DB::commit();
@@ -738,19 +780,32 @@ public function updateManualParticipant(Request $request, $reservationId)
             \Log::error('Failed to send event reservation confirmation: ' . $e->getMessage());
         }
 
+        $paymentResp = [
+            'method'            => $eventPaymentMethod,
+            'total_paid'        => $totalToPay,
+            'event_price'       => $netBase,
+            'materials_price'   => $materialsTotal,
+            'services_price'    => $servicesTotal,
+            'platform_fee'      => $platformFeeAmt,
+            'platform_fee_pct'  => $platformFeeRate,
+        ];
+        if ($eventPaymentMethod === 'manual') {
+            $paymentResp['payment_info'] = [
+                'reference'    => $reservation->payment_reference,
+                'option'       => $reservation->payment_option,
+                'amount_now'   => $reservation->amount_now,
+                'amount_later' => $reservation->amount_later,
+                'flouci_link'  => ManualPaymentService::flouciLink(),
+            ];
+        }
+
         return response()->json([
             'success'     => true,
-            'message'     => 'Réservation confirmée et paiement effectué via wallet.',
+            'message'     => $eventPaymentMethod === 'manual'
+                ? 'Réservation créée. Veuillez effectuer le paiement via le lien fourni.'
+                : 'Réservation confirmée et paiement effectué via wallet.',
             'reservation' => $reservation->load('materials.materielle', 'services.service'),
-            'payment'     => [
-                'method'            => 'wallet',
-                'total_paid'        => $totalToPay,
-                'event_price'       => $netBase,
-                'materials_price'   => $materialsTotal,
-                'services_price'    => $servicesTotal,
-                'platform_fee'      => $platformFeeAmt,
-                'platform_fee_pct'  => $platformFeeRate,
-            ],
+            'payment'     => $paymentResp,
         ], 201);
     }
 
