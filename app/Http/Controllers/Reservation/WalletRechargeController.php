@@ -47,6 +47,43 @@ class WalletRechargeController extends Controller
     }
 
     /**
+     * POST /my/wallet/recharge/bank-transfer
+     * One-step direct bank-transfer claim: the camper has already transferred the
+     * money to the platform's bank account and posts the amount + their own bank
+     * reference. The request is submitted immediately for admin review.
+     */
+    public function bankTransferClaim(Request $request): JsonResponse
+    {
+        if (!(bool) \App\Models\PlatformSetting::get('bank_transfer_enabled', false)) {
+            return response()->json(['message' => 'Le rechargement par virement bancaire n\'est pas disponible.'], 422);
+        }
+
+        $data = $request->validate([
+            'amount'             => 'required|numeric|min:1|max:10000',
+            'transfer_reference' => 'required|string|max:120',
+        ]);
+
+        $req = WalletRechargeRequest::create([
+            'user_id'            => Auth::id(),
+            'amount'             => round((float) $data['amount'], 2),
+            'method'             => 'bank_transfer',
+            'transfer_reference' => trim($data['transfer_reference']),
+            'status'             => 'paiement_soumis',
+            'submitted_at'       => now(),
+        ]);
+
+        return response()->json([
+            'message' => 'Demande envoyée. L\'admin validera votre virement après réception.',
+            'data'    => [
+                'id'                 => $req->id,
+                'amount'             => $req->amount,
+                'transfer_reference' => $req->transfer_reference,
+                'status'             => $req->status,
+            ],
+        ], 201);
+    }
+
+    /**
      * POST /my/wallet/recharge/{id}/submit
      * Marks the recharge as submitted (camper claims to have sent the transfer).
      */

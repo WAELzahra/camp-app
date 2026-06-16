@@ -702,7 +702,9 @@ public function updateManualParticipant(Request $request, $reservationId)
                 'email'                => $request->email  ?? $user->email,
                 'phone'                => $request->phone  ?? $user->phone_number ?? null,
                 'nbr_place'            => $request->nbr_place,
-                'status'               => 'en_attente_validation',
+                // Manual payments stay hidden from the organizer until the admin
+                // confirms the transfer; only then do they enter the review queue.
+                'status'               => $eventPaymentMethod === 'manual' ? 'pending_payment' : 'en_attente_validation',
                 'created_by'           => $user->id,
                 'promo_code_id'        => $promoCodeId,
                 'discount_amount'      => $discountAmount,

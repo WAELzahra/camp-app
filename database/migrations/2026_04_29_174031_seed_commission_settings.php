@@ -109,8 +109,8 @@ return new class extends Migration
         [
             'key'         => 'gateway_flouci_enabled',
             'value'       => '0',
-            'label'       => 'Flouci activé',
-            'description' => 'Paiement mobile tunisien',
+            'label'       => 'Paiement en ligne activé',
+            'description' => 'Passerelle de paiement en ligne',
             'type'        => 'boolean',
             'group'       => 'gateway',
         ],

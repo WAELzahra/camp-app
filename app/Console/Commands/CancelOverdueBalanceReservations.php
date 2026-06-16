@@ -22,12 +22,26 @@ class CancelOverdueBalanceReservations extends Command
         'materielles' => Reservations_materielles::class,
     ];
 
+    /**
+     * Host-accepted statuses (per type) where a manual deposit balance may still be
+     * owed. 'confirmée_solde_en_attente' is kept for rows created before the
+     * host-review flow existed.
+     */
+    private array $balanceStatuses = [
+        'events'      => ['confirmée',  'confirmée_solde_en_attente'],
+        'centres'     => ['approved',   'confirmée_solde_en_attente'],
+        'materielles' => ['confirmed',  'confirmée_solde_en_attente'],
+    ];
+
     public function handle(): int
     {
         $cancelled = 0;
 
         foreach ($this->models as $label => $model) {
-            $overdue = $model::where('status', 'confirmée_solde_en_attente')
+            $overdue = $model::whereIn('status', $this->balanceStatuses[$label])
+                ->where('payment_method', 'manual')
+                ->where('amount_later', '>', 0)
+                ->whereNotNull('balance_due_at')
                 ->where('balance_due_at', '<', now())
                 ->get();
 

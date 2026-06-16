@@ -258,7 +258,9 @@ class ReservationsCentreController extends Controller
                 'type'                 => $type,
                 'nbr_place'            => $request->nbr_place,
                 'nights'               => $nights,
-                'status'               => 'pending',
+                // Manual payments stay hidden from the centre until the admin confirms
+                // the transfer; only then does the reservation enter the review queue.
+                'status'               => $paymentMethod === 'manual' ? 'pending_payment' : 'pending',
                 'total_price'          => $totalWithFee,
                 'payment_method'       => $paymentMethod,
                 'service_count'        => count($request->service_items),

@@ -298,7 +298,9 @@ class ReservationMaterielleController extends Controller
                 'adresse_livraison'  => $validated['adresse_livraison'] ?? null,
                 'frais_livraison'    => $validated['frais_livraison'] ?? 0,
                 'cin_camper'         => $isRental ? $user->profile->cin_path : null,
-                'status'             => 'pending',
+                // Manual payments stay hidden from the supplier until the admin confirms
+                // the transfer; only then does the reservation enter the review queue.
+                'status'             => $paymentMethod === 'manual' ? 'pending_payment' : 'pending',
                 'promo_code_id'      => $promoCodeId,
                 'discount_amount'    => $discountAmount,
                 'payment_method'     => $paymentMethod,

@@ -122,6 +122,8 @@ class UnifiedReservationController extends Controller
     private function getEventReservationsAsOwner($userId)
     {
         $reservations = \App\Models\Reservations_events::where('group_id', $userId)
+            // Hide manual reservations from the organizer until the admin confirms payment.
+            ->whereNotIn('status', ['pending_payment', 'paiement_soumis', 'paiement_invalide'])
             ->with(['event', 'user', 'services.service'])
             ->get();
         $txMap = $this->batchLoadWalletTx('event_reservation', $reservations->pluck('id'));
@@ -146,6 +148,8 @@ class UnifiedReservationController extends Controller
     private function getMaterielReservationsAsSupplier($userId)
     {
         $reservations = \App\Models\Reservations_materielles::where('fournisseur_id', $userId)
+            // Hide manual reservations from the supplier until the admin confirms payment.
+            ->whereNotIn('status', ['pending_payment', 'paiement_soumis', 'paiement_invalide'])
             ->with(['materielle', 'user', 'fournisseur'])
             ->get();
         $txMap = $this->batchLoadWalletTx('materiel_reservation', $reservations->pluck('id'));
@@ -170,6 +174,8 @@ class UnifiedReservationController extends Controller
     private function getCentreReservationsAsOwner($userId)
     {
         $reservations = \App\Models\Reservations_centre::where('centre_id', $userId)
+            // Hide manual reservations from the centre until the admin confirms payment.
+            ->whereNotIn('status', ['pending_payment', 'paiement_soumis', 'paiement_invalide'])
             ->with(['serviceItems', 'user', 'centre'])
             ->get();
         $txMap = $this->batchLoadWalletTx('centre_reservation', $reservations->pluck('id'));
@@ -604,6 +610,7 @@ class UnifiedReservationController extends Controller
             'modified'                     => 'Modified',
             // Manual payment statuses
             'pending'                      => 'Pending',
+            'pending_payment'              => 'Pending Payment',
             'paiement_soumis'              => 'Transfer Submitted',
             'paiement_invalide'            => 'Transfer Rejected',
             'confirmée_solde_en_attente'   => 'Deposit Confirmed — Balance Due',
@@ -632,6 +639,7 @@ class UnifiedReservationController extends Controller
             'disputed'                   => 'Disputed',
             'modified'                   => 'Modified',
             // Manual payment statuses
+            'pending_payment'            => 'Pending Payment',
             'paiement_soumis'            => 'Transfer Submitted',
             'paiement_invalide'          => 'Transfer Rejected',
             'confirmée_solde_en_attente' => 'Deposit Confirmed — Balance Due',
@@ -654,6 +662,7 @@ class UnifiedReservationController extends Controller
             'rejected'                   => 'Rejected',
             'canceled'                   => 'Cancelled',
             // Manual payment statuses
+            'pending_payment'            => 'Pending Payment',
             'paiement_soumis'            => 'Transfer Submitted',
             'paiement_invalide'          => 'Transfer Rejected',
             'confirmée_solde_en_attente' => 'Deposit Confirmed — Balance Due',

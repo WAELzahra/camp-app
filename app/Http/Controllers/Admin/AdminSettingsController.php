@@ -16,22 +16,45 @@ class AdminSettingsController extends Controller
         'deposit_min_percentage',
         'deposit_max_percentage',
         'deposit_min_total',
+        // Direct bank-transfer recharge
+        'bank_transfer_enabled',
+        'bank_account_holder',
+        'bank_account_bank_name',
+        'bank_account_rib',
+        'bank_account_iban',
+        'bank_account_instructions',
     ];
 
     private const PAYMENT_DEFAULTS = [
-        'payment_link_flouci'    => '',
-        'manual_payment_enabled' => false,
-        'deposit_min_percentage' => 20,
-        'deposit_max_percentage' => 80,
-        'deposit_min_total'      => 150,
+        'payment_link_flouci'       => '',
+        'manual_payment_enabled'    => false,
+        'deposit_min_percentage'    => 20,
+        'deposit_max_percentage'    => 80,
+        'deposit_min_total'         => 150,
+        'bank_transfer_enabled'     => false,
+        'bank_account_holder'       => '',
+        'bank_account_bank_name'    => '',
+        'bank_account_rib'          => '',
+        'bank_account_iban'         => '',
+        'bank_account_instructions' => '',
     ];
 
-    /** Keys exposed publicly (booking modals need these, but NOT the Flouci link) */
+    /**
+     * Keys exposed publicly. Booking modals need the deposit rules; the wallet
+     * recharge screen needs the bank-account details so campers can transfer.
+     * The Flouci link stays admin-only (returned with the recharge request instead).
+     */
     private const PAYMENT_PUBLIC_KEYS = [
         'manual_payment_enabled',
         'deposit_min_percentage',
         'deposit_max_percentage',
         'deposit_min_total',
+        'bank_transfer_enabled',
+        'bank_account_holder',
+        'bank_account_bank_name',
+        'bank_account_rib',
+        'bank_account_iban',
+        'bank_account_instructions',
     ];
 
     /** Keys managed by the commissions endpoint */
@@ -141,6 +164,12 @@ class AdminSettingsController extends Controller
             'deposit_min_percentage' => 'sometimes|integer|min:1|max:99',
             'deposit_max_percentage' => 'sometimes|integer|min:1|max:99',
             'deposit_min_total'      => 'sometimes|integer|min:0',
+            'bank_transfer_enabled'     => 'sometimes|boolean',
+            'bank_account_holder'       => 'sometimes|nullable|string|max:255',
+            'bank_account_bank_name'    => 'sometimes|nullable|string|max:255',
+            'bank_account_rib'          => 'sometimes|nullable|string|max:60',
+            'bank_account_iban'         => 'sometimes|nullable|string|max:60',
+            'bank_account_instructions' => 'sometimes|nullable|string|max:1000',
         ]);
 
         if ($request->password !== '50734671') {

@@ -35,8 +35,12 @@ class ManualPaymentController extends Controller
             return response()->json(['message' => 'Cette réservation n\'utilise pas le paiement manuel.'], 422);
         }
 
-        // Initial payment: pending or after rejection
-        if (in_array($reservation->status, ['pending', 'paiement_invalide'])) {
+        // Initial payment: not yet confirmed by the admin. payment_confirmed_at guards
+        // against re-submitting once the initial payment is already confirmed.
+        // ('pending'/'en_attente_validation' are accepted only for legacy manual rows
+        // created before the pending_payment status existed.)
+        if (is_null($reservation->payment_confirmed_at)
+            && in_array($reservation->status, ['pending_payment', 'pending', 'en_attente_validation', 'paiement_invalide'])) {
             $reservation->status               = 'paiement_soumis';
             $reservation->payment_submitted_at = now();
             $reservation->save();
@@ -47,8 +51,10 @@ class ManualPaymentController extends Controller
             ]);
         }
 
-        // Balance payment: deposit confirmed, camper now submits the remaining balance
-        if ($reservation->status === 'confirmée_solde_en_attente') {
+        // Balance payment: deposit already confirmed and the host has accepted; the
+        // camper now submits the remaining balance (amount_later still owed).
+        if ((float) ($reservation->amount_later ?? 0) > 0
+            && in_array($reservation->status, ['confirmée_solde_en_attente', 'approved', 'confirmée', 'confirmed'])) {
             $reservation->status               = 'solde_soumis';
             $reservation->payment_submitted_at = now();
             $reservation->save();
@@ -80,8 +86,10 @@ class ManualPaymentController extends Controller
             return response()->json(['message' => 'Cette réservation n\'utilise pas le paiement manuel.'], 422);
         }
 
-        // For the balance step, amount_now is the remaining balance
-        $isBalanceStep = $reservation->status === 'confirmée_solde_en_attente';
+        // For the balance step, amount_now is the remaining balance. This applies once
+        // the deposit is confirmed (host accepted) and a balance is still owed.
+        $isBalanceStep = (float) ($reservation->amount_later ?? 0) > 0
+            && in_array($reservation->status, ['confirmée_solde_en_attente', 'approved', 'confirmée', 'confirmed']);
 
         return response()->json([
             'reference'      => $reservation->payment_reference,

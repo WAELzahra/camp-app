@@ -62,7 +62,11 @@ class AdminPaymentReviewController extends Controller
             ->map(fn($r) => [
                 'id'                   => $r->id,
                 'type'                 => 'wallet',
-                'payment_reference'    => $r->payment_reference,
+                'method'               => $r->method,
+                'payment_reference'    => $r->method === 'bank_transfer'
+                                            ? $r->transfer_reference
+                                            : $r->payment_reference,
+                'transfer_reference'   => $r->transfer_reference,
                 'status'               => $r->status,
                 'payment_option'       => 'full',
                 'amount_now'           => $r->amount,
@@ -96,19 +100,23 @@ class AdminPaymentReviewController extends Controller
             ], 422);
         }
 
-        $newStatus = $this->resolveConfirmedStatus($reservation, $type);
-        $reservation->status              = $newStatus;
-        $reservation->payment_confirmed_at= now();
-        $reservation->confirmed_by        = Auth::id();
+        $wasBalance = ($reservation->status === 'solde_soumis');
+        $newStatus  = $this->resolveConfirmedStatus($reservation, $type);
+
+        $reservation->status               = $newStatus;
+        $reservation->payment_confirmed_at = now();
+        $reservation->confirmed_by         = Auth::id();
+        if ($wasBalance) {
+            $reservation->amount_later = 0; // balance settled in full
+        }
         $reservation->save();
 
-        $isBalance = ($reservation->status === 'entièrement_payée');
         $this->notifyUser(
             $reservation->user_id,
-            $isBalance ? 'Solde confirmé ✓' : 'Paiement confirmé ✓',
-            $isBalance
+            $wasBalance ? 'Solde confirmé ✓' : 'Paiement confirmé ✓',
+            $wasBalance
                 ? "Votre solde restant ({$reservation->payment_reference}) a été validé. Votre réservation est entièrement payée."
-                : "Votre virement ({$reservation->payment_reference}) a été validé. Votre réservation est confirmée.",
+                : "Votre paiement ({$reservation->payment_reference}) a été validé. Votre réservation est en attente de confirmation par le prestataire.",
             'high'
         );
 
@@ -139,19 +147,26 @@ class AdminPaymentReviewController extends Controller
             ], 422);
         }
 
-        $reservation->status = 'paiement_invalide';
+        // A rejected balance reverts to the host-accepted state (balance still owed) so
+        // the camper can resubmit; a rejected initial payment becomes paiement_invalide.
+        $wasBalance = ($reservation->status === 'solde_soumis');
+        $reservation->status = $wasBalance
+            ? match ($type) { 'events' => 'confirmée', 'centres' => 'approved', default => 'confirmed' }
+            : 'paiement_invalide';
         $reservation->save();
 
         $this->notifyUser(
             $reservation->user_id,
-            'Virement non trouvé',
-            "Nous n'avons pas pu vérifier votre virement ({$reservation->payment_reference}). Veuillez vérifier la référence et soumettre à nouveau.",
+            $wasBalance ? 'Solde non validé' : 'Virement non trouvé',
+            $wasBalance
+                ? "Nous n'avons pas pu vérifier votre virement de solde ({$reservation->payment_reference}). Veuillez vérifier et soumettre à nouveau."
+                : "Nous n'avons pas pu vérifier votre virement ({$reservation->payment_reference}). Veuillez vérifier la référence et soumettre à nouveau.",
             'high'
         );
 
         return response()->json([
             'message' => 'Paiement rejeté. Le camper est notifié de soumettre à nouveau.',
-            'status'  => 'paiement_invalide',
+            'status'  => $reservation->status,
         ]);
     }
 
@@ -159,8 +174,14 @@ class AdminPaymentReviewController extends Controller
      * POST /admin/payments/wallet/{id}/confirm
      * Confirms a wallet recharge: credits the user's balance and logs the transaction.
      */
-    public function confirmWallet(int $id): JsonResponse
+    public function confirmWallet(Request $request, int $id): JsonResponse
     {
+        // The admin may correct the credited amount to the amount actually received
+        // (e.g. the camper claimed 100 but only 80 arrived). Defaults to the claim.
+        $validated = $request->validate([
+            'amount' => 'sometimes|nullable|numeric|min:0.01|max:100000',
+        ]);
+
         $req = WalletRechargeRequest::find($id);
 
         if (!$req || $req->status !== 'paiement_soumis') {
@@ -168,8 +189,10 @@ class AdminPaymentReviewController extends Controller
         }
 
         $alreadyTreated = false;
+        $credited       = 0.0;
+        $reference      = '';
 
-        DB::transaction(function () use ($id, &$req, &$alreadyTreated) {
+        DB::transaction(function () use ($id, $validated, &$req, &$alreadyTreated, &$credited, &$reference) {
             // Re-fetch under a row lock so two concurrent confirmations can't double-credit.
             $req = WalletRechargeRequest::whereKey($id)->lockForUpdate()->first();
             if (!$req || $req->status !== 'paiement_soumis') {
@@ -177,24 +200,32 @@ class AdminPaymentReviewController extends Controller
                 return;
             }
 
+            $credited  = isset($validated['amount']) && $validated['amount'] !== null
+                ? round((float) $validated['amount'], 2)
+                : (float) $req->amount;
+            $reference = $req->method === 'bank_transfer'
+                ? ($req->transfer_reference ?? '')
+                : ($req->payment_reference ?? '');
+
             $balance = Balance::forUser($req->user_id);
-            $balance->crediter((float) $req->amount);
+            $balance->crediter($credited);
 
             WalletTransaction::logCredit(
                 userId:           $req->user_id,
                 category:         'deposit',
-                amountGross:      (float) $req->amount,
+                amountGross:      $credited,
                 commissionRate:   0,
                 commissionAmount: 0,
-                netAmount:        (float) $req->amount,
+                netAmount:        $credited,
                 referenceType:    'wallet_recharge',
                 referenceId:      $req->id,
-                description:      "Rechargement wallet — {$req->payment_reference}",
+                description:      "Rechargement wallet — {$reference}",
             );
 
-            $req->status       = 'confirmed';
-            $req->confirmed_at = now();
-            $req->confirmed_by = Auth::id();
+            $req->status          = 'confirmed';
+            $req->credited_amount = $credited;
+            $req->confirmed_at    = now();
+            $req->confirmed_by    = Auth::id();
             $req->save();
         });
 
@@ -205,13 +236,14 @@ class AdminPaymentReviewController extends Controller
         $this->notifyUser(
             $req->user_id,
             'Wallet rechargé ✓',
-            "Votre rechargement de {$req->amount} TND ({$req->payment_reference}) a été validé. Votre solde a été mis à jour.",
+            "Votre rechargement de {$credited} TND ({$reference}) a été validé. Votre solde a été mis à jour.",
             'high'
         );
 
         return response()->json([
-            'message' => 'Rechargement confirmé. Solde mis à jour.',
-            'id'      => $id,
+            'message'         => 'Rechargement confirmé. Solde mis à jour.',
+            'id'              => $id,
+            'credited_amount' => $credited,
         ]);
     }
 
@@ -306,29 +338,29 @@ class AdminPaymentReviewController extends Controller
     }
 
     /**
-     * Determine the next status after admin confirms payment.
+     * Determine the next status after the admin confirms a manual payment.
      *
-     * - If it's the initial payment (paiement_soumis):
-     *     - Deposit option + amount_later > 0 → confirmée_solde_en_attente
-     *     - Full payment → reservation type's "approved/confirmed" status
-     * - If it's the balance payment (solde_soumis) → entièrement_payée
+     * - Balance payment (solde_soumis): the host already accepted, so restore the
+     *   host-accepted state — now fully paid (amount_later is zeroed by the caller).
+     * - Initial payment (paiement_soumis), full OR deposit: the reservation enters
+     *   the host's review queue. If it was a deposit, amount_later stays > 0 and the
+     *   balance is collected after the host accepts.
      */
     private function resolveConfirmedStatus(mixed $r, string $type): string
     {
         if ($r->status === 'solde_soumis') {
-            return 'entièrement_payée';
+            return match ($type) {
+                'events'  => 'confirmée',
+                'centres' => 'approved',
+                default   => 'confirmed', // materielles
+            };
         }
 
-        // Initial payment submitted
-        if ($r->payment_option === 'deposit' && ((float)($r->amount_later ?? 0)) > 0) {
-            return 'confirmée_solde_en_attente';
-        }
-
-        // Full payment confirmed — advance to the normal "approved" state per type
-        return match($type) {
-            'events'  => 'confirmée',
-            'centres' => 'approved',
-            default   => 'confirmed', // materielles
+        // Initial payment confirmed → host review queue.
+        return match ($type) {
+            'events'  => 'en_attente_validation',
+            'centres' => 'pending',
+            default   => 'pending', // materielles
         };
     }
 }

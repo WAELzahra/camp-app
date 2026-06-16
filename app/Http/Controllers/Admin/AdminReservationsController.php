@@ -35,6 +35,7 @@ class AdminReservationsController extends Controller
     const STATUS_MAPPING = [
         'center' => [
             'pending' => 'En attente',
+            'pending_payment' => 'En attente de paiement',
             'approved' => 'Approuvée',
             'rejected' => 'Rejetée',
             'modified' => 'Modifiée',
@@ -42,6 +43,7 @@ class AdminReservationsController extends Controller
         ],
         'events' => [
             'en_attente_paiement' => 'En attente de paiement',
+            'pending_payment' => 'En attente de paiement',
             'confirmée' => 'Confirmée',
             'en_attente_validation' => 'En attente de validation',
             'refusée' => 'Refusée',
@@ -53,6 +55,7 @@ class AdminReservationsController extends Controller
         ],
         'materielle' => [
             'pending'                  => 'En attente',
+            'pending_payment'          => 'En attente de paiement',
             'confirmed'                => 'Confirmée',
             'paid'                     => 'Payée',
             'retrieved'                => 'Récupérée',

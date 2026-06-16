@@ -1003,8 +1003,14 @@ Route::middleware(['auth:sanctum'])->prefix('my')->group(function () {
     Route::get('/payment-preferences',  [\App\Http\Controllers\Reservation\ManualPaymentController::class, 'getPreferences']);
     Route::put('/payment-preferences',  [\App\Http\Controllers\Reservation\ManualPaymentController::class, 'updatePreferences']);
 
+    // ── Own payout bank details (all roles) ────────────────────────────────
+    Route::get('/bank-info', [\App\Http\Controllers\BankInfoController::class, 'show']);
+    Route::put('/bank-info', [\App\Http\Controllers\BankInfoController::class, 'update']);
+
     // ── Wallet recharge via manual transfer ────────────────────────────────
     Route::post('/wallet/recharge',              [\App\Http\Controllers\Reservation\WalletRechargeController::class, 'initiate'])
+        ->middleware('throttle:15,1');
+    Route::post('/wallet/recharge/bank-transfer', [\App\Http\Controllers\Reservation\WalletRechargeController::class, 'bankTransferClaim'])
         ->middleware('throttle:15,1');
     Route::post('/wallet/recharge/{id}/submit',  [\App\Http\Controllers\Reservation\WalletRechargeController::class, 'submit'])
         ->middleware('throttle:30,1');
@@ -1063,6 +1069,9 @@ Route::middleware(['auth:sanctum'])->prefix('reservation')->group(function () {
 // ==================== ADMIN ROUTES (UNIQUEMENT ICI) ====================
 // ==================== ADMIN ROUTES (UNIQUEMENT ICI) ====================
 Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function () {
+
+    // Payout bank details of every user (read-only)
+    Route::get('/bank-infos', [\App\Http\Controllers\BankInfoController::class, 'adminIndex']);
 
     Route::prefix('admin/annonces')->group(function () {
         Route::patch('/{id}/activate',   [AnnonceController::class, 'activate']);

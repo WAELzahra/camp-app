@@ -9,7 +9,10 @@ class WalletRechargeRequest extends Model
     protected $fillable = [
         'user_id',
         'amount',
+        'method',
         'payment_reference',
+        'transfer_reference',
+        'credited_amount',
         'status',
         'submitted_at',
         'confirmed_at',
@@ -17,9 +20,10 @@ class WalletRechargeRequest extends Model
     ];
 
     protected $casts = [
-        'amount'       => 'float',
-        'submitted_at' => 'datetime',
-        'confirmed_at' => 'datetime',
+        'amount'          => 'float',
+        'credited_amount' => 'float',
+        'submitted_at'    => 'datetime',
+        'confirmed_at'    => 'datetime',
     ];
 
     public function user()
