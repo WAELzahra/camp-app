@@ -3,12 +3,18 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use Illuminate\Http\Request;
-use App\Models\CampingZone;
+use App\Http\Requests\Admin\AddPhotosRequest;
+use App\Http\Requests\Admin\BulkAssignZonesRequest;
+use App\Http\Requests\Admin\MergeZonesRequest;
+use App\Http\Requests\Admin\StoreAdminZoneRequest;
+use App\Http\Requests\Admin\UpdateAdminZoneRequest;
+use App\Http\Requests\Zone\ValidateZoneRequest;
 use App\Models\CampingCentre;
+use App\Models\CampingZone;
 use App\Models\Photo;
-use Illuminate\Support\Facades\Storage;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
 
 class CampingZoneController extends Controller
 {
@@ -17,8 +23,13 @@ class CampingZoneController extends Controller
     private function isAdmin(): bool
     {
         $user = auth()->user();
-        if (!$user) return false;
-        if (!$user->relationLoaded('role')) $user->load('role');
+        if (!$user) {
+            return false;
+        }
+        if (!$user->relationLoaded('role')) {
+            $user->load('role');
+        }
+
         return strtolower($user->role->name ?? '') === 'admin';
     }
 
@@ -32,9 +43,11 @@ class CampingZoneController extends Controller
                   ?? collect($zone->photos)->first();
             if ($cover && $cover->path_to_img) {
                 $p = $cover->path_to_img;
+
                 return filter_var($p, FILTER_VALIDATE_URL) ? $p : storage_url($p);
             }
         }
+
         return null;
     }
 
@@ -48,69 +61,69 @@ class CampingZoneController extends Controller
     {
         return [
             // ── Identité ──────────────────────────────────────────────────────
-            'id'                => (int) $zone->id,
-            'nom'               => (string) ($zone->nom ?? ''),
-            'city'              => $zone->city              ?? null,
-            'type_activitee'    => $zone->type_activitee    ?? null,
-            'description'       => $zone->description       ?? null,
-            'full_description'  => $zone->full_description  ?? null,
-            'terrain'           => $zone->terrain            ?? null,
-            'adresse'           => $zone->adresse            ?? null,
-            'region'            => $zone->region             ?? null,
-            'commune'           => $zone->commune            ?? null,
+            'id' => (int) $zone->id,
+            'nom' => (string) ($zone->nom ?? ''),
+            'city' => $zone->city ?? null,
+            'type_activitee' => $zone->type_activitee ?? null,
+            'description' => $zone->description ?? null,
+            'full_description' => $zone->full_description ?? null,
+            'terrain' => $zone->terrain ?? null,
+            'adresse' => $zone->adresse ?? null,
+            'region' => $zone->region ?? null,
+            'commune' => $zone->commune ?? null,
 
             // ── Niveau de risque / difficulté ─────────────────────────────────
-            'danger_level'      => $zone->danger_level       ?? 'low',
-            'difficulty'        => $zone->difficulty          ?? null,
-            'accessibility'     => $zone->accessibility       ?? null,
-            'altitude'          => $zone->altitude            ?? null,
-            'distance'          => $zone->distance            ?? null,
+            'danger_level' => $zone->danger_level ?? 'low',
+            'difficulty' => $zone->difficulty ?? null,
+            'accessibility' => $zone->accessibility ?? null,
+            'altitude' => $zone->altitude ?? null,
+            'distance' => $zone->distance ?? null,
 
             // ── Booléens — toujours castés ────────────────────────────────────
-            'status'            => (bool) $zone->status,
-            'is_public'         => (bool) $zone->is_public,
-            'is_closed'         => (bool) ($zone->is_closed ?? false),
+            'status' => (bool) $zone->status,
+            'is_public' => (bool) $zone->is_public,
+            'is_closed' => (bool) ($zone->is_closed ?? false),
             'is_protected_area' => (bool) ($zone->is_protected_area ?? false),
 
             // ── Fermeture ─────────────────────────────────────────────────────
-            'closure_reason'    => $zone->closure_reason ?? null,
-            'closure_start'     => $zone->closure_start
+            'closure_reason' => $zone->closure_reason ?? null,
+            'closure_start' => $zone->closure_start
                                     ? (is_string($zone->closure_start)
                                         ? $zone->closure_start
                                         : $zone->closure_start->toDateString())
                                     : null,
-            'closure_end'       => $zone->closure_end
+            'closure_end' => $zone->closure_end
                                     ? (is_string($zone->closure_end)
                                         ? $zone->closure_end
                                         : $zone->closure_end->toDateString())
                                     : null,
 
             // ── Géo ───────────────────────────────────────────────────────────
-            'lat'               => $zone->lat !== null ? (float) $zone->lat : null,
-            'lng'               => $zone->lng !== null ? (float) $zone->lng : null,
+            'lat' => $zone->lat !== null ? (float) $zone->lat : null,
+            'lng' => $zone->lng !== null ? (float) $zone->lng : null,
 
             // ── Capacité / accès ──────────────────────────────────────────────
-            'max_capacity'      => $zone->max_capacity ? (int) $zone->max_capacity : null,
-            'access_type'       => $zone->access_type   ?? null,
+            'max_capacity' => $zone->max_capacity ? (int) $zone->max_capacity : null,
+            'access_type' => $zone->access_type ?? null,
 
             // ── Tableaux JSON ─────────────────────────────────────────────────
-            'activities'        => is_array($zone->activities)  ? $zone->activities  : [],
-            'facilities'        => is_array($zone->facilities)  ? $zone->facilities  : [],
-            'rules'             => is_array($zone->rules)        ? $zone->rules        : [],
-            'best_season'       => is_array($zone->best_season)  ? $zone->best_season  : [],
+            'activities' => is_array($zone->activities) ? $zone->activities : [],
+            'facilities' => is_array($zone->facilities) ? $zone->facilities : [],
+            'rules' => is_array($zone->rules) ? $zone->rules : [],
+            'best_season' => is_array($zone->best_season) ? $zone->best_season : [],
 
             // ── Contact ───────────────────────────────────────────────────────
-            'contact_phone'     => $zone->contact_phone   ?? null,
-            'contact_email'     => $zone->contact_email   ?? null,
-            'contact_website'   => $zone->contact_website ?? null,
+            'contact_phone' => $zone->contact_phone ?? null,
+            'contact_email' => $zone->contact_email ?? null,
+            'contact_website' => $zone->contact_website ?? null,
 
             // ── Meta ──────────────────────────────────────────────────────────
-            'centre_id'         => $zone->centre_id ? (int) $zone->centre_id : null,
-            'added_by'          => $zone->added_by  ? (int) $zone->added_by  : null,
-            'source'            => $zone->source ?? null,
-            'image'             => $this->zoneCoverUrl($zone),
-            'created_at'        => $zone->created_at ? $zone->created_at->toISOString() : null,
-            'updated_at'        => $zone->updated_at ? $zone->updated_at->toISOString() : null,
+            'centre_id' => $zone->centre_id ? (int) $zone->centre_id : null,
+            'added_by' => $zone->added_by ? (int) $zone->added_by : null,
+            'source' => $zone->source ?? null,
+            'image' => $this->zoneCoverUrl($zone),
+            'created_at' => $zone->created_at ? $zone->created_at->toISOString() : null,
+            'updated_at' => $zone->updated_at ? $zone->updated_at->toISOString() : null,
 
             // ── Relations ─────────────────────────────────────────────────────
             'centre' => $zone->relationLoaded('centre') && $zone->centre
@@ -118,13 +131,13 @@ class CampingZoneController extends Controller
                 : null,
 
             'photos' => $zone->relationLoaded('photos')
-                ? collect($zone->photos)->map(fn($p) => [
-                    'id'          => (int) $p->id,
-                    'url'         => storage_url($p->path_to_img),
+                ? collect($zone->photos)->map(fn ($p) => [
+                    'id' => (int) $p->id,
+                    'url' => storage_url($p->path_to_img),
                     'path_to_img' => $p->path_to_img,
-                    'is_cover'    => (bool) $p->is_cover,
-                    'order'       => (int) ($p->order ?? 0),
-                  ])->values()->toArray()
+                    'is_cover' => (bool) $p->is_cover,
+                    'order' => (int) ($p->order ?? 0),
+                ])->values()->toArray()
                 : [],
         ];
     }
@@ -135,7 +148,10 @@ class CampingZoneController extends Controller
     private function relations(): array
     {
         $r = ['centre'];
-        if (Schema::hasTable('photos')) $r[] = 'photos';
+        if (Schema::hasTable('photos')) {
+            $r[] = 'photos';
+        }
+
         return $r;
     }
 
@@ -151,11 +167,11 @@ class CampingZoneController extends Controller
         if ($request->filled('search')) {
             $s = trim($request->search);
             $query->where(function ($q) use ($s) {
-                $q->where('nom',         'like', "%{$s}%")
-                ->orWhere('adresse',   'like', "%{$s}%")
-                ->orWhere('region',    'like', "%{$s}%")
-                ->orWhere('commune',   'like', "%{$s}%")
-                ->orWhere('description', 'like', "%{$s}%");
+                $q->where('nom', 'like', "%{$s}%")
+                    ->orWhere('adresse', 'like', "%{$s}%")
+                    ->orWhere('region', 'like', "%{$s}%")
+                    ->orWhere('commune', 'like', "%{$s}%")
+                    ->orWhere('description', 'like', "%{$s}%");
             });
         }
 
@@ -174,7 +190,7 @@ class CampingZoneController extends Controller
             }
         }
 
-        $perPage   = max(1, min(100, (int) $request->get('per_page', 10)));
+        $perPage = max(1, min(100, (int) $request->get('per_page', 10)));
         $paginated = $query->orderBy('created_at', 'desc')->paginate($perPage);
 
         // ═══════════════════════════════════════════════════════════════
@@ -182,15 +198,15 @@ class CampingZoneController extends Controller
         // ═══════════════════════════════════════════════════════════════
         $counts = [
             'difficulty' => [
-                'easy'   => CampingZone::where('status', 1)->where('difficulty', 'easy')->count(),
+                'easy' => CampingZone::where('status', 1)->where('difficulty', 'easy')->count(),
                 'medium' => CampingZone::where('status', 1)->where('difficulty', 'medium')->count(),
-                'hard'   => CampingZone::where('status', 1)->where('difficulty', 'hard')->count(),
+                'hard' => CampingZone::where('status', 1)->where('difficulty', 'hard')->count(),
             ],
             'danger_level' => [
-                'low'      => CampingZone::where('status', 1)->where('danger_level', 'low')->count(),
+                'low' => CampingZone::where('status', 1)->where('danger_level', 'low')->count(),
                 'moderate' => CampingZone::where('status', 1)->where('danger_level', 'moderate')->count(),
-                'high'     => CampingZone::where('status', 1)->where('danger_level', 'high')->count(),
-                'extreme'  => CampingZone::where('status', 1)->where('danger_level', 'extreme')->count(),
+                'high' => CampingZone::where('status', 1)->where('danger_level', 'high')->count(),
+                'extreme' => CampingZone::where('status', 1)->where('danger_level', 'extreme')->count(),
             ],
             'total' => CampingZone::where('status', 1)->count(),
         ];
@@ -200,16 +216,16 @@ class CampingZoneController extends Controller
 
         return response()->json([
             'success' => true,
-            'data'    => [
+            'data' => [
                 'current_page' => $paginated->currentPage(),
-                'last_page'    => $paginated->lastPage(),
-                'per_page'     => (int) $paginated->perPage(),
-                'total'        => (int) $paginated->total(),
-                'data'         => $paginated->getCollection()
-                                    ->map(fn($zone) => $this->format($zone))
-                                    ->values()
-                                    ->all(),
-                'counts'       => $counts,  // ← ADD THIS LINE
+                'last_page' => $paginated->lastPage(),
+                'per_page' => (int) $paginated->perPage(),
+                'total' => (int) $paginated->total(),
+                'data' => $paginated->getCollection()
+                    ->map(fn ($zone) => $this->format($zone))
+                    ->values()
+                    ->all(),
+                'counts' => $counts,  // ← ADD THIS LINE
             ],
         ]);
     }
@@ -221,12 +237,12 @@ class CampingZoneController extends Controller
     {
         return response()->json([
             'success' => true,
-            'data'    => [
-                'total_zones'       => (int) CampingZone::count(),
-                'zones_publiques'   => (int) CampingZone::where('is_public', true)->count(),
-                'zones_privees'     => (int) CampingZone::where('is_public', false)->count(),
+            'data' => [
+                'total_zones' => (int) CampingZone::count(),
+                'zones_publiques' => (int) CampingZone::where('is_public', true)->count(),
+                'zones_privees' => (int) CampingZone::where('is_public', false)->count(),
                 'zones_danger_haut' => (int) CampingZone::whereIn('danger_level', ['high', 'extreme'])->count(),
-                'zones_par_centre'  => (int) CampingZone::whereNotNull('centre_id')->count(),
+                'zones_par_centre' => (int) CampingZone::whereNotNull('centre_id')->count(),
                 'zones_sans_centre' => (int) CampingZone::whereNull('centre_id')->count(),
             ],
         ]);
@@ -249,7 +265,7 @@ class CampingZoneController extends Controller
 
         return response()->json([
             'success' => true,
-            'data'    => $this->format($zone),
+            'data' => $this->format($zone),
         ]);
     }
 
@@ -257,74 +273,36 @@ class CampingZoneController extends Controller
     // POST /admin/zones
     // ═══════════════════════════════════════════════════════════════════════════
 
-    public function store(Request $request)
+    public function store(StoreAdminZoneRequest $request)
     {
-        $data = $request->validate([
-            'nom'               => 'required|string|max:255',
-            'city'              => 'nullable|string|max:100',
-            'type_activitee'    => 'nullable|string|max:100',
-            'description'       => 'nullable|string',
-            'full_description'  => 'nullable|string',
-            'terrain'           => 'nullable|string|max:100',
-            'difficulty'        => 'nullable|in:easy,medium,hard',
-            'adresse'           => 'nullable|string|max:255',
-            'region'            => 'nullable|string|max:100',
-            'commune'           => 'nullable|string|max:100',
-            'accessibility'     => 'nullable|string|max:255',
-            'altitude'          => 'nullable|string|max:50',
-            'distance'          => 'nullable|string|max:100',
-            'danger_level'      => 'nullable|in:low,moderate,high,extreme',
-            'lat'               => 'required|numeric|between:-90,90',
-            'lng'               => 'required|numeric|between:-180,180',
-            'max_capacity'      => 'nullable|integer|min:1',
-            'access_type'       => 'nullable|string|max:100',
-            'centre_id'         => 'nullable|exists:camping_centres,id',
-            'activities'        => 'nullable|array',
-            'activities.*'      => 'string',
-            'facilities'        => 'nullable|array',
-            'facilities.*'      => 'string',
-            'best_season'       => 'nullable|array',
-            'best_season.*'     => 'string',
-            'rules'             => 'nullable|array',
-            'rules.*'           => 'string',
-            'contact_phone'     => 'nullable|string|max:30',
-            'contact_email'     => 'nullable|email|max:150',
-            'contact_website'   => 'nullable|url|max:255',
-            'is_public'         => 'nullable|boolean',
-            'status'            => 'nullable|boolean',
-            'is_protected_area' => 'nullable|boolean',
-            'is_closed'         => 'nullable|boolean',
-            'closure_reason'    => 'nullable|string',
-            'closure_start'     => 'nullable|date',
-            'closure_end'       => 'nullable|date|after_or_equal:closure_start',
-        ]);
+        $data = $request->validated();
 
         if (empty($data['centre_id'])) {
             $centre = CampingCentre::create([
-                'nom'    => ($data['nom']) . ' Centre',
-                'adresse'=> $data['adresse'] ?? null,
-                'lat'    => $data['lat'],
-                'lng'    => $data['lng'],
-                'type'   => 'hors_centre',
+                'nom' => ($data['nom']).' Centre',
+                'adresse' => $data['adresse'] ?? null,
+                'lat' => $data['lat'],
+                'lng' => $data['lng'],
+                'type' => 'hors_centre',
             ]);
             $data['centre_id'] = $centre->id;
         }
 
-        $user    = auth()->user();
+        $user = auth()->user();
         $user->load('role');
         $isAdmin = strtolower($user->role->name ?? '') === 'admin';
 
         // Non-admins always start as inactive / pending review.
         // Admins can override status and is_public via the request.
         if (!$isAdmin) {
-            $data['status']    = true;
+            $data['status'] = true;
             $data['is_public'] = false;
         } else {
-            $data['status']    = $data['status']    ?? true;
+            $data['status'] = $data['status'] ?? true;
             $data['is_public'] = $data['is_public'] ?? false;
         }
 
-        $data['source']   = 'interne';
+        $data['source'] = 'interne';
         $data['added_by'] = $user->id;
 
         $zone = CampingZone::create($data);
@@ -333,7 +311,7 @@ class CampingZoneController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Zone créée avec succès',
-            'data'    => $this->format($zone),
+            'data' => $this->format($zone),
         ], 201);
     }
 
@@ -341,14 +319,14 @@ class CampingZoneController extends Controller
     // PUT /admin/zones/{id}
     // ═══════════════════════════════════════════════════════════════════════════
 
-    public function update(Request $request, $id)
+    public function update(UpdateAdminZoneRequest $request, $id)
     {
         $zone = CampingZone::find($id);
         if (!$zone) {
             return response()->json(['success' => false, 'message' => 'Zone introuvable'], 404);
         }
 
-        $user    = auth()->user();
+        $user = auth()->user();
         $user->load('role');
         $isAdmin = strtolower($user->role->name ?? '') === 'admin';
 
@@ -356,46 +334,7 @@ class CampingZoneController extends Controller
             return response()->json(['success' => false, 'message' => 'Modification non autorisée'], 403);
         }
 
-        $data = $request->validate([
-            'nom'               => 'sometimes|string|max:255',
-            'city'              => 'nullable|string|max:100',
-            'type_activitee'    => 'nullable|string|max:100',
-            'description'       => 'nullable|string',
-            'full_description'  => 'nullable|string',
-            'terrain'           => 'nullable|string|max:100',
-            'difficulty'        => 'nullable|in:easy,medium,hard',
-            'adresse'           => 'nullable|string|max:255',
-            'region'            => 'nullable|string|max:100',
-            'commune'           => 'nullable|string|max:100',
-            'accessibility'     => 'nullable|string|max:255',
-            'altitude'          => 'nullable|string|max:50',
-            'distance'          => 'nullable|string|max:100',
-            'danger_level'      => 'nullable|in:low,moderate,high,extreme',
-            'lat'               => 'nullable|numeric|between:-90,90',
-            'lng'               => 'nullable|numeric|between:-180,180',
-            'max_capacity'      => 'nullable|integer|min:1',
-            'access_type'       => 'nullable|string|max:100',
-            'centre_id'         => 'nullable|exists:camping_centres,id',
-            'activities'        => 'nullable|array',
-            'activities.*'      => 'string',
-            'facilities'        => 'nullable|array',
-            'facilities.*'      => 'string',
-            'best_season'       => 'nullable|array',
-            'best_season.*'     => 'string',
-            'rules'             => 'nullable|array',
-            'rules.*'           => 'string',
-            'contact_phone'     => 'nullable|string|max:30',
-            'contact_email'     => 'nullable|email|max:150',
-            'contact_website'   => 'nullable|url|max:255',
-            'is_public'         => 'nullable|boolean',
-            'status'            => 'nullable|boolean',
-            'is_protected_area' => 'nullable|boolean',
-            'is_closed'         => 'nullable|boolean',
-            'closure_reason'    => 'nullable|string',
-            'closure_start'     => 'nullable|date',
-            'closure_end'       => 'nullable|date|after_or_equal:closure_start',
-            'image'             => 'nullable|image|max:5120',
-        ]);
+        $data = $request->validated();
 
         if ($request->hasFile('image')) {
             $path = $request->file('image')->store('zones/photos', 'public');
@@ -403,16 +342,16 @@ class CampingZoneController extends Controller
             $zone->photos()->update(['is_cover' => false]);
             // Create a new cover photo in the photos table
             Photo::create([
-                'path_to_img'     => $path,
+                'path_to_img' => $path,
                 'camping_zone_id' => $zone->id,
-                'is_cover'        => true,
-                'order'           => $zone->photos()->count(),
+                'is_cover' => true,
+                'order' => $zone->photos()->count(),
             ]);
         }
         unset($data['image']);
 
         if (!$isAdmin) {
-            $data['status']    = false;
+            $data['status'] = false;
             $data['is_public'] = false;
         }
 
@@ -422,7 +361,7 @@ class CampingZoneController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Zone mise à jour avec succès',
-            'data'    => $this->format($zone),
+            'data' => $this->format($zone),
         ]);
     }
 
@@ -437,7 +376,7 @@ class CampingZoneController extends Controller
             return response()->json(['success' => false, 'message' => 'Zone introuvable'], 404);
         }
 
-        $user    = auth()->user();
+        $user = auth()->user();
         $user->load('role');
         $isAdmin = strtolower($user->role->name ?? '') === 'admin';
 
@@ -446,6 +385,7 @@ class CampingZoneController extends Controller
                 return response()->json(['success' => false, 'message' => 'Non autorisé'], 403);
             }
             $zone->update(['status' => false]);
+
             return response()->json(['success' => true, 'message' => 'Zone désactivée']);
         }
 
@@ -482,7 +422,7 @@ class CampingZoneController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Zone validée et rendue publique',
-            'data'    => $this->format($zone->fresh()),
+            'data' => $this->format($zone->fresh()),
         ]);
     }
 
@@ -490,13 +430,13 @@ class CampingZoneController extends Controller
     // PATCH /admin/zones/{id}/toggle-status
     // ═══════════════════════════════════════════════════════════════════════════
 
-    public function toggleZoneStatus(Request $request, $id)
+    public function toggleZoneStatus(ValidateZoneRequest $request, $id)
     {
         if (!$this->isAdmin()) {
             return response()->json(['success' => false, 'message' => 'Accès refusé'], 403);
         }
 
-        $request->validate(['status' => 'required|boolean']);
+        $request->validated();
 
         $zone = CampingZone::find($id);
         if (!$zone) {
@@ -509,7 +449,7 @@ class CampingZoneController extends Controller
         return response()->json([
             'success' => true,
             'message' => $zone->status ? 'Zone activée' : 'Zone désactivée',
-            'data'    => $this->format($zone),
+            'data' => $this->format($zone),
         ]);
     }
 
@@ -517,22 +457,21 @@ class CampingZoneController extends Controller
     // POST /admin/zones/merge
     // ═══════════════════════════════════════════════════════════════════════════
 
-    public function merge(Request $request)
+    public function merge(MergeZonesRequest $request)
     {
         if (!$this->isAdmin()) {
             return response()->json(['success' => false, 'message' => 'Accès refusé'], 403);
         }
 
-        $data = $request->validate([
-            'primary_zone_id'   => 'required|exists:CampingZone,id',
-            'secondary_zone_id' => 'required|exists:CampingZone,id|different:primary_zone_id',
-        ]);
+        $data = $request->validated();
 
-        $primary   = CampingZone::findOrFail($data['primary_zone_id']);
+        $primary = CampingZone::findOrFail($data['primary_zone_id']);
         $secondary = CampingZone::findOrFail($data['secondary_zone_id']);
 
-        foreach ((new CampingZone())->getFillable() as $key) {
-            if (in_array($key, ['id', 'created_at', 'updated_at'])) continue;
+        foreach ((new CampingZone)->getFillable() as $key) {
+            if (in_array($key, ['id', 'created_at', 'updated_at'])) {
+                continue;
+            }
             if (empty($primary->$key) && !empty($secondary->$key)) {
                 $primary->$key = $secondary->$key;
             }
@@ -545,7 +484,7 @@ class CampingZoneController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Zones fusionnées avec succès',
-            'data'    => $this->format($primary),
+            'data' => $this->format($primary),
         ]);
     }
 
@@ -553,17 +492,13 @@ class CampingZoneController extends Controller
     // POST /admin/zones/bulk-assign
     // ═══════════════════════════════════════════════════════════════════════════
 
-    public function bulkAssignToCentre(Request $request)
+    public function bulkAssignToCentre(BulkAssignZonesRequest $request)
     {
         if (!$this->isAdmin()) {
             return response()->json(['success' => false, 'message' => 'Accès refusé'], 403);
         }
 
-        $validated = $request->validate([
-            'zone_ids'   => 'required|array|min:1',
-            'zone_ids.*' => 'integer|exists:CampingZone,id',
-            'centre_id'  => 'required|exists:camping_centres,id',
-        ]);
+        $validated = $request->validated();
 
         $count = CampingZone::whereIn('id', $validated['zone_ids'])
             ->update(['centre_id' => $validated['centre_id']]);
@@ -605,7 +540,7 @@ class CampingZoneController extends Controller
         return response()->json([
             'success' => false,
             'message' => 'Non implémenté',
-            'data'    => $this->format($zone),
+            'data' => $this->format($zone),
         ], 501);
     }
 
@@ -613,44 +548,42 @@ class CampingZoneController extends Controller
     // POST /admin/zones/{id}/photos  — upload one or more photos for a zone
     // ═══════════════════════════════════════════════════════════════════════════
 
-    public function addPhotos(Request $request, $id)
+    public function addPhotos(AddPhotosRequest $request, $id)
     {
         $zone = CampingZone::findOrFail($id);
 
-        $request->validate([
-            'photos'      => 'required|array',
-            'photos.*'    => 'file|image|max:5120',
-            'cover_index' => 'nullable|integer',
-        ]);
+        $request->validated();
 
         $coverIndex = (int) $request->input('cover_index', -1);
-        $hasPhotos  = $zone->photos()->exists();
-        $offset     = $zone->photos()->count();
+        $hasPhotos = $zone->photos()->exists();
+        $offset = $zone->photos()->count();
 
         foreach ($request->file('photos') as $index => $file) {
-            $path    = $file->store('zones/photos', 'public');
+            $path = $file->store('zones/photos', 'public');
             $isCover = ($index === $coverIndex);
 
             Photo::create([
-                'path_to_img'     => $path,
+                'path_to_img' => $path,
                 'camping_zone_id' => $zone->id,
-                'is_cover'        => $isCover,
-                'order'           => $offset + $index,
+                'is_cover' => $isCover,
+                'order' => $offset + $index,
             ]);
         }
 
         // Auto-promote first photo as cover if zone has no cover yet
         if ($coverIndex < 0 && !$zone->photos()->where('is_cover', true)->exists()) {
             $first = $zone->photos()->orderBy('order')->first();
-            if ($first) $first->update(['is_cover' => true]);
+            if ($first) {
+                $first->update(['is_cover' => true]);
+            }
         }
 
-        $photos = $zone->fresh('photos')->photos->map(fn($p) => [
-            'id'       => $p->id,
-            'url'      => storage_url($p->path_to_img),
-            'path'     => $p->path_to_img,
+        $photos = $zone->fresh('photos')->photos->map(fn ($p) => [
+            'id' => $p->id,
+            'url' => storage_url($p->path_to_img),
+            'path' => $p->path_to_img,
             'is_cover' => (bool) $p->is_cover,
-            'order'    => $p->order,
+            'order' => $p->order,
         ]);
 
         return response()->json(['status' => 'success', 'photos' => $photos]);
@@ -662,7 +595,7 @@ class CampingZoneController extends Controller
 
     public function deletePhoto($id, $photoId)
     {
-        $zone  = CampingZone::findOrFail($id);
+        $zone = CampingZone::findOrFail($id);
         $photo = Photo::where('camping_zone_id', $id)->findOrFail($photoId);
 
         Storage::disk('public')->delete($photo->path_to_img);
@@ -671,7 +604,9 @@ class CampingZoneController extends Controller
         // If we deleted the cover, promote the next photo
         if ($photo->is_cover) {
             $next = $zone->photos()->orderBy('order')->first();
-            if ($next) $next->update(['is_cover' => true]);
+            if ($next) {
+                $next->update(['is_cover' => true]);
+            }
         }
 
         return response()->json(['status' => 'success', 'message' => 'Photo supprimée.']);
