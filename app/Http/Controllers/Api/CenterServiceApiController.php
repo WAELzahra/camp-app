@@ -3,13 +3,13 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Api\CalculatePriceRequest;
 use App\Models\Album;
 use App\Models\CampingCentre;
 use App\Models\Feedbacks;
 use App\Models\Photo;
 use App\Models\ProfileCentre;
 use App\Models\ServiceCategory;
-use Illuminate\Http\Request;
 
 class CenterServiceApiController extends Controller
 {
@@ -25,20 +25,19 @@ class CenterServiceApiController extends Controller
     /**
      * Build a flat, frontend-ready representation of a center.
      *
-     * @param  ProfileCentre  $center
-     * @param  array|null     $albumMap   pre-loaded map of userId → Album (with coverPhoto/photos)
-     * @param  array|null     $ratingMap  pre-loaded map of userId → [avg, count]
-     * @param  bool           $withPhotos include full photos array (detail page only)
+     * @param  array|null  $albumMap  pre-loaded map of userId → Album (with coverPhoto/photos)
+     * @param  array|null  $ratingMap  pre-loaded map of userId → [avg, count]
+     * @param  bool  $withPhotos  include full photos array (detail page only)
      */
     private function formatCenter(
         ProfileCentre $center,
-        ?array $albumMap  = null,
+        ?array $albumMap = null,
         ?array $ratingMap = null,
-        bool   $withPhotos = false
+        bool $withPhotos = false
     ): array {
         $profile = $center->profile;
-        $user    = $profile?->user;
-        $userId  = $user?->id;
+        $user = $profile?->user;
+        $userId = $user?->id;
 
         /* ── Resolve user's linked CampingCentre (for photo fallbacks) ─── */
         // Use profile_centre_id first — it is a direct 1-to-1 link and always
@@ -114,28 +113,28 @@ class CenterServiceApiController extends Controller
                     ->unique('id')
                     ->sortByDesc('is_cover')
                     ->values()
-                    ->map(fn($p) => [
-                        'id'       => $p->id,
-                        'url'      => $this->photoUrl($p->path_to_img),
+                    ->map(fn ($p) => [
+                        'id' => $p->id,
+                        'url' => $this->photoUrl($p->path_to_img),
                         'is_cover' => (bool) $p->is_cover,
-                        'order'    => $p->order ?? 0,
+                        'order' => $p->order ?? 0,
                     ])->toArray();
             }
         }
 
         /* ── Ratings ─────────────────────────────────────────────────── */
-        $avgRating   = null;
+        $avgRating = null;
         $reviewCount = 0;
 
         if ($userId) {
             if ($ratingMap && isset($ratingMap[$userId])) {
-                $avgRating   = $ratingMap[$userId]['avg'];
+                $avgRating = $ratingMap[$userId]['avg'];
                 $reviewCount = $ratingMap[$userId]['count'];
             } else {
                 $q = Feedbacks::where('type', 'centre')
                     ->where('target_id', $userId)
                     ->where('status', 'approved');
-                $avgRating   = $q->avg('note');
+                $avgRating = $q->avg('note');
                 $reviewCount = $q->count();
             }
         }
@@ -148,59 +147,59 @@ class CenterServiceApiController extends Controller
             ->orderBy('created_at', 'asc')
             ->get();
 
-        $services = $allServices->map(function($service) {
+        $services = $allServices->map(function ($service) {
             $name = $service->name ?? $service->serviceCategory?->name ?? 'Service';
 
             return [
-                'id'           => $service->id,
-                'name'         => $name,
-                'description'  => $service->description ?? $service->serviceCategory?->description ?? '',
-                'price'        => (float) $service->price,
-                'unit'         => $service->unit ?? $service->serviceCategory?->unit ?? '',
-                'is_standard'  => (bool) $service->is_standard,
+                'id' => $service->id,
+                'name' => $name,
+                'description' => $service->description ?? $service->serviceCategory?->description ?? '',
+                'price' => (float) $service->price,
+                'unit' => $service->unit ?? $service->serviceCategory?->unit ?? '',
+                'is_standard' => (bool) $service->is_standard,
                 'is_available' => (bool) $service->is_available,
-                'nbr_place'    => $service->nbr_place,
+                'nbr_place' => $service->nbr_place,
             ];
         })->values()->toArray();
 
         /* ── Equipment ───────────────────────────────────────────────── */
-        $equipment = $center->availableEquipment->map(fn($eq) => [
-            'id'           => $eq->id,
-            'type'         => $eq->type,
+        $equipment = $center->availableEquipment->map(fn ($eq) => [
+            'id' => $eq->id,
+            'type' => $eq->type,
             'is_available' => (bool) $eq->is_available,
-            'notes'        => $eq->notes ?? null,
+            'notes' => $eq->notes ?? null,
         ])->values()->toArray();
 
         /* ── Assemble ─────────────────────────────────────────────────── */
         $data = [
-            'id'               => $center->id,
-            'name'             => $center->name,
-            'capacite'         => $center->capacite,
-            'price_per_night'  => (float) $center->price_per_night,
-            'category'         => $center->category,
-            'disponibilite'    => (bool) $center->disponibilite,
-            'latitude'         => $center->latitude  ? (string) $center->latitude  : null,
-            'longitude'        => $center->longitude ? (string) $center->longitude : null,
-            'contact_email'    => $center->contact_email,
-            'contact_phone'    => $center->contact_phone,
-            'manager_name'     => $center->manager_name,
+            'id' => $center->id,
+            'name' => $center->name,
+            'capacite' => $center->capacite,
+            'price_per_night' => (float) $center->price_per_night,
+            'category' => $center->category,
+            'disponibilite' => (bool) $center->disponibilite,
+            'latitude' => $center->latitude ? (string) $center->latitude : null,
+            'longitude' => $center->longitude ? (string) $center->longitude : null,
+            'contact_email' => $center->contact_email,
+            'contact_phone' => $center->contact_phone,
+            'manager_name' => $center->manager_name,
             'established_date' => $center->established_date?->format('Y-m-d'),
-            'average_rating'   => $avgRating  ? round((float) $avgRating, 2) : null,
-            'review_count'     => $reviewCount,
+            'average_rating' => $avgRating ? round((float) $avgRating, 2) : null,
+            'review_count' => $reviewCount,
             'profile' => [
-                'bio'         => $profile?->bio,
-                'city'        => $profile?->city,
-                'address'     => $profile?->address,
+                'bio' => $profile?->bio,
+                'city' => $profile?->city,
+                'address' => $profile?->address,
                 'cover_image' => $coverImage,
-                'user'        => $user ? [
-                    'id'         => $user->id,
+                'user' => $user ? [
+                    'id' => $user->id,
                     'first_name' => $user->first_name,
-                    'last_name'  => $user->last_name,
-                    'avatar'     => $this->photoUrl($user->avatar),
-                    'ville'      => $user->ville,
+                    'last_name' => $user->last_name,
+                    'avatar' => $this->photoUrl($user->avatar),
+                    'ville' => $user->ville,
                 ] : null,
             ],
-            'available_services'  => $services,
+            'available_services' => $services,
             'available_equipment' => $equipment,
         ];
 
@@ -221,17 +220,17 @@ class CenterServiceApiController extends Controller
     {
         $centers = ProfileCentre::with(['profile.user', 'availableEquipment'])
             ->available()
-            ->whereHas('profile.user', fn($q) => $q->where('is_active', 1))
+            ->whereHas('profile.user', fn ($q) => $q->where('is_active', 1))
             ->get()
             ->sortByDesc('price_per_night')
-            ->unique(fn($c) => $c->profile?->user_id
-                ? 'u-' . $c->profile->user_id
-                : 'pc-' . $c->id
+            ->unique(fn ($c) => $c->profile?->user_id
+                ? 'u-'.$c->profile->user_id
+                : 'pc-'.$c->id
             )
             ->values();
 
         // Bulk-load ratings — single query for all centres
-        $userIds = $centers->map(fn($c) => $c->profile?->user?->id)->filter()->unique()->values()->toArray();
+        $userIds = $centers->map(fn ($c) => $c->profile?->user?->id)->filter()->unique()->values()->toArray();
         $ratingMap = [];
         if (!empty($userIds)) {
             Feedbacks::where('type', 'centre')
@@ -242,7 +241,7 @@ class CenterServiceApiController extends Controller
                 ->get()
                 ->each(function ($row) use (&$ratingMap) {
                     $ratingMap[$row->target_id] = [
-                        'avg'   => round((float) $row->avg_note, 2),
+                        'avg' => round((float) $row->avg_note, 2),
                         'count' => (int) $row->review_count,
                     ];
                 });
@@ -272,8 +271,8 @@ class CenterServiceApiController extends Controller
 
         $partnerResult = $centers->map(function ($c) use ($ratingMap, $coverPhotoMap) {
             $profile = $c->profile;
-            $user    = $profile?->user;
-            $userId  = $user?->id;
+            $user = $profile?->user;
+            $userId = $user?->id;
 
             // Photo table wins (any upload path); profile.cover_image is the fallback
             // for centers where no Photo record exists yet.
@@ -281,43 +280,43 @@ class CenterServiceApiController extends Controller
                 ? $coverPhotoMap[$userId]
                 : ($profile?->cover_image ? $this->photoUrl($profile->cover_image) : null);
 
-            $avgRating   = null;
+            $avgRating = null;
             $reviewCount = 0;
             if ($userId && isset($ratingMap[$userId])) {
-                $avgRating   = $ratingMap[$userId]['avg'];
+                $avgRating = $ratingMap[$userId]['avg'];
                 $reviewCount = $ratingMap[$userId]['count'];
             }
 
             // Equipment: only type + is_available (strip id and notes)
-            $equipment = $c->availableEquipment->map(fn($eq) => [
-                'type'         => $eq->type,
+            $equipment = $c->availableEquipment->map(fn ($eq) => [
+                'type' => $eq->type,
                 'is_available' => (bool) $eq->is_available,
             ])->values()->toArray();
 
             return [
-                'id'              => $c->id,
-                'name'            => $c->name,
-                'capacite'        => $c->capacite,
+                'id' => $c->id,
+                'name' => $c->name,
+                'capacite' => $c->capacite,
                 'price_per_night' => (float) $c->price_per_night,
-                'category'        => $c->category,
-                'disponibilite'   => (bool) $c->disponibilite,
-                'latitude'        => $c->latitude  ? (string) $c->latitude  : null,
-                'longitude'       => $c->longitude ? (string) $c->longitude : null,
-                'average_rating'  => $avgRating,
-                'review_count'    => $reviewCount,
+                'category' => $c->category,
+                'disponibilite' => (bool) $c->disponibilite,
+                'latitude' => $c->latitude ? (string) $c->latitude : null,
+                'longitude' => $c->longitude ? (string) $c->longitude : null,
+                'average_rating' => $avgRating,
+                'review_count' => $reviewCount,
                 'profile' => [
-                    'city'        => $profile?->city,
-                    'address'     => $profile?->address,
+                    'city' => $profile?->city,
+                    'address' => $profile?->address,
                     'cover_image' => $coverImage,
-                    'user'        => $user ? ['ville' => $user->ville] : null,
+                    'user' => $user ? ['ville' => $user->ville] : null,
                 ],
                 'available_equipment' => $equipment,
-                'is_partner'      => true,
-                '_source'         => 'partner',
+                'is_partner' => true,
+                '_source' => 'partner',
             ];
         })->values();
 
-        $partnerNameSet = $partnerResult->map(fn($c) => mb_strtolower(trim($c['name'] ?? '')))
+        $partnerNameSet = $partnerResult->map(fn ($c) => mb_strtolower(trim($c['name'] ?? '')))
             ->filter()->flip()->toArray();
 
         // Include active CampingCentre rows not already covered by a ProfileCentre partner.
@@ -327,27 +326,27 @@ class CenterServiceApiController extends Controller
         $nonPartnerResult = \App\Models\CampingCentre::where('status', true)
             ->whereNull('profile_centre_id')
             ->get()
-            ->filter(fn($c) => !isset($partnerNameSet[mb_strtolower(trim($c->nom ?? ''))]))
-            ->map(fn($c) => [
-                'id'              => $c->id,
-                'name'            => $c->nom,
-                'capacite'        => 0,
+            ->filter(fn ($c) => !isset($partnerNameSet[mb_strtolower(trim($c->nom ?? ''))]))
+            ->map(fn ($c) => [
+                'id' => $c->id,
+                'name' => $c->nom,
+                'capacite' => 0,
                 'price_per_night' => 0,
-                'category'        => 'Camping',
-                'disponibilite'   => true,
-                'latitude'        => $c->lat  ? (string) $c->lat  : null,
-                'longitude'       => $c->lng  ? (string) $c->lng  : null,
-                'average_rating'  => null,
-                'review_count'    => 0,
+                'category' => 'Camping',
+                'disponibilite' => true,
+                'latitude' => $c->lat ? (string) $c->lat : null,
+                'longitude' => $c->lng ? (string) $c->lng : null,
+                'average_rating' => null,
+                'review_count' => 0,
                 'profile' => [
-                    'city'        => null,
-                    'address'     => $c->adresse,
+                    'city' => null,
+                    'address' => $c->adresse,
                     'cover_image' => $c->image ? storage_url($c->image) : null,
-                    'user'        => null,
+                    'user' => null,
                 ],
                 'available_equipment' => [],
-                'is_partner'      => (bool) $c->is_partner,
-                '_source'         => 'camping',
+                'is_partner' => (bool) $c->is_partner,
+                '_source' => 'camping',
             ])->values();
 
         return response()->json($partnerResult->concat($nonPartnerResult)->values());
@@ -369,7 +368,7 @@ class CenterServiceApiController extends Controller
         // It already resolves cover_image via profile → album → camping_centre photos.
         $data = $this->formatCenter($center, null, null, true);
         $data['is_partner'] = true;
-        $data['_source']    = 'partner';
+        $data['_source'] = 'partner';
 
         return response()->json($data);
     }
@@ -382,17 +381,17 @@ class CenterServiceApiController extends Controller
         $categories = ServiceCategory::active()
             ->ordered()
             ->get()
-            ->map(fn($cat) => [
-                'id'              => $cat->id,
-                'name'            => $cat->name,
-                'description'     => $cat->description,
-                'is_standard'     => $cat->is_standard,
+            ->map(fn ($cat) => [
+                'id' => $cat->id,
+                'name' => $cat->name,
+                'description' => $cat->description,
+                'is_standard' => $cat->is_standard,
                 'suggested_price' => (float) $cat->suggested_price,
-                'min_price'       => (float) $cat->min_price,
-                'unit'            => $cat->unit,
-                'icon'            => $cat->icon,
-                'sort_order'      => $cat->sort_order,
-                'is_active'       => $cat->is_active,
+                'min_price' => (float) $cat->min_price,
+                'unit' => $cat->unit,
+                'icon' => $cat->icon,
+                'sort_order' => $cat->sort_order,
+                'is_active' => $cat->is_active,
             ]);
 
         return response()->json($categories);
@@ -401,20 +400,13 @@ class CenterServiceApiController extends Controller
     /* ──────────────────────────────────────────────────────────────────
      * POST /centers/calculate-price
      * ────────────────────────────────────────────────────────────────── */
-    public function calculatePrice(Request $request)
+    public function calculatePrice(CalculatePriceRequest $request)
     {
-        $validated = $request->validate([
-            'center_id'                    => 'required|exists:profile_centres,id',
-            'nights'                       => 'required|integer|min:1',
-            'people'                       => 'required|integer|min:1',
-            'services'                     => 'array',
-            'services.*.service_id'        => 'required|exists:service_categories,id',
-            'services.*.quantity'          => 'required|integer|min:1',
-        ]);
+        $validated = $request->validated();
 
         $center = ProfileCentre::with('services')->findOrFail($validated['center_id']);
 
-        $total     = 0;
+        $total = 0;
         $breakdown = [];
 
         $standardService = $center->standardService();
@@ -422,10 +414,10 @@ class CenterServiceApiController extends Controller
             $sub = $standardService->pivot->price * $validated['nights'] * $validated['people'];
             $total += $sub;
             $breakdown[] = [
-                'name'     => $standardService->name,
-                'price'    => $standardService->pivot->price,
-                'nights'   => $validated['nights'],
-                'people'   => $validated['people'],
+                'name' => $standardService->name,
+                'price' => $standardService->pivot->price,
+                'nights' => $validated['nights'],
+                'people' => $validated['people'],
                 'subtotal' => $sub,
             ];
         }
@@ -440,19 +432,19 @@ class CenterServiceApiController extends Controller
                 $sub = $svc->pivot->price * $req['quantity'];
                 $total += $sub;
                 $breakdown[] = [
-                    'name'     => $svc->name,
-                    'price'    => $svc->pivot->price,
+                    'name' => $svc->name,
+                    'price' => $svc->pivot->price,
                     'quantity' => $req['quantity'],
-                    'unit'     => $svc->pivot->unit,
+                    'unit' => $svc->pivot->unit,
                     'subtotal' => $sub,
                 ];
             }
         }
 
         return response()->json([
-            'total'     => round($total, 2),
+            'total' => round($total, 2),
             'breakdown' => $breakdown,
-            'currency'  => 'TND',
+            'currency' => 'TND',
         ]);
     }
 }

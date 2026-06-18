@@ -3,15 +3,16 @@
 namespace App\Http\Controllers\Organizer;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Organizer\InviteSupplierRequest;
+use App\Http\Requests\Organizer\RequestSupplierLinkRequest;
+use App\Http\Requests\Organizer\SearchSuppliersRequest;
+use App\Models\Materielles;
 use App\Models\OrganizerSupplierLink;
 use App\Models\SupplierInvitation;
 use App\Models\User;
-use App\Models\Materielles;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
-use Illuminate\Support\Str;
 
 class OrganizerSupplierController extends Controller
 {
@@ -28,16 +29,16 @@ class OrganizerSupplierController extends Controller
 
         $links = OrganizerSupplierLink::where('organizer_id', $organizer->id)
             ->with(['supplier:id,first_name,last_name,email,avatar,phone_number'])
-            ->when($request->status, fn($q) => $q->where('status', $request->status))
+            ->when($request->status, fn ($q) => $q->where('status', $request->status))
             ->orderByDesc('created_at')
             ->get()
-            ->map(fn($link) => [
-                'id'          => $link->id,
-                'status'      => $link->status,
-                'message'     => $link->message,
-                'created_at'  => $link->created_at,
-                'responded_at'=> $link->responded_at,
-                'supplier'    => $link->supplier,
+            ->map(fn ($link) => [
+                'id' => $link->id,
+                'status' => $link->status,
+                'message' => $link->message,
+                'created_at' => $link->created_at,
+                'responded_at' => $link->responded_at,
+                'supplier' => $link->supplier,
             ]);
 
         return response()->json(['success' => true, 'data' => $links]);
@@ -54,7 +55,7 @@ class OrganizerSupplierController extends Controller
             ->where('status', 'accepted')
             ->with([
                 'supplier:id,first_name,last_name,email,avatar',
-                'supplier.materielles' => fn($q) => $q->where('status', 'up')
+                'supplier.materielles' => fn ($q) => $q->where('status', 'up')
                     ->where('is_rentable', true)
                     ->with('photos', 'category'),
             ])
@@ -66,9 +67,9 @@ class OrganizerSupplierController extends Controller
     /**
      * Search for existing supplier accounts to send association request.
      */
-    public function searchSuppliers(Request $request)
+    public function searchSuppliers(SearchSuppliersRequest $request)
     {
-        $request->validate(['q' => 'required|string|min:2|max:100']);
+        $request->validated();
 
         $organizer = Auth::user();
         $existingIds = OrganizerSupplierLink::where('organizer_id', $organizer->id)
@@ -79,8 +80,8 @@ class OrganizerSupplierController extends Controller
             ->whereNotIn('id', $existingIds)
             ->where(function ($q) use ($request) {
                 $q->where('email', 'like', "%{$request->q}%")
-                  ->orWhere('first_name', 'like', "%{$request->q}%")
-                  ->orWhere('last_name', 'like', "%{$request->q}%");
+                    ->orWhere('first_name', 'like', "%{$request->q}%")
+                    ->orWhere('last_name', 'like', "%{$request->q}%");
             })
             ->select('id', 'first_name', 'last_name', 'email', 'avatar')
             ->limit(15)
@@ -92,14 +93,12 @@ class OrganizerSupplierController extends Controller
     /**
      * Directly associate an existing supplier (no approval required from supplier side).
      */
-    public function requestLink(Request $request)
+    public function requestLink(RequestSupplierLinkRequest $request)
     {
-        $request->validate([
-            'supplier_id' => 'required|exists:users,id',
-        ]);
+        $request->validated();
 
         $organizer = Auth::user();
-        $supplier  = User::findOrFail($request->supplier_id);
+        $supplier = User::findOrFail($request->supplier_id);
 
         if ($supplier->role_id !== 4) {
             return response()->json(['success' => false, 'message' => 'This user is not a supplier.'], 422);
@@ -123,6 +122,7 @@ class OrganizerSupplierController extends Controller
                 return response()->json(['success' => false, 'message' => 'You already have an associated supplier. Remove them first.'], 409);
             }
             $existing->update(['status' => 'accepted', 'responded_at' => now()]);
+
             return response()->json(['success' => true, 'message' => 'Supplier associated.', 'data' => $existing]);
         }
 
@@ -136,8 +136,8 @@ class OrganizerSupplierController extends Controller
 
         $link = OrganizerSupplierLink::create([
             'organizer_id' => $organizer->id,
-            'supplier_id'  => $supplier->id,
-            'status'       => 'accepted',
+            'supplier_id' => $supplier->id,
+            'status' => 'accepted',
             'responded_at' => now(),
         ]);
 
@@ -147,12 +147,9 @@ class OrganizerSupplierController extends Controller
     /**
      * Invite a supplier by email (they don't have an account yet).
      */
-    public function inviteSupplier(Request $request)
+    public function inviteSupplier(InviteSupplierRequest $request)
     {
-        $request->validate([
-            'email'   => 'required|email|max:255',
-            'message' => 'nullable|string|max:500',
-        ]);
+        $request->validated();
 
         $organizer = Auth::user();
 
@@ -160,8 +157,8 @@ class OrganizerSupplierController extends Controller
         $existingUser = User::where('email', $request->email)->first();
         if ($existingUser && $existingUser->role_id === 4) {
             return response()->json([
-                'success'  => false,
-                'message'  => 'This email is already registered as a supplier. Use "request link" instead.',
+                'success' => false,
+                'message' => 'This email is already registered as a supplier. Use "request link" instead.',
                 'supplier' => $existingUser->only('id', 'first_name', 'last_name', 'email'),
             ], 409);
         }
@@ -178,17 +175,17 @@ class OrganizerSupplierController extends Controller
 
         $invitation = SupplierInvitation::create([
             'organizer_id' => $organizer->id,
-            'email'        => $request->email,
-            'status'       => 'pending',
-            'token'        => SupplierInvitation::generateToken(),
-            'expires_at'   => now()->addDays(7),
+            'email' => $request->email,
+            'status' => 'pending',
+            'token' => SupplierInvitation::generateToken(),
+            'expires_at' => now()->addDays(7),
         ]);
 
         // Send invitation email
         try {
             Mail::to($request->email)->send(new \App\Mail\SupplierInvitationMail($invitation, $organizer, $request->message));
         } catch (\Exception $e) {
-            \Log::warning('Failed to send supplier invitation email: ' . $e->getMessage());
+            \Log::warning('Failed to send supplier invitation email: '.$e->getMessage());
         }
 
         return response()->json(['success' => true, 'message' => 'Invitation sent.', 'data' => $invitation], 201);
@@ -266,16 +263,16 @@ class OrganizerSupplierController extends Controller
 
         $links = OrganizerSupplierLink::where('supplier_id', $supplier->id)
             ->with(['organizer:id,first_name,last_name,email,avatar'])
-            ->when($request->status, fn($q) => $q->where('status', $request->status))
+            ->when($request->status, fn ($q) => $q->where('status', $request->status))
             ->orderByDesc('created_at')
             ->get()
-            ->map(fn($link) => [
-                'id'          => $link->id,
-                'status'      => $link->status,
-                'message'     => $link->message,
-                'created_at'  => $link->created_at,
-                'responded_at'=> $link->responded_at,
-                'organizer'   => $link->organizer,
+            ->map(fn ($link) => [
+                'id' => $link->id,
+                'status' => $link->status,
+                'message' => $link->message,
+                'created_at' => $link->created_at,
+                'responded_at' => $link->responded_at,
+                'organizer' => $link->organizer,
             ]);
 
         return response()->json(['success' => true, 'data' => $links]);
@@ -341,16 +338,16 @@ class OrganizerSupplierController extends Controller
             ->where('quantite_dispo', '>', 0)
             ->with(['photos', 'category', 'fournisseur:id,first_name,last_name,avatar'])
             ->get()
-            ->map(fn($m) => [
-                'id'             => $m->id,
-                'nom'            => $m->nom,
-                'description'    => $m->description,
-                'tarif_nuit'     => $m->tarif_nuit,
+            ->map(fn ($m) => [
+                'id' => $m->id,
+                'nom' => $m->nom,
+                'description' => $m->description,
+                'tarif_nuit' => $m->tarif_nuit,
                 'quantite_dispo' => $m->quantite_dispo,
-                'supplier_id'    => $m->fournisseur_id,
-                'supplier'       => $m->fournisseur,
-                'category'       => $m->category,
-                'photos'         => $m->photos,
+                'supplier_id' => $m->fournisseur_id,
+                'supplier' => $m->fournisseur,
+                'category' => $m->category,
+                'photos' => $m->photos,
             ]);
 
         return response()->json(['success' => true, 'data' => $materials, 'has_suppliers' => true]);
@@ -365,14 +362,14 @@ class OrganizerSupplierController extends Controller
             ->where('status', 'accepted')
             ->with(['supplier:id,uuid,first_name,last_name,email,avatar'])
             ->get()
-            ->map(fn($link) => [
-                'id'     => $link->supplier?->id,
-                'uuid'   => $link->supplier?->uuid,
-                'name'   => trim(($link->supplier?->first_name ?? '') . ' ' . ($link->supplier?->last_name ?? '')),
-                'email'  => $link->supplier?->email,
+            ->map(fn ($link) => [
+                'id' => $link->supplier?->id,
+                'uuid' => $link->supplier?->uuid,
+                'name' => trim(($link->supplier?->first_name ?? '').' '.($link->supplier?->last_name ?? '')),
+                'email' => $link->supplier?->email,
                 'avatar' => $link->supplier?->avatar,
             ])
-            ->filter(fn($item) => $item['id'] !== null)
+            ->filter(fn ($item) => $item['id'] !== null)
             ->values();
 
         return response()->json(['success' => true, 'data' => $links]);
@@ -393,10 +390,10 @@ class OrganizerSupplierController extends Controller
 
         return response()->json([
             'success' => true,
-            'data'    => [
-                'email'          => $invitation->email,
+            'data' => [
+                'email' => $invitation->email,
                 'organizer_name' => optional($invitation->organizer)->first_name,
-                'expires_at'     => $invitation->expires_at,
+                'expires_at' => $invitation->expires_at,
             ],
         ]);
     }

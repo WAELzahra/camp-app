@@ -3,9 +3,13 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\StoreCancellationPolicyRequest;
+use App\Http\Requests\Admin\StoreCancellationTierRequest;
+use App\Http\Requests\Admin\UpdateCancellationPolicyRequest;
+use App\Http\Requests\Admin\UpdateCancellationTierRequest;
+use App\Http\Requests\Admin\UpdatePlatformFeeRequest;
 use App\Models\CancellationPolicy;
 use App\Models\CancellationPolicyTier;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class CancellationPolicyController extends Controller
@@ -22,28 +26,18 @@ class CancellationPolicyController extends Controller
     }
 
     // POST /admin/cancellation-policies
-    public function store(Request $request)
+    public function store(StoreCancellationPolicyRequest $request)
     {
-        $validated = $request->validate([
-            'type'                   => 'required|in:centre,materiel,event',
-            'name'                   => 'required|string|max:100',
-            'centre_id'              => 'nullable|exists:users,id',
-            'is_active'              => 'boolean',
-            'grace_period_hours'     => 'nullable|integer|min:0|max:8760',
-            'tiers'                  => 'sometimes|array',
-            'tiers.*.hours_before'   => 'required_with:tiers|integer|min:0',
-            'tiers.*.fee_percentage' => 'required_with:tiers|numeric|min:0|max:100',
-            'tiers.*.label'          => 'nullable|string|max:100',
-        ]);
+        $validated = $request->validated();
 
         DB::beginTransaction();
         try {
             $policy = CancellationPolicy::create([
-                'type'                => $validated['type'],
-                'name'                => $validated['name'],
-                'centre_id'           => $validated['centre_id'] ?? null,
-                'is_active'           => $validated['is_active'] ?? true,
-                'grace_period_hours'  => $validated['grace_period_hours'] ?? null,
+                'type' => $validated['type'],
+                'name' => $validated['name'],
+                'centre_id' => $validated['centre_id'] ?? null,
+                'is_active' => $validated['is_active'] ?? true,
+                'grace_period_hours' => $validated['grace_period_hours'] ?? null,
             ]);
 
             foreach ($validated['tiers'] ?? [] as $tier) {
@@ -51,9 +45,11 @@ class CancellationPolicyController extends Controller
             }
 
             DB::commit();
+
             return response()->json(['policy' => $policy->load('tiers')], 201);
         } catch (\Throwable $e) {
             DB::rollBack();
+
             return response()->json(['message' => 'An unexpected error occurred. Please try again.'], 500);
         }
     }
@@ -70,15 +66,10 @@ class CancellationPolicyController extends Controller
     }
 
     // PUT /admin/cancellation-policies/{id}
-    public function update(Request $request, int $id)
+    public function update(UpdateCancellationPolicyRequest $request, int $id)
     {
         $policy = CancellationPolicy::findOrFail($id);
-        $validated = $request->validate([
-            'name'               => 'sometimes|string|max:100',
-            'is_active'          => 'sometimes|boolean',
-            'centre_id'          => 'nullable|exists:users,id',
-            'grace_period_hours' => 'nullable|integer|min:0|max:8760',
-        ]);
+        $validated = $request->validated();
         $policy->update($validated);
 
         return response()->json(['policy' => $policy->load('tiers')]);
@@ -88,32 +79,25 @@ class CancellationPolicyController extends Controller
     public function destroy(int $id)
     {
         CancellationPolicy::findOrFail($id)->delete();
+
         return response()->json(['message' => 'Policy deleted.']);
     }
 
     // POST /admin/cancellation-policies/{id}/tiers
-    public function storeTier(Request $request, int $id)
+    public function storeTier(StoreCancellationTierRequest $request, int $id)
     {
-        $policy    = CancellationPolicy::findOrFail($id);
-        $validated = $request->validate([
-            'hours_before'   => 'required|integer|min:0',
-            'fee_percentage' => 'required|numeric|min:0|max:100',
-            'label'          => 'nullable|string|max:100',
-        ]);
+        $policy = CancellationPolicy::findOrFail($id);
+        $validated = $request->validated();
         $tier = $policy->tiers()->create($validated);
 
         return response()->json(['tier' => $tier], 201);
     }
 
     // PUT /admin/cancellation-policies/{id}/tiers/{tierId}
-    public function updateTier(Request $request, int $id, int $tierId)
+    public function updateTier(UpdateCancellationTierRequest $request, int $id, int $tierId)
     {
-        $tier      = CancellationPolicyTier::where('policy_id', $id)->findOrFail($tierId);
-        $validated = $request->validate([
-            'hours_before'   => 'sometimes|integer|min:0',
-            'fee_percentage' => 'sometimes|numeric|min:0|max:100',
-            'label'          => 'nullable|string|max:100',
-        ]);
+        $tier = CancellationPolicyTier::where('policy_id', $id)->findOrFail($tierId);
+        $validated = $request->validated();
         $tier->update($validated);
 
         return response()->json(['tier' => $tier]);
@@ -123,6 +107,7 @@ class CancellationPolicyController extends Controller
     public function destroyTier(int $id, int $tierId)
     {
         CancellationPolicyTier::where('policy_id', $id)->findOrFail($tierId)->delete();
+
         return response()->json(['message' => 'Tier deleted.']);
     }
 
@@ -132,20 +117,18 @@ class CancellationPolicyController extends Controller
     public function platformFees()
     {
         $fees = \App\Models\PlatformCancellationFee::orderBy('actor_type')->get();
+
         return response()->json(['fees' => $fees]);
     }
 
     // PUT /admin/platform-cancellation-fees/{actorType}
-    public function updatePlatformFee(Request $request, string $actorType)
+    public function updatePlatformFee(UpdatePlatformFeeRequest $request, string $actorType)
     {
         if (!in_array($actorType, ['camper', 'centre', 'group', 'supplier'])) {
             return response()->json(['message' => 'Invalid actor type.'], 422);
         }
 
-        $validated = $request->validate([
-            'fee_percentage' => 'sometimes|numeric|min:0|max:100',
-            'is_active'      => 'sometimes|boolean',
-        ]);
+        $validated = $request->validated();
 
         $fee = \App\Models\PlatformCancellationFee::firstOrCreate(
             ['actor_type' => $actorType],
