@@ -2,11 +2,12 @@
 
 namespace App\Http\Controllers\Boutique;
 
+use App\Http\Controllers\Controller;
+use App\Http\Requests\Boutique\StoreBoutiqueRequest;
+use App\Http\Requests\Boutique\UpdateBoutiqueRequest;
+use App\Models\Boutiques;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Http\Request;
-use App\Models\Boutiques;
-use App\Http\Controllers\Controller;
 
 class BoutiqueController extends Controller
 {
@@ -18,7 +19,7 @@ class BoutiqueController extends Controller
         $boutiques = Boutiques::with('fournisseur')->get();
 
         return response()->json([
-            'status'    => 'success',
+            'status' => 'success',
             'boutiques' => $boutiques,
         ]);
     }
@@ -45,13 +46,13 @@ class BoutiqueController extends Controller
 
         if (!$boutique) {
             return response()->json([
-                'status'  => 'error',
+                'status' => 'error',
                 'message' => 'No boutique found for this fournisseur.',
             ], 404);
         }
 
         return response()->json([
-            'status'   => 'success',
+            'status' => 'success',
             'boutique' => $boutique,
         ]);
     }
@@ -65,6 +66,7 @@ class BoutiqueController extends Controller
         if (!$user) {
             return response()->json(['status' => 'error', 'message' => 'Supplier not found.'], 404);
         }
+
         return $this->show($user->id);
     }
 
@@ -77,7 +79,7 @@ class BoutiqueController extends Controller
 
         if (!$boutique) {
             return response()->json([
-                'status'  => 'error',
+                'status' => 'error',
                 'message' => 'Boutique not found.',
             ], 404);
         }
@@ -88,7 +90,7 @@ class BoutiqueController extends Controller
         }
 
         return response()->json([
-            'status'   => 'success',
+            'status' => 'success',
             'boutique' => $boutique,
         ]);
     }
@@ -97,25 +99,19 @@ class BoutiqueController extends Controller
      * Create a new boutique for the authenticated fournisseur.
      * A fournisseur can only have one boutique.
      */
-    public function add(Request $request)
+    public function add(StoreBoutiqueRequest $request)
     {
         $userId = Auth::id();
 
         // One boutique per fournisseur
         if (Boutiques::where('fournisseur_id', $userId)->exists()) {
             return response()->json([
-                'status'  => 'error',
+                'status' => 'error',
                 'message' => 'Vous avez déjà une boutique.',
             ], 422);
         }
 
-        $validated = $request->validate([
-            'nom_boutique' => 'required|string|max:255',
-            'description'  => 'nullable|string',
-            'image'        => 'nullable|image|mimes:jpeg,png,jpg,webp|max:5120',
-        ], [
-            'nom_boutique.required' => 'Le nom de la boutique est obligatoire.',
-        ]);
+        $validated = $request->validated();
 
         $imagePath = null;
         if ($request->hasFile('image')) {
@@ -124,15 +120,15 @@ class BoutiqueController extends Controller
 
         $boutique = Boutiques::create([
             'fournisseur_id' => $userId,
-            'nom_boutique'   => $validated['nom_boutique'],
-            'description'    => $validated['description'] ?? null,
-            'path_to_img'    => $imagePath,
-            'status'         => false, // pending admin approval
+            'nom_boutique' => $validated['nom_boutique'],
+            'description' => $validated['description'] ?? null,
+            'path_to_img' => $imagePath,
+            'status' => false, // pending admin approval
         ]);
 
         return response()->json([
-            'status'   => 'success',
-            'message'  => 'Boutique ajoutée avec succès.',
+            'status' => 'success',
+            'message' => 'Boutique ajoutée avec succès.',
             'boutique' => $boutique,
         ], 201);
     }
@@ -140,25 +136,19 @@ class BoutiqueController extends Controller
     /**
      * Update the authenticated fournisseur's boutique.
      */
-    public function update(Request $request)
+    public function update(UpdateBoutiqueRequest $request)
     {
-        $userId   = Auth::id();
+        $userId = Auth::id();
         $boutique = Boutiques::where('fournisseur_id', $userId)->first();
 
         if (!$boutique) {
             return response()->json([
-                'status'  => 'error',
+                'status' => 'error',
                 'message' => 'Aucune boutique trouvée pour mise à jour.',
             ], 404);
         }
 
-        $validated = $request->validate([
-            'nom_boutique' => 'sometimes|required|string|max:255',
-            'description'  => 'nullable|string',
-            'image'        => 'nullable|image|mimes:jpeg,png,jpg,webp|max:5120',
-        ], [
-            'nom_boutique.required' => 'Le nom de la boutique est requis.',
-        ]);
+        $validated = $request->validated();
 
         // Replace image if a new one was uploaded
         if ($request->hasFile('image')) {
@@ -172,8 +162,8 @@ class BoutiqueController extends Controller
         $boutique->update($validated);
 
         return response()->json([
-            'status'   => 'success',
-            'message'  => 'Boutique mise à jour avec succès.',
+            'status' => 'success',
+            'message' => 'Boutique mise à jour avec succès.',
             'boutique' => $boutique,
         ]);
     }
@@ -183,12 +173,12 @@ class BoutiqueController extends Controller
      */
     public function destroy()
     {
-        $userId   = Auth::id();
+        $userId = Auth::id();
         $boutique = Boutiques::where('fournisseur_id', $userId)->first();
 
         if (!$boutique) {
             return response()->json([
-                'status'  => 'error',
+                'status' => 'error',
                 'message' => 'Aucune boutique à supprimer.',
             ], 404);
         }
@@ -201,7 +191,7 @@ class BoutiqueController extends Controller
         $boutique->delete();
 
         return response()->json([
-            'status'  => 'success',
+            'status' => 'success',
             'message' => 'Boutique supprimée avec succès.',
         ]);
     }
