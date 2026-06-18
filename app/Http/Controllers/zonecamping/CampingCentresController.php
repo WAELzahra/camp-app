@@ -2,14 +2,15 @@
 
 namespace App\Http\Controllers\zonecamping;
 
-use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\CampingCentre\SuggestCentreRequest;
 use App\Models\CampingCentre;
-use App\Models\Camping_zones;
 use App\Models\Favoris;
-use App\Models\ProfileCentre;
 use App\Models\Photo;
+use App\Models\ProfileCentre;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+
 class CampingCentresController extends Controller
 {
     /**
@@ -21,7 +22,7 @@ class CampingCentresController extends Controller
 
         return response()->json([
             'status' => 'success',
-            'data' => $centres
+            'data' => $centres,
         ]);
     }
 
@@ -48,7 +49,7 @@ class CampingCentresController extends Controller
                     $photos = Photo::where('camping_centre_id', $campingCentreId)
                         ->limit(5)
                         ->pluck('path_to_img')
-                        ->map(fn($p) => storage_url($p))
+                        ->map(fn ($p) => storage_url($p))
                         ->values()
                         ->toArray();
 
@@ -65,16 +66,16 @@ class CampingCentresController extends Controller
             }
 
             return [
-                'id'          => $centre->id,
-                'name'        => $centre->name,
+                'id' => $centre->id,
+                'name' => $centre->name,
                 'description' => $centre->profile?->bio ?? '',
-                'latitude'    => (float) $centre->latitude,
-                'longitude'   => (float) $centre->longitude,
-                'photos'      => $photos,
+                'latitude' => (float) $centre->latitude,
+                'longitude' => (float) $centre->longitude,
+                'photos' => $photos,
                 'cover_image' => $coverImage,
-                'price'       => $centre->price_per_night,
-                'category'    => $centre->category,
-                'capacity'    => $centre->capacite,
+                'price' => $centre->price_per_night,
+                'category' => $centre->category,
+                'capacity' => $centre->capacite,
             ];
         });
 
@@ -89,11 +90,10 @@ class CampingCentresController extends Controller
     {
         $centre = CampingCentre::with(['zones', 'profileCentre', 'user.profile', 'photos'])->findOrFail($id);
 
-        $pc        = $centre->profileCentre;
+        $pc = $centre->profileCentre;
         $isPartner = (bool) $centre->is_partner;
 
-        $buildUrl = fn(?string $path): ?string =>
-            $path ? (filter_var($path, FILTER_VALIDATE_URL) ? $path : storage_url($path)) : null;
+        $buildUrl = fn (?string $path): ?string => $path ? (filter_var($path, FILTER_VALIDATE_URL) ? $path : storage_url($path)) : null;
 
         $coverImage = $buildUrl($centre->image);
 
@@ -103,11 +103,11 @@ class CampingCentresController extends Controller
             $coverImage = $buildUrl($cover?->path_to_img);
         }
 
-        $photos = $centre->photos->sortByDesc('is_cover')->values()->map(fn($p) => [
-            'id'       => $p->id,
-            'url'      => $buildUrl($p->path_to_img),
+        $photos = $centre->photos->sortByDesc('is_cover')->values()->map(fn ($p) => [
+            'id' => $p->id,
+            'url' => $buildUrl($p->path_to_img),
             'is_cover' => (bool) $p->is_cover,
-        ])->filter(fn($p) => $p['url'])->values();
+        ])->filter(fn ($p) => $p['url'])->values();
 
         // If photos table is empty but the centre has a main image, include it
         if ($photos->isEmpty() && $coverImage) {
@@ -116,50 +116,49 @@ class CampingCentresController extends Controller
 
         return response()->json([
             'status' => 'success',
-            'data'   => [
-                'id'               => $centre->id,
-                'name'             => $centre->nom,
-                'capacite'         => $pc?->capacite ?? 0,
-                'price_per_night'  => $pc ? (float) $pc->price_per_night : 0,
-                'category'         => $pc?->category ?? 'Camping',
-                'disponibilite'    => $pc ? (bool) $pc->disponibilite : true,
-                'latitude'         => $centre->lat  ? (string) $centre->lat  : null,
-                'longitude'        => $centre->lng  ? (string) $centre->lng  : null,
-                'telephone'        => $centre->telephone,
-                'contact_email'    => $pc?->contact_email,
-                'contact_phone'    => $pc?->contact_phone,
-                'manager_name'     => $pc?->manager_name,
-                'average_rating'   => null,
-                'review_count'     => 0,
-                'is_partner'         => $isPartner,
-                'profile_centre_id'  => $centre->profile_centre_id,
-                '_source'            => 'camping',
+            'data' => [
+                'id' => $centre->id,
+                'name' => $centre->nom,
+                'capacite' => $pc?->capacite ?? 0,
+                'price_per_night' => $pc ? (float) $pc->price_per_night : 0,
+                'category' => $pc?->category ?? 'Camping',
+                'disponibilite' => $pc ? (bool) $pc->disponibilite : true,
+                'latitude' => $centre->lat ? (string) $centre->lat : null,
+                'longitude' => $centre->lng ? (string) $centre->lng : null,
+                'telephone' => $centre->telephone,
+                'contact_email' => $pc?->contact_email,
+                'contact_phone' => $pc?->contact_phone,
+                'manager_name' => $pc?->manager_name,
+                'average_rating' => null,
+                'review_count' => 0,
+                'is_partner' => $isPartner,
+                'profile_centre_id' => $centre->profile_centre_id,
+                '_source' => 'camping',
                 'profile' => [
-                    'bio'         => $centre->description,
-                    'city'        => $centre->user?->profile?->city ?? null,
-                    'address'     => $centre->adresse,
+                    'bio' => $centre->description,
+                    'city' => $centre->user?->profile?->city ?? null,
+                    'address' => $centre->adresse,
                     'cover_image' => $coverImage,
-                    'user'        => $centre->user ? [
-                        'id'         => $centre->user->id,
+                    'user' => $centre->user ? [
+                        'id' => $centre->user->id,
                         'first_name' => $centre->user->first_name,
-                        'last_name'  => $centre->user->last_name,
+                        'last_name' => $centre->user->last_name,
                     ] : null,
                 ],
-                'available_services'  => [],
+                'available_services' => [],
                 'available_equipment' => [],
                 'photos' => $photos,
-                'zones' => $centre->zones->map(fn($z) => [
-                    'id'          => $z->id,
-                    'nom'         => $z->nom,
-                    'lat'         => $z->lat,
-                    'lng'         => $z->lng,
+                'zones' => $centre->zones->map(fn ($z) => [
+                    'id' => $z->id,
+                    'nom' => $z->nom,
+                    'lat' => $z->lat,
+                    'lng' => $z->lng,
                     'description' => $z->description,
-                    'status'      => $z->status,
+                    'status' => $z->status,
                 ])->values(),
             ],
         ]);
     }
-
 
     /**
      * Recherche des centres par nom ou type
@@ -178,7 +177,7 @@ class CampingCentresController extends Controller
 
         return response()->json([
             'status' => 'success',
-            'data' => $query->get()
+            'data' => $query->get(),
         ]);
     }
 
@@ -187,45 +186,36 @@ class CampingCentresController extends Controller
      */
     public function listZones($centreId)
     {
-        $centre = CampingCentre::with(['zones' => function($q) {
+        $centre = CampingCentre::with(['zones' => function ($q) {
             $q->where('status', true); // seulement les zones validées
         }])->findOrFail($centreId);
 
         return response()->json([
             'status' => 'success',
             'centre' => $centre,
-            'zones' => $centre->zones
+            'zones' => $centre->zones,
         ]);
     }
 
     /**
      * Permet à un utilisateur de suggérer un nouveau centre
      */
-   public function suggestCentre(Request $request)
-{
-    $data = $request->validate([
-        'nom' => 'required|string',
-        'adresse' => 'required|string',
-        'lat' => 'required|numeric',
-        'lng' => 'required|numeric',
-        'type' => 'nullable|string',
-        'description' => 'nullable|string',
-        'image' => 'nullable|string',
-    ]);
+    public function suggestCentre(SuggestCentreRequest $request)
+    {
+        $data = $request->validated();
 
-    $data['status'] = 0; // privé par défaut
-    $data['validation_status'] = 'pending'; // en attente de validation admin
-    $data['added_by'] = Auth::id();
-    $data['source'] = 'user';
+        $data['status'] = 0; // privé par défaut
+        $data['validation_status'] = 'pending'; // en attente de validation admin
+        $data['added_by'] = Auth::id();
+        $data['source'] = 'user';
 
-    $centre = CampingCentre::create($data);
+        $centre = CampingCentre::create($data);
 
-    return response()->json([
-        'message' => 'Centre suggéré avec succès, en attente de validation',
-        'centre' => $centre
-    ], 201);
-}
-
+        return response()->json([
+            'message' => 'Centre suggéré avec succès, en attente de validation',
+            'centre' => $centre,
+        ], 201);
+    }
 
     /**
      * Lister les centres favoris d'un utilisateur
@@ -233,11 +223,11 @@ class CampingCentresController extends Controller
     public function listFavoris()
     {
         $user = Auth::user();
-        $favoris = $user->favoris()->where('type', 'centre')->with('target')->get()->map(fn($f) => $f->target);
+        $favoris = $user->favoris()->where('type', 'centre')->with('target')->get()->map(fn ($f) => $f->target);
 
         return response()->json([
             'status' => 'success',
-            'favoris' => $favoris
+            'favoris' => $favoris,
         ]);
     }
 
@@ -263,6 +253,7 @@ class CampingCentresController extends Controller
 
         if ($favori) {
             $favori->delete();
+
             return response()->json(['message' => 'Centre retiré des favoris']);
         }
 
@@ -275,9 +266,6 @@ class CampingCentresController extends Controller
         return response()->json(['message' => 'Centre ajouté aux favoris']);
     }
 
-
-
-
     /**
      * Get a centre by its owner user_id — used by announcements "Visit Center" CTA.
      */
@@ -287,37 +275,33 @@ class CampingCentresController extends Controller
         if (!$centre) {
             return response()->json(['message' => 'Centre not found'], 404);
         }
+
         return response()->json(['id' => $centre->id]);
     }
 
-        /**
+    /**
      * Générer un lien de partage (Facebook, WhatsApp, etc.)
      */
-public function shareCentre($id)
-{
-    $centre = CampingCentre::find($id);
+    public function shareCentre($id)
+    {
+        $centre = CampingCentre::find($id);
 
-    if (!$centre) {
+        if (!$centre) {
+            return response()->json([
+                'message' => 'Centre non trouvé',
+            ], 404);
+        }
+
+        $url = url('/centres/'.$centre->id);
+
         return response()->json([
-            'message' => 'Centre non trouvé'
-        ], 404);
+            'message' => 'Lien de partage généré',
+            'url' => $url,
+            'share_links' => [
+                'whatsapp' => 'https://wa.me/?text='.urlencode('Découvrez ce lieu : '.$centre->nom.' '.$url),
+                'facebook' => 'https://www.facebook.com/sharer/sharer.php?u='.$url,
+                'instagram' => $url, // Instagram ne supporte pas de partage direct
+            ],
+        ]);
     }
-
-    $url = url('/centres/' . $centre->id);
-
-    return response()->json([
-        'message' => 'Lien de partage généré',
-        'url' => $url,
-        'share_links' => [
-            'whatsapp'  => "https://wa.me/?text=" . urlencode("Découvrez ce lieu : " . $centre->nom . " " . $url),
-            'facebook'  => "https://www.facebook.com/sharer/sharer.php?u=" . $url,
-            'instagram' => $url // Instagram ne supporte pas de partage direct
-        ]
-    ]);
-}
-
-
-
-
-
 }
