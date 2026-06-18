@@ -3,8 +3,10 @@
 namespace App\Http\Controllers\Center;
 
 use App\Http\Controllers\Controller;
-use App\Models\ProfileCentre;
+use App\Http\Requests\Center\BulkUpdateCenterEquipmentRequest;
+use App\Http\Requests\Center\StoreCenterEquipmentRequest;
 use App\Models\ProfileCenterEquipment;
+use App\Models\ProfileCentre;
 use Illuminate\Http\Request;
 
 class CenterEquipmentController extends Controller
@@ -18,23 +20,19 @@ class CenterEquipmentController extends Controller
         $this->authorize('manage', $center);
 
         $equipmentTypes = ProfileCenterEquipment::TYPE_TRANSLATIONS;
-        
+
         return view('center.equipment.index', compact('center', 'equipmentTypes'));
     }
 
     /**
      * Add/Update equipment for a center
      */
-    public function store(Request $request, $centerId)
+    public function store(StoreCenterEquipmentRequest $request, $centerId)
     {
         $center = ProfileCentre::findOrFail($centerId);
         $this->authorize('manage', $center);
 
-        $validated = $request->validate([
-            'type' => 'required|string|in:' . implode(',', array_keys(ProfileCenterEquipment::TYPE_TRANSLATIONS)),
-            'is_available' => 'boolean',
-            'notes' => 'nullable|string',
-        ]);
+        $validated = $request->validated();
 
         // Check if equipment already exists
         $existingEquipment = $center->equipment()
@@ -62,7 +60,7 @@ class CenterEquipmentController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => $message,
-                'equipment' => $center->equipment()->where('type', $validated['type'])->first()
+                'equipment' => $center->equipment()->where('type', $validated['type'])->first(),
             ]);
         }
 
@@ -83,7 +81,7 @@ class CenterEquipmentController extends Controller
             ->firstOrFail();
 
         $equipment->update([
-            'is_available' => !$equipment->is_available
+            'is_available' => !$equipment->is_available,
         ]);
 
         // Update services_offerts
@@ -93,7 +91,7 @@ class CenterEquipmentController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Equipment availability updated.',
-                'equipment' => $equipment->fresh()
+                'equipment' => $equipment->fresh(),
             ]);
         }
 
@@ -113,14 +111,14 @@ class CenterEquipmentController extends Controller
             ->firstOrFail();
 
         $equipment->delete();
-        
+
         // Update services_offerts
         $center->updateServicesOfferts();
 
         if (request()->ajax()) {
             return response()->json([
                 'success' => true,
-                'message' => 'Equipment removed from center.'
+                'message' => 'Equipment removed from center.',
             ]);
         }
 
@@ -130,16 +128,12 @@ class CenterEquipmentController extends Controller
     /**
      * Bulk update equipment
      */
-    public function bulkUpdate(Request $request, $centerId)
+    public function bulkUpdate(BulkUpdateCenterEquipmentRequest $request, $centerId)
     {
         $center = ProfileCentre::findOrFail($centerId);
         $this->authorize('manage', $center);
 
-        $validated = $request->validate([
-            'equipment' => 'required|array',
-            'equipment.*.type' => 'required|string|in:' . implode(',', array_keys(ProfileCenterEquipment::TYPE_TRANSLATIONS)),
-            'equipment.*.is_available' => 'boolean',
-        ]);
+        $validated = $request->validated();
 
         // Delete existing equipment
         $center->equipment()->delete();
@@ -159,7 +153,7 @@ class CenterEquipmentController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Equipment updated successfully.',
-                'center' => $center->fresh('equipment')
+                'center' => $center->fresh('equipment'),
             ]);
         }
 

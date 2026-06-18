@@ -2,11 +2,13 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\ProfileCentre;
+use App\Http\Requests\Center\StoreProfileCentreRequest;
+use App\Http\Requests\Center\UpdateProfileCentreRequest;
+use App\Http\Requests\Center\UpdateProfileCentreServicesRequest;
 use App\Models\Profile;
-use App\Models\ServiceCategory;
 use App\Models\ProfileCenterEquipment;
-use App\Models\ProfileCenterService;
+use App\Models\ProfileCentre;
+use App\Models\ServiceCategory;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -21,7 +23,7 @@ class ProfileCentreController extends Controller
             ->where('disponibilite', true)
             ->orderBy('created_at', 'desc')
             ->paginate(12);
-            
+
         return view('centers.index', compact('centers'));
     }
 
@@ -43,17 +45,17 @@ class ProfileCentreController extends Controller
 
         $serviceCategories = ServiceCategory::active()->ordered()->get();
         $equipmentTypes = ProfileCenterEquipment::TYPE_TRANSLATIONS;
-        
+
         return view('centers.create', compact('serviceCategories', 'equipmentTypes'));
     }
 
     /**
      * Store a newly created center.
      */
-    public function store(Request $request)
+    public function store(StoreProfileCentreRequest $request)
     {
         $user = Auth::user();
-        
+
         // Check if user already has a center
         $existingCenter = ProfileCentre::whereHas('profile', function ($query) use ($user) {
             $query->where('user_id', $user->id);
@@ -64,33 +66,7 @@ class ProfileCentreController extends Controller
                 ->with('error', 'You already have a center.');
         }
 
-        $validated = $request->validate([
-            // Center basic info
-            'name' => 'required|string|max:255',
-            'adresse' => 'required|string|max:500',
-            'capacite' => 'required|integer|min:1',
-            'price_per_night' => 'required|numeric|min:0',
-            'category' => 'required|string|max:100',
-            'latitude' => 'nullable|numeric',
-            'longitude' => 'nullable|numeric',
-            'contact_email' => 'required|email',
-            'contact_phone' => 'required|string|max:20',
-            'manager_name' => 'nullable|string|max:255',
-            'established_date' => 'nullable|date',
-            'additional_services_description' => 'nullable|string',
-            
-            // Services
-            'services' => 'nullable|array',
-            'services.*.service_category_id' => 'required|exists:service_categories,id',
-            'services.*.price' => 'required|numeric|min:0',
-            'services.*.is_available' => 'boolean',
-            'services.*.is_standard' => 'boolean',
-            
-            // Equipment
-            'equipment' => 'nullable|array',
-            'equipment.*.type' => 'required|string|in:' . implode(',', array_keys(ProfileCenterEquipment::TYPE_TRANSLATIONS)),
-            'equipment.*.is_available' => 'boolean',
-        ]);
+        $validated = $request->validated();
 
         // Create profile for center
         $profile = Profile::create([
@@ -144,9 +120,9 @@ class ProfileCentreController extends Controller
         $profileCentre->load([
             'profile.user',
             'availableServices',
-            'availableEquipment'
+            'availableEquipment',
         ]);
-        
+
         // Get similar centers
         $similarCenters = ProfileCentre::where('category', $profileCentre->category)
             ->where('id', '!=', $profileCentre->id)
@@ -154,7 +130,7 @@ class ProfileCentreController extends Controller
             ->with('availableServices')
             ->take(3)
             ->get();
-            
+
         return view('centers.show', compact('profileCentre', 'similarCenters'));
     }
 
@@ -165,41 +141,23 @@ class ProfileCentreController extends Controller
     {
         // Authorization check - user must own this center
         $this->authorize('update', $profileCentre);
-        
+
         $profileCentre->load(['services', 'equipment']);
         $serviceCategories = ServiceCategory::active()->ordered()->get();
         $equipmentTypes = ProfileCenterEquipment::TYPE_TRANSLATIONS;
-        
+
         return view('centers.edit', compact('profileCentre', 'serviceCategories', 'equipmentTypes'));
     }
 
     /**
      * Update the specified center.
      */
-    public function update(Request $request, ProfileCentre $profileCentre)
+    public function update(UpdateProfileCentreRequest $request, ProfileCentre $profileCentre)
     {
         // Authorization check
         $this->authorize('update', $profileCentre);
 
-        $validated = $request->validate([
-            // Center basic info
-            'name' => 'required|string|max:255',
-            'adresse' => 'required|string|max:500',
-            'capacite' => 'required|integer|min:1',
-            'price_per_night' => 'required|numeric|min:0',
-            'category' => 'required|string|max:100',
-            'latitude' => 'nullable|numeric',
-            'longitude' => 'nullable|numeric',
-            'contact_email' => 'required|email',
-            'contact_phone' => 'required|string|max:20',
-            'manager_name' => 'nullable|string|max:255',
-            'established_date' => 'nullable|date',
-            'additional_services_description' => 'nullable|string',
-            'disponibilite' => 'boolean',
-            
-            // Profile bio
-            'bio' => 'nullable|string',
-        ]);
+        $validated = $request->validated();
 
         // Update profile bio
         $profileCentre->profile->update([
@@ -236,7 +194,7 @@ class ProfileCentreController extends Controller
         $this->authorize('delete', $profileCentre);
 
         $profileCentre->delete();
-        
+
         // Also delete the associated profile
         $profileCentre->profile->delete();
 
@@ -250,35 +208,22 @@ class ProfileCentreController extends Controller
     public function showServices(ProfileCentre $profileCentre)
     {
         $this->authorize('update', $profileCentre);
-        
+
         $profileCentre->load(['services', 'equipment']);
         $serviceCategories = ServiceCategory::active()->ordered()->get();
         $equipmentTypes = ProfileCenterEquipment::TYPE_TRANSLATIONS;
-        
+
         return view('centers.services', compact('profileCentre', 'serviceCategories', 'equipmentTypes'));
     }
 
     /**
      * Update center services
      */
-    public function updateServices(Request $request, ProfileCentre $profileCentre)
+    public function updateServices(UpdateProfileCentreServicesRequest $request, ProfileCentre $profileCentre)
     {
         $this->authorize('update', $profileCentre);
 
-        $validated = $request->validate([
-            'services' => 'nullable|array',
-            'services.*.service_category_id' => 'required|exists:service_categories,id',
-            'services.*.price' => 'required|numeric|min:0',
-            'services.*.is_available' => 'boolean',
-            'services.*.is_standard' => 'boolean',
-            'services.*.min_quantity' => 'nullable|integer|min:1',
-            'services.*.max_quantity' => 'nullable|integer|min:1',
-            
-            'equipment' => 'nullable|array',
-            'equipment.*.type' => 'required|string|in:' . implode(',', array_keys(ProfileCenterEquipment::TYPE_TRANSLATIONS)),
-            'equipment.*.is_available' => 'boolean',
-            'equipment.*.notes' => 'nullable|string',
-        ]);
+        $validated = $request->validated();
 
         // Update services
         if (isset($validated['services'])) {
@@ -289,7 +234,7 @@ class ProfileCentreController extends Controller
         if (isset($validated['equipment'])) {
             // Delete existing equipment
             $profileCentre->equipment()->delete();
-            
+
             // Create new equipment
             foreach ($validated['equipment'] as $eq) {
                 $profileCentre->addEquipment(
@@ -312,11 +257,11 @@ class ProfileCentreController extends Controller
         $this->authorize('update', $profileCentre);
 
         $profileCentre->update([
-            'disponibilite' => !$profileCentre->disponibilite
+            'disponibilite' => !$profileCentre->disponibilite,
         ]);
 
         $status = $profileCentre->disponibilite ? 'available' : 'unavailable';
-        
+
         return back()->with('success', "Center is now {$status} for bookings.");
     }
 
@@ -333,8 +278,8 @@ class ProfileCentreController extends Controller
             $search = $request->search;
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'LIKE', "%{$search}%")
-                  ->orWhere('adresse', 'LIKE', "%{$search}%")
-                  ->orWhere('category', 'LIKE', "%{$search}%");
+                    ->orWhere('adresse', 'LIKE', "%{$search}%")
+                    ->orWhere('category', 'LIKE', "%{$search}%");
             });
         }
 
@@ -360,7 +305,7 @@ class ProfileCentreController extends Controller
         if ($request->has('equipment')) {
             $query->whereHas('equipment', function ($q) use ($request) {
                 $q->where('type', $request->equipment)
-                  ->where('is_available', true);
+                    ->where('is_available', true);
             });
         }
 
@@ -368,12 +313,12 @@ class ProfileCentreController extends Controller
         if ($request->has('service')) {
             $query->whereHas('services', function ($q) use ($request) {
                 $q->where('name', 'LIKE', "%{$request->service}%")
-                  ->where('profile_center_services.is_available', true);
+                    ->where('profile_center_services.is_available', true);
             });
         }
 
         $centers = $query->orderBy('created_at', 'desc')->paginate(12);
-        
+
         return view('centers.search', compact('centers'));
     }
 
@@ -383,7 +328,7 @@ class ProfileCentreController extends Controller
     public function myCenter()
     {
         $user = Auth::user();
-        
+
         $center = ProfileCentre::whereHas('profile', function ($query) use ($user) {
             $query->where('user_id', $user->id);
         })->first();
@@ -394,7 +339,7 @@ class ProfileCentreController extends Controller
         }
 
         $center->load(['services', 'equipment']);
-        
+
         return view('centers.dashboard', compact('center'));
     }
 
@@ -408,7 +353,7 @@ class ProfileCentreController extends Controller
             ->where('disponibilite', true)
             ->orderBy('created_at', 'desc')
             ->paginate(12);
-            
+
         return view('centers.category', compact('centers', 'category'));
     }
 }

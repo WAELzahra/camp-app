@@ -3,11 +3,12 @@
 namespace App\Http\Controllers\Center;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Center\BulkUpdateCenterServicesRequest;
+use App\Http\Requests\Center\StoreCenterServiceRequest;
+use App\Http\Requests\Center\UpdateCenterServiceAvailabilityRequest;
+use App\Models\ProfileCenterService;
 use App\Models\ProfileCentre;
 use App\Models\ServiceCategory;
-use App\Models\ProfileCenterService;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 
 class CenterServiceController extends Controller
 {
@@ -17,33 +18,24 @@ class CenterServiceController extends Controller
     public function index($centerId)
     {
         $center = ProfileCentre::with(['services', 'equipment'])->findOrFail($centerId);
-        
+
         // Check authorization
         $this->authorize('manage', $center);
-        
+
         $serviceCategories = ServiceCategory::active()->ordered()->get();
-        
+
         return view('center.services.index', compact('center', 'serviceCategories'));
     }
 
     /**
      * Add/Update service for a center
      */
-    public function store(Request $request, $centerId)
+    public function store(StoreCenterServiceRequest $request, $centerId)
     {
         $center = ProfileCentre::findOrFail($centerId);
         $this->authorize('manage', $center);
 
-        $validated = $request->validate([
-            'service_category_id' => 'required|exists:service_categories,id',
-            'price' => 'required|numeric|min:0',
-            'unit' => 'nullable|string|max:50',
-            'description' => 'nullable|string',
-            'is_available' => 'boolean',
-            'is_standard' => 'boolean',
-            'min_quantity' => 'integer|min:1',
-            'max_quantity' => 'nullable|integer|min:1',
-        ]);
+        $validated = $request->validated();
 
         // Check if service already exists for this center
         $existingService = $center->centerServices()
@@ -71,7 +63,7 @@ class CenterServiceController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => $message,
-                'center' => $center->fresh(['services', 'equipment'])
+                'center' => $center->fresh(['services', 'equipment']),
             ]);
         }
 
@@ -82,7 +74,7 @@ class CenterServiceController extends Controller
     /**
      * Update service availability
      */
-    public function updateAvailability(Request $request, $centerId, $serviceId)
+    public function updateAvailability(UpdateCenterServiceAvailabilityRequest $request, $centerId, $serviceId)
     {
         $center = ProfileCentre::findOrFail($centerId);
         $this->authorize('manage', $center);
@@ -91,19 +83,16 @@ class CenterServiceController extends Controller
             ->where('id', $serviceId)
             ->firstOrFail();
 
-        $validated = $request->validate([
-            'is_available' => 'required|boolean',
-            'price' => 'nullable|numeric|min:0',
-        ]);
+        $validated = $request->validated();
 
         $updateData = ['is_available' => $validated['is_available']];
-        
+
         if (isset($validated['price'])) {
             $updateData['price'] = $validated['price'];
         }
 
         $service->update($updateData);
-        
+
         // Update services_offerts
         $center->updateServicesOfferts();
 
@@ -111,7 +100,7 @@ class CenterServiceController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Service availability updated.',
-                'service' => $service->fresh()
+                'service' => $service->fresh(),
             ]);
         }
 
@@ -136,14 +125,14 @@ class CenterServiceController extends Controller
         }
 
         $service->delete();
-        
+
         // Update services_offerts
         $center->updateServicesOfferts();
 
         if (request()->ajax()) {
             return response()->json([
                 'success' => true,
-                'message' => 'Service removed from center.'
+                'message' => 'Service removed from center.',
             ]);
         }
 
@@ -153,18 +142,12 @@ class CenterServiceController extends Controller
     /**
      * Bulk update center services
      */
-    public function bulkUpdate(Request $request, $centerId)
+    public function bulkUpdate(BulkUpdateCenterServicesRequest $request, $centerId)
     {
         $center = ProfileCentre::findOrFail($centerId);
         $this->authorize('manage', $center);
 
-        $validated = $request->validate([
-            'services' => 'required|array',
-            'services.*.service_category_id' => 'required|exists:service_categories,id',
-            'services.*.price' => 'required|numeric|min:0',
-            'services.*.is_available' => 'boolean',
-            'services.*.is_standard' => 'boolean',
-        ]);
+        $validated = $request->validated();
 
         $center->syncServices($validated['services']);
 
@@ -172,7 +155,7 @@ class CenterServiceController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Services updated successfully.',
-                'center' => $center->fresh(['services', 'equipment'])
+                'center' => $center->fresh(['services', 'equipment']),
             ]);
         }
 
@@ -186,7 +169,7 @@ class CenterServiceController extends Controller
     public function apiIndex($centerId)
     {
         $center = ProfileCentre::with(['services', 'equipment'])->findOrFail($centerId);
-        
+
         $services = $center->availableServices()->get()->map(function ($service) {
             return [
                 'id' => $service->id,
@@ -215,7 +198,7 @@ class CenterServiceController extends Controller
                 'name' => $center->name,
                 'price_per_night' => $center->price_per_night,
                 'category' => $center->category,
-            ]
+            ],
         ]);
     }
 }
