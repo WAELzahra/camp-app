@@ -3,9 +3,9 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\StoreServiceCategoryRequest;
+use App\Http\Requests\Admin\UpdateServiceCategoryRequest;
 use App\Models\ServiceCategory;
-use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
 
 class ServiceCategoryController extends Controller
 {
@@ -15,7 +15,7 @@ class ServiceCategoryController extends Controller
     public function index()
     {
         $serviceCategories = ServiceCategory::orderBy('sort_order')->orderBy('name')->get();
-        
+
         return view('admin.service-categories.index', compact('serviceCategories'));
     }
 
@@ -30,19 +30,9 @@ class ServiceCategoryController extends Controller
     /**
      * Store a newly created service category.
      */
-    public function store(Request $request)
+    public function store(StoreServiceCategoryRequest $request)
     {
-        $validated = $request->validate([
-            'name' => 'required|string|max:255|unique:service_categories',
-            'description' => 'nullable|string',
-            'is_standard' => 'boolean',
-            'suggested_price' => 'required|numeric|min:0',
-            'min_price' => 'required|numeric|min:0|lte:suggested_price',
-            'unit' => 'required|string|max:50',
-            'icon' => 'nullable|string|max:50',
-            'sort_order' => 'integer|min:0',
-            'is_active' => 'boolean',
-        ]);
+        $validated = $request->validated();
 
         ServiceCategory::create($validated);
 
@@ -69,24 +59,9 @@ class ServiceCategoryController extends Controller
     /**
      * Update the specified service category.
      */
-    public function update(Request $request, ServiceCategory $serviceCategory)
+    public function update(UpdateServiceCategoryRequest $request, ServiceCategory $serviceCategory)
     {
-        $validated = $request->validate([
-            'name' => [
-                'required',
-                'string',
-                'max:255',
-                Rule::unique('service_categories')->ignore($serviceCategory->id)
-            ],
-            'description' => 'nullable|string',
-            'is_standard' => 'boolean',
-            'suggested_price' => 'required|numeric|min:0',
-            'min_price' => 'required|numeric|min:0|lte:suggested_price',
-            'unit' => 'required|string|max:50',
-            'icon' => 'nullable|string|max:50',
-            'sort_order' => 'integer|min:0',
-            'is_active' => 'boolean',
-        ]);
+        $validated = $request->validated();
 
         $serviceCategory->update($validated);
 
@@ -117,7 +92,7 @@ class ServiceCategoryController extends Controller
     public function toggleActive(ServiceCategory $serviceCategory)
     {
         $serviceCategory->update([
-            'is_active' => !$serviceCategory->is_active
+            'is_active' => !$serviceCategory->is_active,
         ]);
 
         return back()->with('success', 'Service category status updated.');

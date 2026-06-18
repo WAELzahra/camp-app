@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\BulkToggleEquipmentRequest;
+use App\Http\Requests\Admin\UpdateAdminEquipmentRequest;
 use App\Models\ProfileCenterEquipment;
 use Illuminate\Http\Request;
 
@@ -29,21 +31,20 @@ class AdminEquipmentController extends Controller
         if ($request->filled('search')) {
             $search = $request->search;
             $query->where(function ($q) use ($search) {
-                $q->where('type',  'like', "%{$search}%")
-                  ->orWhere('notes', 'like', "%{$search}%")
-                  ->orWhereHas('profileCenter', fn($q2) =>
-                      $q2->where('name', 'like', "%{$search}%")
-                         ->orWhere('manager_name', 'like', "%{$search}%")
-                  );
+                $q->where('type', 'like', "%{$search}%")
+                    ->orWhere('notes', 'like', "%{$search}%")
+                    ->orWhereHas('profileCenter', fn ($q2) => $q2->where('name', 'like', "%{$search}%")
+                        ->orWhere('manager_name', 'like', "%{$search}%")
+                    );
             });
         }
 
-        $perPage   = min((int) $request->get('per_page', 50), 200);
+        $perPage = min((int) $request->get('per_page', 50), 200);
         $equipment = $query->paginate($perPage);
 
         return response()->json([
             'success' => true,
-            'data'    => $equipment,
+            'data' => $equipment,
         ]);
     }
 
@@ -56,14 +57,11 @@ class AdminEquipmentController extends Controller
         return response()->json(['success' => true, 'data' => $eq]);
     }
 
-    public function update(Request $request, $id)
+    public function update(UpdateAdminEquipmentRequest $request, $id)
     {
         $eq = ProfileCenterEquipment::findOrFail($id);
 
-        $request->validate([
-            'is_available' => 'sometimes|boolean',
-            'notes'        => 'sometimes|nullable|string|max:500',
-        ]);
+        $request->validated();
 
         $eq->update($request->only(['is_available', 'notes']));
 
@@ -77,27 +75,23 @@ class AdminEquipmentController extends Controller
         return response()->json(['success' => true, 'message' => 'Equipment deleted.']);
     }
 
-    public function bulkToggle(Request $request)
+    public function bulkToggle(BulkToggleEquipmentRequest $request)
     {
-        $request->validate([
-            'ids'          => 'required|array|min:1',
-            'ids.*'        => 'integer',
-            'is_available' => 'required|boolean',
-        ]);
+        $request->validated();
 
         ProfileCenterEquipment::whereIn('id', $request->ids)
             ->update(['is_available' => $request->is_available]);
 
         return response()->json([
             'success' => true,
-            'message' => count($request->ids) . ' equipment item(s) updated.',
+            'message' => count($request->ids).' equipment item(s) updated.',
         ]);
     }
 
     /** Summary counts grouped by type — for the management page stats bar */
     public function stats()
     {
-        $total     = ProfileCenterEquipment::count();
+        $total = ProfileCenterEquipment::count();
         $available = ProfileCenterEquipment::where('is_available', true)->count();
 
         $byType = ProfileCenterEquipment::selectRaw('type, count(*) as total, sum(is_available) as available_count')
@@ -107,11 +101,11 @@ class AdminEquipmentController extends Controller
 
         return response()->json([
             'success' => true,
-            'data'    => [
-                'total'     => $total,
+            'data' => [
+                'total' => $total,
                 'available' => $available,
-                'offline'   => $total - $available,
-                'by_type'   => $byType,
+                'offline' => $total - $available,
+                'by_type' => $byType,
             ],
         ]);
     }

@@ -3,8 +3,8 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\UpdateExpenseStatusRequest;
 use App\Models\Expense;
-use App\Models\User;
 use Illuminate\Http\Request;
 
 /**
@@ -30,11 +30,11 @@ class AdminExpenseController extends Controller
             $s = $request->search;
             $query->where(function ($q) use ($s) {
                 $q->where('titre', 'like', "%{$s}%")
-                  ->orWhere('reference', 'like', "%{$s}%")
-                  ->orWhereHas('user', fn($u) => $u
-                      ->where('first_name', 'like', "%{$s}%")
-                      ->orWhere('last_name',  'like', "%{$s}%")
-                      ->orWhere('email',       'like', "%{$s}%"));
+                    ->orWhere('reference', 'like', "%{$s}%")
+                    ->orWhereHas('user', fn ($u) => $u
+                        ->where('first_name', 'like', "%{$s}%")
+                        ->orWhere('last_name', 'like', "%{$s}%")
+                        ->orWhere('email', 'like', "%{$s}%"));
             });
         }
         if ($request->filled('date_from')) {
@@ -56,9 +56,9 @@ class AdminExpenseController extends Controller
     public function stats()
     {
         $totalMontant = Expense::where('status', 'confirmé')->sum('montant');
-        $totalCount   = Expense::count();
-        $brouillons   = Expense::where('status', 'brouillon')->count();
-        $rembourses   = Expense::where('status', 'remboursé')->count();
+        $totalCount = Expense::count();
+        $brouillons = Expense::where('status', 'brouillon')->count();
+        $rembourses = Expense::where('status', 'remboursé')->count();
 
         $parCategorie = Expense::where('status', 'confirmé')
             ->selectRaw('categorie, SUM(montant) as total, COUNT(*) as count')
@@ -84,7 +84,7 @@ class AdminExpenseController extends Controller
 
         return response()->json([
             'success' => true,
-            'data'    => compact(
+            'data' => compact(
                 'totalMontant', 'totalCount', 'brouillons', 'rembourses',
                 'parCategorie', 'parMois', 'topUsers'
             ),
@@ -92,11 +92,9 @@ class AdminExpenseController extends Controller
     }
 
     /** Modifier le statut d'une dépense (ex: marquer comme remboursé) */
-    public function updateStatus(Request $request, $id)
+    public function updateStatus(UpdateExpenseStatusRequest $request, $id)
     {
-        $request->validate([
-            'status' => 'required|in:brouillon,confirmé,remboursé',
-        ]);
+        $request->validated();
 
         $expense = Expense::with('user:id,first_name,last_name,email')->findOrFail($id);
         $expense->update(['status' => $request->status]);
@@ -104,7 +102,7 @@ class AdminExpenseController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Statut mis à jour.',
-            'data'    => $expense->fresh(['user:id,first_name,last_name,email', 'event:id,title']),
+            'data' => $expense->fresh(['user:id,first_name,last_name,email', 'event:id,title']),
         ]);
     }
 
@@ -113,6 +111,7 @@ class AdminExpenseController extends Controller
     {
         $expense = Expense::findOrFail($id);
         $expense->delete();
+
         return response()->json(['success' => true, 'message' => 'Dépense supprimée.']);
     }
 }

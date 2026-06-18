@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\Expense\StoreExpenseRequest;
+use App\Http\Requests\Expense\UpdateExpenseRequest;
 use App\Models\Expense;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -31,8 +33,8 @@ class ExpenseController extends Controller
             $s = $request->search;
             $query->where(function ($q) use ($s) {
                 $q->where('titre', 'like', "%{$s}%")
-                  ->orWhere('reference', 'like', "%{$s}%")
-                  ->orWhere('notes', 'like', "%{$s}%");
+                    ->orWhere('reference', 'like', "%{$s}%")
+                    ->orWhere('notes', 'like', "%{$s}%");
             });
         }
         if ($request->filled('date_from')) {
@@ -71,28 +73,19 @@ class ExpenseController extends Controller
             ->limit(12)
             ->get();
 
-        $count   = Expense::forUser($userId)->count();
+        $count = Expense::forUser($userId)->count();
         $brouill = Expense::forUser($userId)->where('status', 'brouillon')->count();
 
         return response()->json([
             'success' => true,
-            'data'    => compact('total', 'parCategorie', 'parMois', 'count', 'brouill'),
+            'data' => compact('total', 'parCategorie', 'parMois', 'count', 'brouill'),
         ]);
     }
 
     /** Créer une dépense */
-    public function store(Request $request)
+    public function store(StoreExpenseRequest $request)
     {
-        $data = $request->validate([
-            'titre'        => 'required|string|max:255',
-            'montant'      => 'required|numeric|min:0.01',
-            'categorie'    => 'required|in:transport,hébergement,nourriture,équipement,marketing,maintenance,salaires,location,formation,communication,assurance,autre',
-            'status'       => 'sometimes|in:brouillon,confirmé,remboursé',
-            'date_depense' => 'required|date',
-            'event_id'     => 'nullable|exists:events,id',
-            'reference'    => 'nullable|string|max:100',
-            'notes'        => 'nullable|string|max:1000',
-        ]);
+        $data = $request->validated();
 
         $expense = Expense::create(array_merge($data, ['user_id' => Auth::id()]));
 
@@ -103,24 +96,16 @@ class ExpenseController extends Controller
     public function show($id)
     {
         $expense = Expense::forUser(Auth::id())->with('event:id,title')->findOrFail($id);
+
         return response()->json(['success' => true, 'data' => $expense]);
     }
 
     /** Modifier une dépense */
-    public function update(Request $request, $id)
+    public function update(UpdateExpenseRequest $request, $id)
     {
         $expense = Expense::forUser(Auth::id())->findOrFail($id);
 
-        $data = $request->validate([
-            'titre'        => 'sometimes|string|max:255',
-            'montant'      => 'sometimes|numeric|min:0.01',
-            'categorie'    => 'sometimes|in:transport,hébergement,nourriture,équipement,marketing,maintenance,salaires,location,formation,communication,assurance,autre',
-            'status'       => 'sometimes|in:brouillon,confirmé,remboursé',
-            'date_depense' => 'sometimes|date',
-            'event_id'     => 'nullable|exists:events,id',
-            'reference'    => 'nullable|string|max:100',
-            'notes'        => 'nullable|string|max:1000',
-        ]);
+        $data = $request->validated();
 
         $expense->update($data);
 
@@ -132,6 +117,7 @@ class ExpenseController extends Controller
     {
         $expense = Expense::forUser(Auth::id())->findOrFail($id);
         $expense->delete();
+
         return response()->json(['success' => true, 'message' => 'Dépense supprimée.']);
     }
 }
