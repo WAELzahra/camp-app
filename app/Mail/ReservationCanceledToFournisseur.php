@@ -3,10 +3,11 @@
 namespace App\Mail;
 
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
 use Illuminate\Queue\SerializesModels;
 
-class ReservationCanceledToFournisseur extends Mailable
+class ReservationCanceledToFournisseur extends Mailable implements ShouldQueue
 {
     use Queueable, SerializesModels;
 
@@ -20,6 +21,6 @@ class ReservationCanceledToFournisseur extends Mailable
     public function build()
     {
         return $this->subject('A Reservation Has Been Canceled')
-                    ->markdown('emails.canceled_to_fournisseur');
+            ->markdown('emails.canceled_to_fournisseur');
     }
 }

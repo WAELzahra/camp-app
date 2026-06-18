@@ -4,14 +4,16 @@ namespace App\Mail;
 
 use App\Models\Reservations_centre;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
 use Illuminate\Queue\SerializesModels;
 
-class ReservationUpdatedToCentre extends Mailable
+class ReservationUpdatedToCentre extends Mailable implements ShouldQueue
 {
     use Queueable, SerializesModels;
 
     public $reservation;
+
     public $frontendUrl;
 
     public function __construct(Reservations_centre $reservation)
@@ -23,6 +25,6 @@ class ReservationUpdatedToCentre extends Mailable
     public function build()
     {
         return $this->subject('Reservation Modified by Camper - TunisiaCamp')
-                    ->markdown('emails.reservation-updated-to-centre');
+            ->markdown('emails.reservation-updated-to-centre');
     }
 }

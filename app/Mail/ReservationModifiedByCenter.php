@@ -5,16 +5,20 @@ namespace App\Mail;
 use App\Models\Reservations_centre;
 use Carbon\Carbon;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
 use Illuminate\Queue\SerializesModels;
 
-class ReservationModifiedByCenter extends Mailable
+class ReservationModifiedByCenter extends Mailable implements ShouldQueue
 {
     use Queueable, SerializesModels;
 
     public $reservation;
+
     public $modificationData;
+
     public $frontendUrl;
+
     public $supportEmail;
 
     public function __construct(Reservations_centre $reservation, array $modificationData)
@@ -31,16 +35,16 @@ class ReservationModifiedByCenter extends Mailable
         $rejectedServices = $this->reservation->serviceItems
             ->where('status', 'rejected')
             ->where('rejected_by', 'center');
-            
+
         // Get accepted services (status = 'approved')
         $acceptedServices = $this->reservation->serviceItems
             ->where('status', 'approved');
-        
+
         // Format dates
         $startDate = Carbon::parse($this->reservation->date_debut);
         $endDate = Carbon::parse($this->reservation->date_fin);
         $duration = $endDate->diffInDays($startDate) + 1;
-        
+
         return $this->subject('Reservation Modified - TunisiaCamp')
             ->markdown('emails.reservation-modified')
             ->with([

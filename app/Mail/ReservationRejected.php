@@ -2,19 +2,23 @@
 
 namespace App\Mail;
 
-use App\Models\Reservations_centre;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
 use Illuminate\Queue\SerializesModels;
 
-class ReservationRejected extends Mailable
+class ReservationRejected extends Mailable implements ShouldQueue
 {
     use Queueable, SerializesModels;
 
     public $user;
+
     public $reason;
+
     public $reservation;
+
     public $frontendUrl;
+
     public $supportEmail;
 
     public function __construct($user, $reason = null, $reservation = null)
@@ -29,6 +33,6 @@ class ReservationRejected extends Mailable
     public function build()
     {
         return $this->subject('Reservation Rejected - TunisiaCamp')
-                    ->markdown('emails.reservation-rejected');
+            ->markdown('emails.reservation-rejected');
     }
 }

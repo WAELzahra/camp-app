@@ -3,21 +3,26 @@
 namespace App\Mail;
 
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
 use Illuminate\Queue\SerializesModels;
-use Carbon\Carbon;
 
-class PasswordResetMail extends Mailable
+class PasswordResetMail extends Mailable implements ShouldQueue
 {
     use Queueable, SerializesModels;
-    
+
     public $code;
+
     public $resetLink;
+
     public $frontendUrl;
+
     public $user;
+
     public $expiresAt;
-    
+
     public function __construct(
         string $code,
         string $resetLink,
@@ -31,7 +36,7 @@ class PasswordResetMail extends Mailable
         $this->user = $user;
         $this->expiresAt = $expiresAt ?? now()->addMinutes(30);
     }
-    
+
     public function build()
     {
         return $this->subject('Reset Your TunisiaCamp Password')

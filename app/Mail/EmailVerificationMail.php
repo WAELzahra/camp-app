@@ -3,27 +3,32 @@
 namespace App\Mail;
 
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
 use Illuminate\Queue\SerializesModels;
-use Carbon\Carbon;
 
-class EmailVerificationMail extends Mailable
+class EmailVerificationMail extends Mailable implements ShouldQueue
 {
     use Queueable, SerializesModels;
-    
+
     public $verificationCode;
+
     public $verificationLink;
+
     public $frontendUrl;
+
     public $user;
+
     public $expiresAt;
-    
+
     public function __construct(
         string $verificationCode,
         string $verificationLink,
         string $frontendUrl,
-        User $user = null,
-        Carbon $expiresAt = null
+        ?User $user = null,
+        ?Carbon $expiresAt = null
     ) {
         $this->verificationCode = $verificationCode;
         $this->verificationLink = $verificationLink;
@@ -31,7 +36,7 @@ class EmailVerificationMail extends Mailable
         $this->user = $user;
         $this->expiresAt = $expiresAt ?? now()->addMinutes(15);
     }
-    
+
     public function build()
     {
         return $this->subject('Welcome to CampConnect! Verify Your Email Address')

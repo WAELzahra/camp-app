@@ -1,13 +1,13 @@
 <?php
 
-
 namespace App\Mail;
 
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
 use Illuminate\Queue\SerializesModels;
 
-class ActivateAnnonceNotification extends Mailable
+class ActivateAnnonceNotification extends Mailable implements ShouldQueue
 {
     use Queueable, SerializesModels;
 
@@ -27,7 +27,6 @@ class ActivateAnnonceNotification extends Mailable
     public function build()
     {
         return $this->subject('Votre annonce a été activée')
-                    ->view('emails.activate_annonce');
+            ->view('emails.activate_annonce');
     }
 }
-

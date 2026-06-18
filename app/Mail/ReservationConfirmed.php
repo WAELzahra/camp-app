@@ -2,12 +2,12 @@
 
 namespace App\Mail;
 
-use App\Models\Reservations_events;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
 use Illuminate\Queue\SerializesModels;
 
-class ReservationConfirmed extends Mailable
+class ReservationConfirmed extends Mailable implements ShouldQueue
 {
     use Queueable, SerializesModels;
 
@@ -21,6 +21,6 @@ class ReservationConfirmed extends Mailable
     public function build()
     {
         return $this->subject('Confirmation de votre réservation')
-                    ->view('emails.reservation-confirmed');
+            ->view('emails.reservation-confirmed');
     }
 }

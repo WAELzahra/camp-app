@@ -4,10 +4,11 @@ namespace App\Mail;
 
 use App\Models\Events;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
 use Illuminate\Queue\SerializesModels;
 
-class EventDeleted extends Mailable
+class EventDeleted extends Mailable implements ShouldQueue
 {
     use Queueable, SerializesModels;
 
@@ -21,7 +22,6 @@ class EventDeleted extends Mailable
     public function build()
     {
         return $this->subject('Votre événement a été supprimé')
-                    ->view('emails.event_deleted');
+            ->view('emails.event_deleted');
     }
 }
-

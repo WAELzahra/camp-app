@@ -2,18 +2,21 @@
 
 namespace App\Mail;
 
+use App\Models\Reservations_centre;
+use App\Models\User;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
 use Illuminate\Queue\SerializesModels;
-use App\Models\User;
-use App\Models\Reservations_centre;
 
-class NewReservationNotification extends Mailable
+class NewReservationNotification extends Mailable implements ShouldQueue
 {
     use Queueable, SerializesModels;
 
     public $centre;
+
     public $user;
+
     public $reservation;
 
     public function __construct(User $centre, User $user, Reservations_centre $reservation)
@@ -26,6 +29,6 @@ class NewReservationNotification extends Mailable
     public function build()
     {
         return $this->subject('Nouvelle réservation reçue')
-                    ->view('emails.new_reservation');
+            ->view('emails.new_reservation');
     }
 }

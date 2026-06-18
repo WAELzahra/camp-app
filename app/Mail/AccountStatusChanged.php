@@ -4,14 +4,16 @@ namespace App\Mail;
 
 use App\Models\User;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
 use Illuminate\Queue\SerializesModels;
 
-class AccountStatusChanged extends Mailable
+class AccountStatusChanged extends Mailable implements ShouldQueue
 {
     use Queueable, SerializesModels;
 
     public $user;
+
     public $isActive;
 
     /**
@@ -29,18 +31,18 @@ class AccountStatusChanged extends Mailable
     public function build()
     {
         $statusText = $this->isActive == 1 ? 'activé' : 'désactivé';
-        
-        return $this->subject('Mise à jour du statut de votre compte - ' . config('app.name'))
-                    ->view('emails.account_status_changed')
-                    ->with([
-                        'userName' => $this->user->first_name . ' ' . $this->user->last_name,
-                        'userEmail' => $this->user->email,
-                        'status' => $statusText,
-                        'statusValue' => $this->isActive,
-                        'appName' => config('app.name'),
-                        'loginUrl' => url('/login'),
-                        'supportEmail' => 'support@' . config('app.domain', 'example.com'),
-                        'currentYear' => date('Y')
-                    ]);
+
+        return $this->subject('Mise à jour du statut de votre compte - '.config('app.name'))
+            ->view('emails.account_status_changed')
+            ->with([
+                'userName' => $this->user->first_name.' '.$this->user->last_name,
+                'userEmail' => $this->user->email,
+                'status' => $statusText,
+                'statusValue' => $this->isActive,
+                'appName' => config('app.name'),
+                'loginUrl' => url('/login'),
+                'supportEmail' => 'support@'.config('app.domain', 'example.com'),
+                'currentYear' => date('Y'),
+            ]);
     }
 }
