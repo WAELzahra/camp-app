@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Favorites;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Favorite\ToggleFavoriteRequest;
 use App\Models\Favorite;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -12,15 +13,12 @@ class FavoriteController extends Controller
     private const VALID_TYPES = ['profile', 'centre', 'zone', 'equipment', 'annonce'];
 
     // ── POST /api/favorites  { type, target_id } ─────────────────────────────
-    public function toggle(Request $request)
+    public function toggle(ToggleFavoriteRequest $request)
     {
-        $request->validate([
-            'type'      => ['required', 'in:profile,centre,zone,equipment,annonce'],
-            'target_id' => ['required', 'integer', 'min:1'],
-        ]);
+        $request->validated();
 
-        $userId   = Auth::id();
-        $type     = $request->input('type');
+        $userId = Auth::id();
+        $type = $request->input('type');
         $targetId = (int) $request->input('target_id');
 
         $existing = Favorite::where('user_id', $userId)
@@ -30,13 +28,14 @@ class FavoriteController extends Controller
 
         if ($existing) {
             $existing->delete();
+
             return response()->json(['favorited' => false]);
         }
 
         Favorite::create([
-            'user_id'          => $userId,
+            'user_id' => $userId,
             'favoritable_type' => $type,
-            'favoritable_id'   => $targetId,
+            'favoritable_id' => $targetId,
         ]);
 
         return response()->json(['favorited' => true]);
@@ -55,7 +54,7 @@ class FavoriteController extends Controller
 
         $favorites = $query->get();
 
-        $items = $favorites->map(fn($f) => $f->resolveTarget())->filter()->values();
+        $items = $favorites->map(fn ($f) => $f->resolveTarget())->filter()->values();
 
         return response()->json(['data' => $items]);
     }

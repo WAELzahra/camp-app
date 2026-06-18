@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\Popup\StorePopupRequest;
+use App\Http\Requests\Popup\UpdatePopupRequest;
 use App\Models\Popup;
 use App\Models\UserPopupState;
 use Illuminate\Http\JsonResponse;
@@ -35,7 +37,10 @@ class PopupController extends Controller
 
         // Filter by target_roles client-side friendly (role_id match or null = everyone)
         $filtered = $popups->filter(function (Popup $p) use ($user) {
-            if (empty($p->target_roles)) return true;          // null → all roles
+            if (empty($p->target_roles)) {
+                return true;
+            }          // null → all roles
+
             return in_array($user->role_id, $p->target_roles);
         })->values();
 
@@ -55,7 +60,10 @@ class PopupController extends Controller
             ->latest()
             ->get()
             ->first(function (Popup $p) use ($user) {
-                if (empty($p->target_roles)) return true;
+                if (empty($p->target_roles)) {
+                    return true;
+                }
+
                 return in_array($user->role_id, $p->target_roles);
             });
 
@@ -88,50 +96,31 @@ class PopupController extends Controller
     public function index(): JsonResponse
     {
         $popups = Popup::latest()->get();
+
         return response()->json(['data' => $popups]);
     }
 
     /**
      * POST /admin/popups
      */
-    public function store(Request $request): JsonResponse
+    public function store(StorePopupRequest $request): JsonResponse
     {
-        $data = $request->validate([
-            'title'        => 'required|string|max:255',
-            'content'      => 'required|string',
-            'type'         => 'required|in:info,warning,promotion,update',
-            'is_active'    => 'boolean',
-            'popup_kind'   => 'in:engagement,welcome',
-            'target_roles' => 'nullable|array',
-            'target_roles.*' => 'integer|min:1|max:6',
-            'icon'         => 'nullable|string|max:100',
-            'cta_label'    => 'nullable|string|max:100',
-            'cta_url'      => 'nullable|string|max:500',
-        ]);
+        $data = $request->validated();
 
         $popup = Popup::create($data);
+
         return response()->json(['data' => $popup, 'message' => 'Popup created.'], 201);
     }
 
     /**
      * PUT /admin/popups/{popup}
      */
-    public function update(Request $request, Popup $popup): JsonResponse
+    public function update(UpdatePopupRequest $request, Popup $popup): JsonResponse
     {
-        $data = $request->validate([
-            'title'        => 'sometimes|required|string|max:255',
-            'content'      => 'sometimes|required|string',
-            'type'         => 'sometimes|required|in:info,warning,promotion,update',
-            'is_active'    => 'sometimes|boolean',
-            'popup_kind'   => 'sometimes|in:engagement,welcome',
-            'target_roles' => 'nullable|array',
-            'target_roles.*' => 'integer|min:1|max:6',
-            'icon'         => 'nullable|string|max:100',
-            'cta_label'    => 'nullable|string|max:100',
-            'cta_url'      => 'nullable|string|max:500',
-        ]);
+        $data = $request->validated();
 
         $popup->update($data);
+
         return response()->json(['data' => $popup, 'message' => 'Popup updated.']);
     }
 
@@ -141,6 +130,7 @@ class PopupController extends Controller
     public function destroy(Popup $popup): JsonResponse
     {
         $popup->delete();
+
         return response()->json(['message' => 'Popup deleted.']);
     }
 
@@ -150,6 +140,7 @@ class PopupController extends Controller
     public function toggle(Popup $popup): JsonResponse
     {
         $popup->update(['is_active' => !$popup->is_active]);
+
         return response()->json(['data' => $popup, 'message' => 'Status toggled.']);
     }
 }

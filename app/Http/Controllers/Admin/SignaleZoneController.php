@@ -3,8 +3,9 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use Illuminate\Http\Request;
+use App\Http\Requests\Admin\RejectSignalementRequest;
 use App\Models\Signales;
+use Illuminate\Http\Request;
 
 class SignaleZoneController extends Controller
 {
@@ -25,10 +26,10 @@ class SignaleZoneController extends Controller
             $search = $request->search;
             $query->where(function ($q) use ($search) {
                 $q->where('contenu', 'like', "%{$search}%")
-                  ->orWhereHas('user', function ($u) use ($search) {
-                      $u->where('name', 'like', "%{$search}%")
-                        ->orWhere('email', 'like', "%{$search}%");
-                  });
+                    ->orWhereHas('user', function ($u) use ($search) {
+                        $u->where('name', 'like', "%{$search}%")
+                            ->orWhere('email', 'like', "%{$search}%");
+                    });
             });
         }
 
@@ -42,7 +43,7 @@ class SignaleZoneController extends Controller
                     break;
                 case 'month':
                     $query->whereMonth('created_at', now()->month)
-                          ->whereYear('created_at', now()->year);
+                        ->whereYear('created_at', now()->year);
                     break;
                 case 'year':
                     $query->whereYear('created_at', now()->year);
@@ -97,16 +98,14 @@ class SignaleZoneController extends Controller
     }
 
     // Rejeter un signalement (admin)
-    public function rejectSignalement(Request $request, $id)
+    public function rejectSignalement(RejectSignalementRequest $request, $id)
     {
         $user = auth()->user();
         if (!$user || !$user->isAdmin()) {
             return response()->json(['message' => 'Accès refusé'], 403);
         }
 
-        $request->validate([
-            'reason' => 'required|string|max:500',
-        ]);
+        $request->validated();
 
         $signalement = Signales::findOrFail($id);
 

@@ -1,4 +1,5 @@
 <?php
+
 // app/Notifications/CustomNotification.php
 
 namespace App\Notifications;
@@ -13,6 +14,7 @@ class CustomNotification extends Notification implements ShouldQueue
     use Queueable;
 
     protected $data;
+
     protected $channels;
 
     /**
@@ -58,7 +60,7 @@ class CustomNotification extends Notification implements ShouldQueue
     {
         $mail = (new MailMessage)
             ->subject($this->data['title'])
-            ->greeting('Hello ' . $notifiable->first_name . '!')
+            ->greeting('Hello '.$notifiable->first_name.'!')
             ->line($this->data['content']);
 
         if (isset($this->data['action_url']) && isset($this->data['action_text'])) {

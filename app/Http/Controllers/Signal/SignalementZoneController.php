@@ -3,20 +3,16 @@
 namespace App\Http\Controllers\Signal;
 
 use App\Http\Controllers\Controller;
-use Illuminate\Http\Request;
+use App\Http\Requests\Signal\StoreSignalementRequest;
 use App\Models\Signales;
 
 class SignalementZoneController extends Controller
 {
-
     // Création d’un signalement
-    
-    public function store(Request $request, $zoneId)
+
+    public function store(StoreSignalementRequest $request, $zoneId)
     {
-        $data = $request->validate([
-            'contenu' => 'required|string|max:255',
-            'photo' => 'nullable|image|max:5120',
-        ]);
+        $data = $request->validated();
 
         if ($request->hasFile('photo')) {
             $data['photo'] = $request->file('photo')->store('signales', 'public');
@@ -34,8 +30,7 @@ class SignalementZoneController extends Controller
 
         return response()->json([
             'message' => 'Signalement enregistré',
-            'data' => $signalement
+            'data' => $signalement,
         ], 201);
     }
 }
-

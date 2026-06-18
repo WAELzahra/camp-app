@@ -3,12 +3,13 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\BalanceAdjustRequest;
 use App\Models\Balance;
 use App\Models\Reservations_centre;
 use App\Models\Reservations_events;
 use App\Models\Reservations_materielles;
-use App\Models\WalletRechargeRequest;
 use App\Models\User;
+use App\Models\WalletRechargeRequest;
 use App\Models\WalletTransaction;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -28,26 +29,27 @@ class AdminUserTrackController extends Controller
 
         $users = User::where(function ($query) use ($q) {
             $query->where('first_name', 'like', "%{$q}%")
-                  ->orWhere('last_name',  'like', "%{$q}%")
-                  ->orWhere('email',      'like', "%{$q}%");
+                ->orWhere('last_name', 'like', "%{$q}%")
+                ->orWhere('email', 'like', "%{$q}%");
         })
-        ->select('id', 'first_name', 'last_name', 'email', 'role_id', 'created_at')
-        ->orderBy('first_name')
-        ->limit(12)
-        ->get()
-        ->map(function ($u) {
-            $balance = Balance::where('user_id', $u->id)->first();
-            return [
-                'id'          => $u->id,
-                'first_name'  => $u->first_name,
-                'last_name'   => $u->last_name,
-                'email'       => $u->email,
-                'role_id'     => $u->role_id,
-                'created_at'  => $u->created_at,
-                'disponible'  => (float) ($balance->solde_disponible ?? 0),
-                'en_attente'  => (float) ($balance->solde_en_attente ?? 0),
-            ];
-        });
+            ->select('id', 'first_name', 'last_name', 'email', 'role_id', 'created_at')
+            ->orderBy('first_name')
+            ->limit(12)
+            ->get()
+            ->map(function ($u) {
+                $balance = Balance::where('user_id', $u->id)->first();
+
+                return [
+                    'id' => $u->id,
+                    'first_name' => $u->first_name,
+                    'last_name' => $u->last_name,
+                    'email' => $u->email,
+                    'role_id' => $u->role_id,
+                    'created_at' => $u->created_at,
+                    'disponible' => (float) ($balance->solde_disponible ?? 0),
+                    'en_attente' => (float) ($balance->solde_en_attente ?? 0),
+                ];
+            });
 
         return response()->json(['users' => $users]);
     }
@@ -67,18 +69,18 @@ class AdminUserTrackController extends Controller
         $transactions = WalletTransaction::where('user_id', $userId)
             ->orderBy('created_at', 'desc')
             ->get()
-            ->map(fn($t) => [
-                'id'             => $t->id,
-                'type'           => $t->type,           // debit | credit
-                'category'       => $t->category,
-                'amount_gross'   => (float) $t->amount_gross,
-                'commission_rate'   => (float) ($t->commission_rate ?? 0),
+            ->map(fn ($t) => [
+                'id' => $t->id,
+                'type' => $t->type,           // debit | credit
+                'category' => $t->category,
+                'amount_gross' => (float) $t->amount_gross,
+                'commission_rate' => (float) ($t->commission_rate ?? 0),
                 'commission_amount' => (float) ($t->commission_amount ?? 0),
-                'net_amount'     => (float) ($t->net_amount ?? $t->amount_gross),
+                'net_amount' => (float) ($t->net_amount ?? $t->amount_gross),
                 'reference_type' => $t->reference_type,
-                'reference_id'   => $t->reference_id,
-                'description'    => $t->description,
-                'created_at'     => $t->created_at,
+                'reference_id' => $t->reference_id,
+                'description' => $t->description,
+                'created_at' => $t->created_at,
             ]);
 
         // ── Platform revenue AS CAMPER (fees the platform charged on their bookings) ─
@@ -98,9 +100,9 @@ class AdminUserTrackController extends Controller
 
         // Reservation counts as camper
         $reservationCountsCamper = [
-            'centre'    => Reservations_centre::where('user_id', $userId)->count(),
-            'events'    => Reservations_events::where('user_id', $userId)->count(),
-            'materiel'  => Reservations_materielles::where('user_id', $userId)->count(),
+            'centre' => Reservations_centre::where('user_id', $userId)->count(),
+            'events' => Reservations_events::where('user_id', $userId)->count(),
+            'materiel' => Reservations_materielles::where('user_id', $userId)->count(),
         ];
 
         // ── Platform revenue AS PROVIDER (commission taken from payouts to this user) ─
@@ -111,10 +113,10 @@ class AdminUserTrackController extends Controller
 
         // Reservations received as supplier (fournisseur) or centre
         $reservationsAsSupplier = Reservations_materielles::where('fournisseur_id', $userId)->count();
-        $reservationsAsCentre   = Reservations_centre::where('centre_id', $userId)->count();
+        $reservationsAsCentre = Reservations_centre::where('centre_id', $userId)->count();
 
         // ── Total debited / credited ever ─────────────────────────────────────
-        $totalDebited  = (float) WalletTransaction::where('user_id', $userId)->where('type', 'debit')->sum('amount_gross');
+        $totalDebited = (float) WalletTransaction::where('user_id', $userId)->where('type', 'debit')->sum('amount_gross');
         $totalCredited = (float) WalletTransaction::where('user_id', $userId)->where('type', 'credit')->sum('amount_gross');
 
         // ── Total refunds received ────────────────────────────────────────────
@@ -125,72 +127,72 @@ class AdminUserTrackController extends Controller
 
         // ── Manual payment reservations ───────────────────────────────────────
         $manualFields = ['id', 'payment_reference', 'payment_option', 'payment_method',
-                         'amount_now', 'amount_later', 'balance_due_at', 'status',
-                         'payment_submitted_at', 'payment_confirmed_at', 'created_at'];
+            'amount_now', 'amount_later', 'balance_due_at', 'status',
+            'payment_submitted_at', 'payment_confirmed_at', 'created_at'];
 
         $manualEvents = Reservations_events::where('user_id', $userId)
             ->where('payment_method', 'manual')
             ->latest()->get($manualFields)
-            ->map(fn($r) => array_merge($r->toArray(), ['reservation_type' => 'event']));
+            ->map(fn ($r) => array_merge($r->toArray(), ['reservation_type' => 'event']));
 
         $manualCentres = Reservations_centre::where('user_id', $userId)
             ->where('payment_method', 'manual')
             ->latest()->get($manualFields)
-            ->map(fn($r) => array_merge($r->toArray(), ['reservation_type' => 'centre']));
+            ->map(fn ($r) => array_merge($r->toArray(), ['reservation_type' => 'centre']));
 
         $manualMaterielles = Reservations_materielles::where('user_id', $userId)
             ->where('payment_method', 'manual')
             ->latest()->get($manualFields)
-            ->map(fn($r) => array_merge($r->toArray(), ['reservation_type' => 'materiel']));
+            ->map(fn ($r) => array_merge($r->toArray(), ['reservation_type' => 'materiel']));
 
         $allManualReservations = $manualEvents->concat($manualCentres)->concat($manualMaterielles)
             ->sortByDesc('created_at')->values();
 
         $walletRecharges = WalletRechargeRequest::where('user_id', $userId)
             ->latest()->get(['id', 'amount', 'payment_reference', 'status', 'submitted_at', 'confirmed_at', 'created_at'])
-            ->map(fn($r) => $r->toArray());
+            ->map(fn ($r) => $r->toArray());
 
         return response()->json([
             'user' => [
-                'id'         => $user->id,
+                'id' => $user->id,
                 'first_name' => $user->first_name,
-                'last_name'  => $user->last_name,
-                'email'      => $user->email,
-                'role_id'    => $user->role_id,
+                'last_name' => $user->last_name,
+                'email' => $user->email,
+                'role_id' => $user->role_id,
                 'created_at' => $user->created_at,
             ],
             'balance' => [
-                'disponible'      => (float) ($balance->solde_disponible   ?? 0),
-                'en_attente'      => (float) ($balance->solde_en_attente   ?? 0),
-                'total_encaisse'  => (float) ($balance->total_encaisse     ?? 0),
-                'total_retire'    => (float) ($balance->total_retire       ?? 0),
-                'total_rembourse' => (float) ($balance->total_rembourse    ?? 0),
+                'disponible' => (float) ($balance->solde_disponible ?? 0),
+                'en_attente' => (float) ($balance->solde_en_attente ?? 0),
+                'total_encaisse' => (float) ($balance->total_encaisse ?? 0),
+                'total_retire' => (float) ($balance->total_retire ?? 0),
+                'total_rembourse' => (float) ($balance->total_rembourse ?? 0),
             ],
             'transactions' => $transactions,
             'summary' => [
-                'total_debited'  => round($totalDebited,  2),
+                'total_debited' => round($totalDebited, 2),
                 'total_credited' => round($totalCredited, 2),
-                'total_refunds'  => round($totalRefunds,  2),
-                'net_flow'       => round($totalCredited - $totalDebited, 2),
+                'total_refunds' => round($totalRefunds, 2),
+                'net_flow' => round($totalCredited - $totalDebited, 2),
             ],
             'platform_revenue' => [
                 'fees_as_camper' => [
-                    'total'    => $totalFeesFromCamper,
-                    'centre'   => round($centreFeesCamper,   2),
-                    'events'   => round($eventFeesCamper,    2),
+                    'total' => $totalFeesFromCamper,
+                    'centre' => round($centreFeesCamper, 2),
+                    'events' => round($eventFeesCamper, 2),
                     'materiel' => round($materielFeesCamper, 2),
                 ],
                 'commissions_as_provider' => round($commissionsAsProvider, 2),
                 'total' => round($totalFeesFromCamper + $commissionsAsProvider, 2),
             ],
             'activity' => [
-                'reservations_as_camper'   => $reservationCountsCamper,
+                'reservations_as_camper' => $reservationCountsCamper,
                 'reservations_as_supplier' => $reservationsAsSupplier,
-                'reservations_as_centre'   => $reservationsAsCentre,
+                'reservations_as_centre' => $reservationsAsCentre,
             ],
             'manual_payments' => [
-                'reservations'    => $allManualReservations,
-                'wallet_recharges'=> $walletRecharges,
+                'reservations' => $allManualReservations,
+                'wallet_recharges' => $walletRecharges,
             ],
         ]);
     }
@@ -202,66 +204,65 @@ class AdminUserTrackController extends Controller
     public function balanceHistory(Request $request)
     {
         $perPage = min((int) $request->get('per_page', 25), 100);
-        $type    = $request->get('type');  // 'admin_credit' | 'admin_debit' | null (all)
-        $userId  = $request->get('user_id');
-        $search  = trim($request->get('search', ''));
+        $type = $request->get('type');  // 'admin_credit' | 'admin_debit' | null (all)
+        $userId = $request->get('user_id');
+        $search = trim($request->get('search', ''));
 
         $query = WalletTransaction::with(['user:id,first_name,last_name,email', 'relatedUser:id,first_name,last_name'])
             ->whereIn('category', ['admin_credit', 'admin_debit'])
-            ->when($type,   fn($q) => $q->where('category', $type))
-            ->when($userId, fn($q) => $q->where('user_id', $userId))
-            ->when($search, fn($q) => $q->whereHas('user', fn($uq) =>
-                $uq->where('first_name', 'like', "%{$search}%")
-                   ->orWhere('last_name',  'like', "%{$search}%")
-                   ->orWhere('email',      'like', "%{$search}%")
+            ->when($type, fn ($q) => $q->where('category', $type))
+            ->when($userId, fn ($q) => $q->where('user_id', $userId))
+            ->when($search, fn ($q) => $q->whereHas('user', fn ($uq) => $uq->where('first_name', 'like', "%{$search}%")
+                ->orWhere('last_name', 'like', "%{$search}%")
+                ->orWhere('email', 'like', "%{$search}%")
             ))
             ->orderBy('created_at', 'desc');
 
         $paginated = $query->paginate($perPage);
 
-        $items = $paginated->map(fn($t) => [
-            'id'           => $t->id,
-            'category'     => $t->category,
-            'type'         => $t->type,
-            'amount'       => (float) $t->amount_gross,
-            'description'  => $t->description,
-            'created_at'   => $t->created_at,
-            'user'         => $t->user ? [
-                'id'         => $t->user->id,
+        $items = $paginated->map(fn ($t) => [
+            'id' => $t->id,
+            'category' => $t->category,
+            'type' => $t->type,
+            'amount' => (float) $t->amount_gross,
+            'description' => $t->description,
+            'created_at' => $t->created_at,
+            'user' => $t->user ? [
+                'id' => $t->user->id,
                 'first_name' => $t->user->first_name,
-                'last_name'  => $t->user->last_name,
-                'email'      => $t->user->email,
+                'last_name' => $t->user->last_name,
+                'email' => $t->user->email,
             ] : null,
-            'admin'        => $t->relatedUser ? [
-                'id'         => $t->relatedUser->id,
+            'admin' => $t->relatedUser ? [
+                'id' => $t->relatedUser->id,
                 'first_name' => $t->relatedUser->first_name,
-                'last_name'  => $t->relatedUser->last_name,
+                'last_name' => $t->relatedUser->last_name,
             ] : null,
         ]);
 
         // Summary totals for header
         $totals = WalletTransaction::whereIn('category', ['admin_credit', 'admin_debit'])
-            ->selectRaw("category, SUM(amount_gross) as total, COUNT(*) as count")
+            ->selectRaw('category, SUM(amount_gross) as total, COUNT(*) as count')
             ->groupBy('category')
             ->get()
             ->keyBy('category');
 
         return response()->json([
-            'data'       => $items,
-            'meta'       => [
+            'data' => $items,
+            'meta' => [
                 'current_page' => $paginated->currentPage(),
-                'last_page'    => $paginated->lastPage(),
-                'per_page'     => $paginated->perPage(),
-                'total'        => $paginated->total(),
+                'last_page' => $paginated->lastPage(),
+                'per_page' => $paginated->perPage(),
+                'total' => $paginated->total(),
             ],
             'totals' => [
                 'admin_credit' => [
                     'total' => (float) ($totals['admin_credit']->total ?? 0),
-                    'count' => (int)   ($totals['admin_credit']->count ?? 0),
+                    'count' => (int) ($totals['admin_credit']->count ?? 0),
                 ],
                 'admin_debit' => [
                     'total' => (float) ($totals['admin_debit']->total ?? 0),
-                    'count' => (int)   ($totals['admin_debit']->count ?? 0),
+                    'count' => (int) ($totals['admin_debit']->count ?? 0),
                 ],
             ],
         ]);
@@ -270,17 +271,12 @@ class AdminUserTrackController extends Controller
     /**
      * Manually credit or debit a user's available balance.
      */
-    public function balanceAdjust(Request $request)
+    public function balanceAdjust(BalanceAdjustRequest $request)
     {
-        $data = $request->validate([
-            'user_id'     => 'required|integer|exists:users,id',
-            'type'        => 'required|in:credit,debit',
-            'amount'      => 'required|numeric|min:0.01|max:10000',
-            'description' => 'required|string|min:3|max:255',
-        ]);
+        $data = $request->validated();
 
-        $user    = User::findOrFail($data['user_id']);
-        $amount  = round((float) $data['amount'], 2);
+        $user = User::findOrFail($data['user_id']);
+        $amount = round((float) $data['amount'], 2);
         $balance = Balance::forUser($user->id);
         $adminId = Auth::id();
 
@@ -316,6 +312,7 @@ class AdminUserTrackController extends Controller
         } catch (\Throwable $e) {
             DB::rollBack();
             \Log::error('Admin balance adjustment failed', ['error' => $e->getMessage(), 'data' => $data]);
+
             return response()->json(['success' => false, 'message' => 'Adjustment failed. Please try again.'], 500);
         }
 
@@ -323,7 +320,7 @@ class AdminUserTrackController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => ucfirst($data['type']) . " of {$amount} TND applied to {$user->first_name} {$user->last_name}.",
+            'message' => ucfirst($data['type'])." of {$amount} TND applied to {$user->first_name} {$user->last_name}.",
             'new_balance' => [
                 'disponible' => (float) $fresh->solde_disponible,
                 'en_attente' => (float) $fresh->solde_en_attente,

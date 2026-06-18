@@ -1,19 +1,18 @@
 <?php
+
 // app/Http/Controllers/Notification/NotificationController.php
 
 namespace App\Http\Controllers\Notification;
 
 use App\Http\Controllers\Controller;
-use App\Models\User;
+use App\Http\Requests\Notification\UpdateNotificationPreferencesRequest;
 use App\Models\Notification;
-use App\Models\NotificationTemplate;
-use App\Models\NotificationPreference;
 use App\Models\NotificationLog;
+use App\Models\NotificationPreference;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Mail;
-use App\Mail\NotificationMail;
 
 class NotificationController extends Controller
 {
@@ -53,7 +52,7 @@ class NotificationController extends Controller
             'data' => $notifications,
             'meta' => [
                 'unread_count' => $user->unreadNotifications->count(),
-            ]
+            ],
         ]);
     }
 
@@ -78,7 +77,7 @@ class NotificationController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'Notification marked as read'
+            'message' => 'Notification marked as read',
         ]);
     }
 
@@ -91,9 +90,9 @@ class NotificationController extends Controller
 
         $count = $user->unreadNotifications->count();
 
-        $user->unreadNotifications->each(function($notification) use ($user) {
+        $user->unreadNotifications->each(function ($notification) use ($user) {
             $notification->markAsRead();
-            
+
             NotificationLog::create([
                 'notification_id' => $notification->id,
                 'user_id' => $user->id,
@@ -105,7 +104,7 @@ class NotificationController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => "{$count} notifications marked as read"
+            'message' => "{$count} notifications marked as read",
         ]);
     }
 
@@ -121,7 +120,7 @@ class NotificationController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'Notification archived'
+            'message' => 'Notification archived',
         ]);
     }
 
@@ -137,7 +136,7 @@ class NotificationController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'Notification deleted'
+            'message' => 'Notification deleted',
         ]);
     }
 
@@ -157,7 +156,7 @@ class NotificationController extends Controller
             'system_alert', 'welcome_message', 'payment_confirmation', 'status_update',
             'support_ticket', 'event_invitation', 'event_reminder', 'reservation_confirmed',
             'reservation_cancelled', 'account_verified', 'password_changed', 'profile_updated',
-            'promotion', 'maintenance', 'security_alert'
+            'promotion', 'maintenance', 'security_alert',
         ];
 
         $channels = ['in_app', 'email', 'push', 'sms'];
@@ -165,7 +164,7 @@ class NotificationController extends Controller
         $result = [];
         foreach ($types as $type) {
             foreach ($channels as $channel) {
-                $result[$type][$channel] = isset($preferences[$type]) 
+                $result[$type][$channel] = isset($preferences[$type])
                     ? $preferences[$type]->where('channel', $channel)->first()?->enabled ?? true
                     : true;
             }
@@ -173,21 +172,18 @@ class NotificationController extends Controller
 
         return response()->json([
             'success' => true,
-            'data' => $result
+            'data' => $result,
         ]);
     }
 
     /**
      * Update notification preferences
      */
-    public function updatePreferences(Request $request)
+    public function updatePreferences(UpdateNotificationPreferencesRequest $request)
     {
         $user = Auth::user();
 
-        $request->validate([
-            'preferences' => 'required|array',
-            'preferences.*.*' => 'boolean',
-        ]);
+        $request->validated();
 
         DB::beginTransaction();
         try {
@@ -208,15 +204,16 @@ class NotificationController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'Preferences updated'
+                'message' => 'Preferences updated',
             ]);
 
         } catch (\Exception $e) {
             DB::rollBack();
+
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to update preferences',
-                'error' => 'server_error'
+                'error' => 'server_error',
             ], 500);
         }
     }
@@ -246,19 +243,20 @@ class NotificationController extends Controller
 
         return response()->json([
             'success' => true,
-            'data' => $stats
+            'data' => $stats,
         ]);
     }
+
     /**
      * Get unread count for user
      */
     public function getUnreadCount()
     {
         $user = Auth::user();
-        
+
         return response()->json([
             'success' => true,
-            'count' => $user->unreadNotifications->count()
+            'count' => $user->unreadNotifications->count(),
         ]);
     }
 }
