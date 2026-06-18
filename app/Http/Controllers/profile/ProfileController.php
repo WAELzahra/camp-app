@@ -2,33 +2,36 @@
 
 namespace App\Http\Controllers\profile;
 
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Storage;
-use Illuminate\Http\Request;
-use App\Models\Profile;
-use App\Models\ServiceCategory;
-use App\Models\ProfileCenterService;
-use App\Models\ProfileCenterEquipment;
-use App\Models\ProfileGuide;
-use App\Models\ProfileCentre;
-use App\Models\ProfileGroupe;
-use App\Models\ProfileFournisseur;
-use App\Models\Album;
-use Illuminate\Support\Facades\Validator; 
-use App\Models\Photo;
-use App\Models\User;
 use App\Http\Controllers\Controller;
-use App\Http\Resources\ProfileUserResource;
+use App\Http\Requests\Profile\StoreProfilePhotosRequest;
+use App\Http\Requests\Profile\UpdateAlbumInfoRequest;
+use App\Http\Requests\Profile\UpdateAvatarRequest;
 use App\Http\Resources\ProfileBaseResource;
 use App\Http\Resources\ProfileCampeurResource;
-use App\Http\Resources\ProfileGroupeResource;
-use App\Http\Resources\ProfileGuideResource;
 use App\Http\Resources\ProfileCentreResource;
 use App\Http\Resources\ProfileFournisseurResource;
+use App\Http\Resources\ProfileGroupeResource;
+use App\Http\Resources\ProfileGuideResource;
+use App\Http\Resources\ProfileUserResource;
+use App\Models\Album;
 use App\Models\CentreClaim;
+use App\Models\Photo;
+use App\Models\Profile;
 use App\Models\ProfileCampeur;
+use App\Models\ProfileCenterEquipment;
+use App\Models\ProfileCenterService;
+use App\Models\ProfileCentre;
+use App\Models\ProfileFournisseur;
+use App\Models\ProfileGroupe;
+use App\Models\ProfileGuide;
+use App\Models\ServiceCategory;
+use App\Models\User;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Validator;
 
 class ProfileController extends Controller
 {
@@ -71,12 +74,13 @@ class ProfileController extends Controller
         if ($user && $user->role_id === 3) {
             if (CentreClaim::where('user_id', $user->id)->where('status', 'pending')->exists()) {
                 return response()->json([
-                    'success'      => false,
+                    'success' => false,
                     'claim_locked' => true,
-                    'message'      => 'Your claim is under review. Profile editing is locked until the admin approves or rejects your request.',
+                    'message' => 'Your claim is under review. Profile editing is locked until the admin approves or rejects your request.',
                 ], 403);
             }
         }
+
         return null;
     }
 
@@ -90,7 +94,7 @@ class ProfileController extends Controller
             if ($center->profile->user_id !== $user->id) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Unauthorized access'
+                    'message' => 'Unauthorized access',
                 ], 403);
             }
 
@@ -125,21 +129,21 @@ class ProfileController extends Controller
 
             \Log::info('Center updated successfully', [
                 'centerId' => $centerId,
-                'new_price_per_night' => $center->fresh()->price_per_night
+                'new_price_per_night' => $center->fresh()->price_per_night,
             ]);
 
             return response()->json([
                 'success' => true,
                 'message' => 'Center updated successfully',
-                'data' => $center->fresh()
+                'data' => $center->fresh(),
             ]);
         } catch (\Exception $e) {
-            \Log::error('updateCenter error: ' . $e->getMessage());
-            
+            \Log::error('updateCenter error: '.$e->getMessage());
+
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to update center',
-                'error' => 'server_error'
+                'error' => 'server_error',
             ], 500);
         }
     }
@@ -157,18 +161,18 @@ class ProfileController extends Controller
                 return response()->json([
                     'success' => false,
                     'message' => 'Validation failed',
-                    'errors' => $validator->errors()
+                    'errors' => $validator->errors(),
                 ], 422);
             }
 
             // Get authenticated user
             $user = Auth::user();
-            
+
             // Check if current password matches
             if (!Hash::check($request->current_password, $user->password)) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Current password is incorrect'
+                    'message' => 'Current password is incorrect',
                 ], 400);
             }
 
@@ -178,14 +182,14 @@ class ProfileController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'Password changed successfully'
+                'message' => 'Password changed successfully',
             ], 200);
 
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to change password',
-                'error' => 'server_error'
+                'error' => 'server_error',
             ], 500);
         }
     }
@@ -198,12 +202,12 @@ class ProfileController extends Controller
         if (!$profile) {
             $profile = Profile::create([
                 'user_id' => $user->id,
-                'type' => $this->determineUserType($user->role_id)
+                'type' => $this->determineUserType($user->role_id),
             ]);
         }
 
         $data = [
-            'user'    => new ProfileUserResource($user),
+            'user' => new ProfileUserResource($user),
             'profile' => new ProfileBaseResource($profile),
             'details' => $this->buildDetailsResource($profile, true),
         ];
@@ -212,8 +216,8 @@ class ProfileController extends Controller
             $data['feedback_summary'] = $this->buildFeedbackSummary($user->id, 'groupe');
         }
 
-        $data['photos']          = $this->buildPhotos($user);
-        $data['past_events']     = $this->buildPastEvents($user->id);
+        $data['photos'] = $this->buildPhotos($user);
+        $data['past_events'] = $this->buildPastEvents($user->id);
         $data['visited_centres'] = $this->buildVisitedCentres($user->id);
 
         return response()->json($data);
@@ -223,37 +227,39 @@ class ProfileController extends Controller
     {
         $query = $request->get('q', '');
         $users = \App\Models\User::where('is_active', 1)
-            ->where(function($q) use ($query) {
+            ->where(function ($q) use ($query) {
                 $q->where('first_name', 'LIKE', "%{$query}%")
-                ->orWhere('last_name', 'LIKE', "%{$query}%")
-                ->orWhere('email', 'LIKE', "%{$query}%");
+                    ->orWhere('last_name', 'LIKE', "%{$query}%")
+                    ->orWhere('email', 'LIKE', "%{$query}%");
             })
             ->select('id', 'first_name', 'last_name', 'email', 'avatar', 'phone_number')
             ->limit(20)
             ->get();
+
         return response()->json(['success' => true, 'data' => $users]);
     }
+
     public function update(Request $request)
     {
         $user = Auth::user();
-        
+
         DB::beginTransaction();
-        
+
         try {
             \Log::info('=== PROFILE UPDATE START ===');
-            \Log::info('User ID: ' . $user->id);
+            \Log::info('User ID: '.$user->id);
             \Log::info('Request data:', $request->all());
-            
+
             // 1. Update basic user data
             $userData = [];
             $userFields = ['first_name', 'last_name', 'email', 'phone_number', 'ville', 'date_naissance', 'sexe', 'langue'];
-            
+
             foreach ($userFields as $field) {
                 if ($request->has($field)) {
                     $userData[$field] = $request->input($field);
                 }
             }
-            
+
             if (!empty($userData)) {
                 $user->update($userData);
                 \Log::info('User data updated:', $userData);
@@ -266,7 +272,7 @@ class ProfileController extends Controller
                     'user_id' => $user->id,
                     'type' => $this->determineUserType($user->role_id),
                 ];
-                
+
                 $profileFields = ['bio', 'cover_image', 'activities', 'city', 'address', 'is_public'];
                 foreach ($profileFields as $field) {
                     if ($request->has($field)) {
@@ -279,13 +285,13 @@ class ProfileController extends Controller
             } else {
                 $profileUpdateData = [];
                 $profileFields = ['bio', 'cover_image', 'activities', 'city', 'address', 'is_public'];
-                
+
                 foreach ($profileFields as $field) {
                     if ($request->has($field)) {
                         $profileUpdateData[$field] = $request->$field;
                     }
                 }
-                
+
                 if (!empty($profileUpdateData)) {
                     $profile->update($profileUpdateData);
                     \Log::info('Profile updated:', $profileUpdateData);
@@ -295,7 +301,7 @@ class ProfileController extends Controller
             // 3. Update specific profile details based on user type
             $userType = $profile->type;
             \Log::info('User type:', ['type' => $userType]);
-            
+
             switch ($userType) {
                 case 'campeur':
                     $campeurData = $request->only([
@@ -314,7 +320,7 @@ class ProfileController extends Controller
                         );
                     }
                     break;
-                    
+
                 case 'guide':
                     $guideData = $request->only([
                         'experience',
@@ -323,7 +329,7 @@ class ProfileController extends Controller
                         'certificat_type',
                         'certificat_expiration',
                     ]);
-                    
+
                     // Convert numeric fields
                     if (isset($guideData['experience'])) {
                         $guideData['experience'] = (int) $guideData['experience'];
@@ -331,39 +337,39 @@ class ProfileController extends Controller
                     if (isset($guideData['tarif'])) {
                         $guideData['tarif'] = (float) $guideData['tarif'];
                     }
-                    
+
                     // Handle certificat upload
                     if ($request->hasFile('certificat_file')) {
                         $file = $request->file('certificat_file');
-                        
+
                         $validator = Validator::make($request->all(), [
                             'certificat_file' => 'file|mimes:jpeg,png,jpg,pdf|max:5120',
                         ]);
-                        
+
                         if ($validator->fails()) {
-                            throw new \Exception('Certificat validation failed: ' . json_encode($validator->errors()));
+                            throw new \Exception('Certificat validation failed: '.json_encode($validator->errors()));
                         }
-                        
+
                         // Get or create guide
                         $guide = $profile->profileGuide;
                         if (!$guide) {
                             $guide = ProfileGuide::create(['profile_id' => $profile->id]);
                         }
-                        
+
                         // Delete old certificat if exists
                         if ($guide->certificat_path && Storage::disk('public')->exists($guide->certificat_path)) {
                             Storage::disk('public')->delete($guide->certificat_path);
                         }
-                        
+
                         // Store new certificat
                         $directory = 'documents/guides';
-                        $filename = 'certificat_' . $user->id . '_' . time() . '.' . $file->getClientOriginalExtension();
+                        $filename = 'certificat_'.$user->id.'_'.time().'.'.$file->getClientOriginalExtension();
                         $path = $file->storeAs($directory, $filename, 'public');
                         $guideData['certificat_path'] = $path;
-                        
+
                         \Log::info('Certificat uploaded:', ['path' => $path]);
                     }
-                    
+
                     // Handle certificat deletion
                     if ($request->has('delete_certificat') && $request->delete_certificat == '1') {
                         $guide = $profile->profileGuide;
@@ -374,7 +380,7 @@ class ProfileController extends Controller
                             $guideData['certificat_path'] = null;
                         }
                     }
-                    
+
                     if ($profile->profileGuide) {
                         $profile->profileGuide->update($guideData);
                         \Log::info('Guide updated:', $guideData);
@@ -393,6 +399,7 @@ class ProfileController extends Controller
 
                     if ($hasPendingClaim) {
                         DB::rollBack();
+
                         return response()->json([
                             'success' => false,
                             'message' => 'Your centre profile is locked while your claim request is pending admin approval.',
@@ -414,7 +421,7 @@ class ProfileController extends Controller
                         'longitude',
                         'established_date',
                     ]);
-                    
+
                     // Handle numeric conversions
                     if (isset($centreData['capacite'])) {
                         $centreData['capacite'] = (int) $centreData['capacite'];
@@ -425,39 +432,39 @@ class ProfileController extends Controller
                     if (isset($centreData['disponibilite'])) {
                         $centreData['disponibilite'] = (bool) $centreData['disponibilite'] ? 1 : 0;
                     }
-                    
+
                     // Handle document legal upload - USE legal_document NOT document_legal_path
                     if ($request->hasFile('document_legal_file')) {
                         $file = $request->file('document_legal_file');
-                        
+
                         $validator = Validator::make($request->all(), [
                             'document_legal_file' => 'file|mimes:jpeg,png,jpg,pdf|max:5120',
                         ]);
-                        
+
                         if ($validator->fails()) {
-                            throw new \Exception('Legal document validation failed: ' . json_encode($validator->errors()));
+                            throw new \Exception('Legal document validation failed: '.json_encode($validator->errors()));
                         }
-                        
+
                         // Get or create centre
                         $centre = $profile->profileCentre;
                         if (!$centre) {
                             $centre = ProfileCentre::create(['profile_id' => $profile->id]);
                         }
-                        
+
                         // Delete old document if exists (check both fields for backward compatibility)
                         if ($centre->legal_document && Storage::disk('public')->exists($centre->legal_document)) {
                             Storage::disk('public')->delete($centre->legal_document);
                         }
-                        
+
                         // Store new document - USE legal_document field
                         $directory = 'documents/centres';
-                        $filename = 'legal_doc_' . $user->id . '_' . time() . '.' . $file->getClientOriginalExtension();
+                        $filename = 'legal_doc_'.$user->id.'_'.time().'.'.$file->getClientOriginalExtension();
                         $path = $file->storeAs($directory, $filename, 'public');
                         $centreData['legal_document'] = $path; // Changed from document_legal_path
-                        
+
                         \Log::info('Legal document uploaded:', ['path' => $path]);
                     }
-                    
+
                     // Handle delete document flag - USE legal_document
                     if ($request->has('delete_document') && $request->delete_document == '1') {
                         $centre = $profile->profileCentre;
@@ -470,7 +477,7 @@ class ProfileController extends Controller
                             $centreData['document_legal_expiration'] = null;
                         }
                     }
-                    
+
                     if ($profile->profileCentre) {
                         $profile->profileCentre->update($centreData);
                         \Log::info('Centre updated:', $centreData);
@@ -487,39 +494,39 @@ class ProfileController extends Controller
                         'id_album_photo', // Added missing field
                         'id_annonce',      // Added missing field
                     ]);
-                    
+
                     // Handle patente upload
                     if ($request->hasFile('patente_file')) {
                         $file = $request->file('patente_file');
-                        
+
                         $validator = Validator::make($request->all(), [
                             'patente_file' => 'file|mimes:jpeg,png,jpg,pdf|max:5120',
                         ]);
-                        
+
                         if ($validator->fails()) {
-                            throw new \Exception('Patente validation failed: ' . json_encode($validator->errors()));
+                            throw new \Exception('Patente validation failed: '.json_encode($validator->errors()));
                         }
-                        
+
                         // Get or create groupe
                         $groupe = $profile->profileGroupe;
                         if (!$groupe) {
                             $groupe = ProfileGroupe::create(['profile_id' => $profile->id]);
                         }
-                        
+
                         // Delete old patente if exists
                         if ($groupe->patente_path && Storage::disk('public')->exists($groupe->patente_path)) {
                             Storage::disk('public')->delete($groupe->patente_path);
                         }
-                        
+
                         // Store new patente
                         $directory = 'documents/groupes';
-                        $filename = 'patente_' . $user->id . '_' . time() . '.' . $file->getClientOriginalExtension();
+                        $filename = 'patente_'.$user->id.'_'.time().'.'.$file->getClientOriginalExtension();
                         $path = $file->storeAs($directory, $filename, 'public');
                         $groupeData['patente_path'] = $path;
-                        
+
                         \Log::info('Patente uploaded:', ['path' => $path]);
                     }
-                    
+
                     // Handle patente deletion
                     if ($request->has('delete_patente') && $request->delete_patente == '1') {
                         $groupe = $profile->profileGroupe;
@@ -530,7 +537,7 @@ class ProfileController extends Controller
                             $groupeData['patente_path'] = null;
                         }
                     }
-                    
+
                     if ($profile->profileGroupe) {
                         $profile->profileGroupe->update($groupeData);
                         \Log::info('Groupe updated:', $groupeData);
@@ -546,7 +553,7 @@ class ProfileController extends Controller
                         'intervale_prix',
                         'product_category',
                     ]);
-                    
+
                     if ($profile->profileFournisseur) {
                         $profile->profileFournisseur->update($fournisseurData);
                         \Log::info('Fournisseur updated:', $fournisseurData);
@@ -561,29 +568,29 @@ class ProfileController extends Controller
             // Handle CIN document upload (common for all profiles)
             if ($request->hasFile('cin_file')) {
                 $file = $request->file('cin_file');
-                
+
                 $validator = Validator::make($request->all(), [
                     'cin_file' => 'file|mimes:jpeg,png,jpg,pdf|max:5120',
                 ]);
-                
+
                 if ($validator->fails()) {
-                    throw new \Exception('CIN validation failed: ' . json_encode($validator->errors()));
+                    throw new \Exception('CIN validation failed: '.json_encode($validator->errors()));
                 }
-                
+
                 // Delete old CIN if exists
                 if ($profile->cin_path && Storage::disk('public')->exists($profile->cin_path)) {
                     Storage::disk('public')->delete($profile->cin_path);
                 }
-                
+
                 // Store new CIN
                 $directory = 'documents/cin';
-                $filename = 'cin_' . $user->id . '_' . time() . '.' . $file->getClientOriginalExtension();
+                $filename = 'cin_'.$user->id.'_'.time().'.'.$file->getClientOriginalExtension();
                 $path = $file->storeAs($directory, $filename, 'public');
                 $profile->update(['cin_path' => $path]);
-                
+
                 \Log::info('CIN uploaded:', ['path' => $path]);
             }
-            
+
             // Handle CIN deletion
             if ($request->has('delete_cin') && $request->delete_cin == '1') {
                 if ($profile->cin_path) {
@@ -594,26 +601,26 @@ class ProfileController extends Controller
                     \Log::info('CIN deleted');
                 }
             }
-            
+
             DB::commit();
-            
-            \Log::info('Profile updated successfully for user: ' . $user->id);
-            
+
+            \Log::info('Profile updated successfully for user: '.$user->id);
+
             $user->refresh();
             $profile->refresh();
 
             return response()->json([
                 'message' => 'Profile updated successfully',
-                'user'    => new ProfileUserResource($user),
+                'user' => new ProfileUserResource($user),
                 'profile' => new ProfileBaseResource($profile),
             ]);
-            
+
         } catch (\Exception $e) {
             DB::rollBack();
-            
-            \Log::error('Profile update error: ' . $e->getMessage());
-            \Log::error('Stack trace: ' . $e->getTraceAsString());
-            
+
+            \Log::error('Profile update error: '.$e->getMessage());
+            \Log::error('Stack trace: '.$e->getTraceAsString());
+
             return response()->json([
                 'message' => 'Failed to update profile',
                 'error' => 'server_error',
@@ -623,13 +630,8 @@ class ProfileController extends Controller
         }
     }
 
-
-    public function updateAvatar(Request $request)
+    public function updateAvatar(UpdateAvatarRequest $request)
     {
-        $request->validate([
-            'avatar' => 'required|image|mimes:jpeg,png,jpg,webp|max:5120',
-        ]);
-
         $user = Auth::user();
 
         try {
@@ -654,19 +656,14 @@ class ProfileController extends Controller
         }
     }
 
-    public function updateInfo(Request $request)
+    public function updateInfo(UpdateAlbumInfoRequest $request)
     {
         $user = Auth::user();
-        
-        $request->validate([
-            'album_title' => 'required|string|max:255',
-            'album_description' => 'nullable|string',
-        ]);
 
         try {
             $albumTitle = $request->input('album_title');
             $albumDescription = $request->input('album_description', null);
-            
+
             $album = Album::firstOrCreate(
                 ['user_id' => $user->id],
                 [
@@ -679,11 +676,11 @@ class ProfileController extends Controller
                 'titre' => $albumTitle,
                 'updated_at' => now(),
             ];
-            
+
             if ($request->has('album_description')) {
                 $updateData['description'] = $albumDescription;
             }
-            
+
             $album->update($updateData);
 
             return response()->json([
@@ -700,31 +697,24 @@ class ProfileController extends Controller
             ], 200);
 
         } catch (\Exception $e) {
-            \Log::error('Album info update error: ' . $e->getMessage());
+            \Log::error('Album info update error: '.$e->getMessage());
 
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to update album info',
                 'error' => 'server_error',
-                'trace' => config('app.debug') ? $e->getTraceAsString() : null
+                'trace' => config('app.debug') ? $e->getTraceAsString() : null,
             ], 500);
         }
     }
 
-    public function storeOrUpdateProfilePhotos(Request $request)
+    public function storeOrUpdateProfilePhotos(StoreProfilePhotosRequest $request)
     {
-        if ($deny = $this->denyIfPendingClaim()) return $deny;
+        if ($deny = $this->denyIfPendingClaim()) {
+            return $deny;
+        }
 
         $user = Auth::user();
-
-        $request->validate([
-            'photos'            => 'required|array|min:1',
-            'photos.*'          => 'required|image|mimes:jpeg,png,jpg,gif,webp|max:5120',
-            'album_title'       => 'nullable|string|max:255',
-            'album_description' => 'nullable|string',
-        ], [
-            'photos.*.max' => 'Each image must be under 5 MB.',
-        ]);
 
         // For centre users, stamp the primary (approved-claim) centre on every photo.
         $campingCentreId = null;
@@ -749,8 +739,8 @@ class ProfileController extends Controller
             if (!$album) {
                 // First-ever upload — create the canonical album.
                 $album = Album::create([
-                    'user_id'     => $user->id,
-                    'titre'       => 'Profile Gallery',
+                    'user_id' => $user->id,
+                    'titre' => 'Profile Gallery',
                     'description' => $albumDescription ?? 'User profile gallery images',
                 ]);
             }
@@ -783,20 +773,20 @@ class ProfileController extends Controller
             foreach ($request->file('photos') as $index => $photo) {
                 $originalName = pathinfo($photo->getClientOriginalName(), PATHINFO_FILENAME);
                 $extension = $photo->getClientOriginalExtension();
-                $filename = $originalName . '_' . time() . '_' . uniqid() . '.' . $extension;
+                $filename = $originalName.'_'.time().'_'.uniqid().'.'.$extension;
 
-                $storageDir = $campingCentreId ? 'centre_photos/' . $campingCentreId : 'profile_photos';
+                $storageDir = $campingCentreId ? 'centre_photos/'.$campingCentreId : 'profile_photos';
                 $path = $photo->storeAs($storageDir, $filename, 'public');
 
                 $photoRecord = Photo::create([
-                    'path_to_img'       => $path,
-                    'user_id'           => $user->id,
-                    'album_id'          => $album->id,
+                    'path_to_img' => $path,
+                    'user_id' => $user->id,
+                    'album_id' => $album->id,
                     'camping_centre_id' => $campingCentreId,
-                    'is_cover'          => ($index === 0 && $album->photos()->where('is_cover', 1)->count() === 0) ? 1 : 0,
-                    'order'             => ++$order,
-                    'created_at'        => now(),
-                    'updated_at'        => now(),
+                    'is_cover' => ($index === 0 && $album->photos()->where('is_cover', 1)->count() === 0) ? 1 : 0,
+                    'order' => ++$order,
+                    'created_at' => now(),
+                    'updated_at' => now(),
                 ]);
 
                 $uploadedPhotos[] = [
@@ -819,7 +809,7 @@ class ProfileController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => count($uploadedPhotos) . ' photo(s) uploaded successfully',
+                'message' => count($uploadedPhotos).' photo(s) uploaded successfully',
                 'album' => [
                     'id' => $album->id,
                     'title' => $album->titre,
@@ -832,8 +822,8 @@ class ProfileController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
-            
-            \Log::error('Profile photos upload error: ' . $e->getMessage());
+
+            \Log::error('Profile photos upload error: '.$e->getMessage());
 
             return response()->json([
                 'success' => false,
@@ -871,9 +861,9 @@ class ProfileController extends Controller
                             $q->orWhere('album_id', $album->id);
                         }
                     })
-                    ->orderBy('order', 'asc')
-                    ->orderBy('created_at', 'desc')
-                    ->get()
+                        ->orderBy('order', 'asc')
+                        ->orderBy('created_at', 'desc')
+                        ->get()
                     : ($album
                         ? Photo::where('album_id', $album->id)
                             ->orderBy('order', 'asc')
@@ -881,25 +871,25 @@ class ProfileController extends Controller
                             ->get()
                         : collect());
 
-                $formattedPhotos = $photos->map(fn($p) => [
-                    'id'          => $p->id,
-                    'url'         => storage_url($p->path_to_img),
-                    'path'        => $p->path_to_img,
-                    'is_cover'    => (bool) $p->is_cover,
-                    'order'       => $p->order,
-                    'created_at'  => $p->created_at?->format('Y-m-d H:i:s'),
+                $formattedPhotos = $photos->map(fn ($p) => [
+                    'id' => $p->id,
+                    'url' => storage_url($p->path_to_img),
+                    'path' => $p->path_to_img,
+                    'is_cover' => (bool) $p->is_cover,
+                    'order' => $p->order,
+                    'created_at' => $p->created_at?->format('Y-m-d H:i:s'),
                     'uploaded_by' => $p->user_id ? 'partner' : 'admin',
                 ]);
 
                 return response()->json([
                     'success' => true,
-                    'album'   => $album ? [
-                        'id'          => $album->id,
-                        'title'       => $album->titre,
+                    'album' => $album ? [
+                        'id' => $album->id,
+                        'title' => $album->titre,
                         'description' => $album->description,
                         'cover_image' => $album->path_to_img ? storage_url($album->path_to_img) : null,
                         'photo_count' => $photos->count(),
-                        'created_at'  => $album->created_at?->format('Y-m-d H:i:s'),
+                        'created_at' => $album->created_at?->format('Y-m-d H:i:s'),
                     ] : null,
                     'photos' => $formattedPhotos->values()->all(),
                 ]);
@@ -922,8 +912,8 @@ class ProfileController extends Controller
                 // No album yet — return empty gracefully
                 return response()->json([
                     'success' => true,
-                    'album'   => null,
-                    'photos'  => [],
+                    'album' => null,
+                    'photos' => [],
                 ]);
             }
 
@@ -936,42 +926,44 @@ class ProfileController extends Controller
                 ->orderBy('created_at', 'desc')
                 ->get();
 
-            $formattedPhotos = $photos->map(fn($p) => [
-                'id'         => $p->id,
-                'url'        => storage_url($p->path_to_img),
-                'path'       => $p->path_to_img,
-                'is_cover'   => (bool) $p->is_cover,
-                'order'      => $p->order,
+            $formattedPhotos = $photos->map(fn ($p) => [
+                'id' => $p->id,
+                'url' => storage_url($p->path_to_img),
+                'path' => $p->path_to_img,
+                'is_cover' => (bool) $p->is_cover,
+                'order' => $p->order,
                 'created_at' => $p->created_at?->format('Y-m-d H:i:s'),
             ]);
 
             return response()->json([
                 'success' => true,
-                'album'   => [
-                    'id'          => $album->id,
-                    'title'       => $album->titre,
+                'album' => [
+                    'id' => $album->id,
+                    'title' => $album->titre,
                     'description' => $album->description,
                     'cover_image' => $album->path_to_img ? storage_url($album->path_to_img) : null,
                     'photo_count' => $photos->count(),
-                    'created_at'  => $album->created_at?->format('Y-m-d H:i:s'),
+                    'created_at' => $album->created_at?->format('Y-m-d H:i:s'),
                 ],
                 'photos' => $formattedPhotos->values()->all(),
             ]);
 
         } catch (\Exception $e) {
-            \Log::error('Error in getProfilePhotos: ' . $e->getMessage());
+            \Log::error('Error in getProfilePhotos: '.$e->getMessage());
 
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch profile photos',
-                'error'   => config('app.debug') ? $e->getMessage() : null,
+                'error' => config('app.debug') ? $e->getMessage() : null,
             ], 500);
         }
     }
 
     public function deletePhoto($photoId)
     {
-        if ($deny = $this->denyIfPendingClaim()) return $deny;
+        if ($deny = $this->denyIfPendingClaim()) {
+            return $deny;
+        }
 
         $user = Auth::user();
 
@@ -989,7 +981,9 @@ class ProfileController extends Controller
             $photo = Photo::where('id', $photoId)
                 ->where(function ($q) use ($centreIds, $album) {
                     $q->whereIn('camping_centre_id', $centreIds);
-                    if ($album) { $q->orWhere('album_id', $album->id); }
+                    if ($album) {
+                        $q->orWhere('album_id', $album->id);
+                    }
                 })
                 ->firstOrFail();
 
@@ -1029,7 +1023,8 @@ class ProfileController extends Controller
 
             } catch (\Exception $e) {
                 DB::rollBack();
-                \Log::error('Photo deletion error (centre): ' . $e->getMessage());
+                \Log::error('Photo deletion error (centre): '.$e->getMessage());
+
                 return response()->json(['success' => false, 'message' => 'Failed to delete photo', 'error' => 'server_error'], 500);
             }
         }
@@ -1076,14 +1071,17 @@ class ProfileController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
-            \Log::error('Photo deletion error: ' . $e->getMessage());
+            \Log::error('Photo deletion error: '.$e->getMessage());
+
             return response()->json(['success' => false, 'message' => 'Failed to delete photo', 'error' => 'server_error'], 500);
         }
     }
 
     public function setCoverPhoto($photoId)
     {
-        if ($deny = $this->denyIfPendingClaim()) return $deny;
+        if ($deny = $this->denyIfPendingClaim()) {
+            return $deny;
+        }
 
         $user = Auth::user();
 
@@ -1101,7 +1099,9 @@ class ProfileController extends Controller
             $photo = Photo::where('id', $photoId)
                 ->where(function ($q) use ($centreIds, $album) {
                     $q->whereIn('camping_centre_id', $centreIds);
-                    if ($album) { $q->orWhere('album_id', $album->id); }
+                    if ($album) {
+                        $q->orWhere('album_id', $album->id);
+                    }
                 })
                 ->firstOrFail();
 
@@ -1126,11 +1126,13 @@ class ProfileController extends Controller
                 }
 
                 DB::commit();
+
                 return response()->json(['success' => true, 'message' => 'Cover photo updated successfully']);
 
             } catch (\Exception $e) {
                 DB::rollBack();
-                \Log::error('Cover photo update error (centre): ' . $e->getMessage());
+                \Log::error('Cover photo update error (centre): '.$e->getMessage());
+
                 return response()->json(['success' => false, 'message' => 'Failed to update cover photo', 'error' => 'server_error'], 500);
             }
         }
@@ -1160,11 +1162,13 @@ class ProfileController extends Controller
             $album->update(['path_to_img' => $photo->path_to_img, 'updated_at' => now()]);
 
             DB::commit();
+
             return response()->json(['success' => true, 'message' => 'Cover photo updated successfully']);
 
         } catch (\Exception $e) {
             DB::rollBack();
-            \Log::error('Cover photo update error: ' . $e->getMessage());
+            \Log::error('Cover photo update error: '.$e->getMessage());
+
             return response()->json(['success' => false, 'message' => 'Failed to update cover photo', 'error' => 'server_error'], 500);
         }
     }
@@ -1172,26 +1176,26 @@ class ProfileController extends Controller
     public function reorderPhotos(Request $request)
     {
         $user = Auth::user();
-        
+
         $album = Album::where('user_id', $user->id)
             ->where('titre', 'Profile Gallery')
             ->first();
-        
+
         if (!$album) {
             return response()->json([
                 'success' => false,
                 'message' => 'Profile album not found',
             ], 404);
         }
-        
+
         $request->validate([
             'photos' => 'required|array|min:1',
-            'photos.*.id' => 'required|exists:photos,id,user_id,' . $user->id . ',album_id,' . $album->id,
+            'photos.*.id' => 'required|exists:photos,id,user_id,'.$user->id.',album_id,'.$album->id,
             'photos.*.order' => 'required|integer|min:0',
         ]);
 
         DB::beginTransaction();
-        
+
         try {
             foreach ($request->photos as $photoData) {
                 Photo::where('id', $photoData['id'])
@@ -1209,8 +1213,8 @@ class ProfileController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
-            
-            \Log::error('Photo reorder error: ' . $e->getMessage());
+
+            \Log::error('Photo reorder error: '.$e->getMessage());
 
             return response()->json([
                 'success' => false,
@@ -1232,15 +1236,15 @@ class ProfileController extends Controller
 
         if ($profile && !$profile->is_public && !$isSelf) {
             return response()->json([
-                'success'    => false,
-                'message'    => 'This profile is private.',
+                'success' => false,
+                'message' => 'This profile is private.',
                 'is_private' => true,
                 'user' => [
-                    'uuid'       => $user->uuid,
+                    'uuid' => $user->uuid,
                     'first_name' => $user->first_name,
-                    'last_name'  => $user->last_name,
-                    'avatar'     => $user->avatar ? storage_url($user->avatar) : null,
-                    'role'       => $user->role?->name,
+                    'last_name' => $user->last_name,
+                    'avatar' => $user->avatar ? storage_url($user->avatar) : null,
+                    'role' => $user->role?->name,
                 ],
             ], 403);
         }
@@ -1252,7 +1256,7 @@ class ProfileController extends Controller
         }
 
         $data = [
-            'user'    => new ProfileUserResource($user),
+            'user' => new ProfileUserResource($user),
             'profile' => new ProfileBaseResource($profile),
             'details' => $this->buildDetailsResource($profile, $isSelf),
         ];
@@ -1262,22 +1266,22 @@ class ProfileController extends Controller
 
             // Album for groupe banner display
             $album = \App\Models\Album::with(['photos' => function ($q) {
-                    $q->orderBy('order', 'asc')->orderBy('created_at', 'desc');
-                }])
+                $q->orderBy('order', 'asc')->orderBy('created_at', 'desc');
+            }])
                 ->where('user_id', $user->id)
                 ->where('titre', 'Profile Gallery')
                 ->first()
                 ?? \App\Models\Album::with(['photos' => function ($q) {
                     $q->orderBy('order', 'asc')->orderBy('created_at', 'desc');
                 }])
-                ->where('user_id', $user->id)
-                ->latest()
-                ->first();
+                    ->where('user_id', $user->id)
+                    ->latest()
+                    ->first();
 
             $data['album'] = $album ? [
-                'photos' => $album->photos->map(fn($p) => [
-                    'id'       => $p->id,
-                    'url'      => storage_url($p->path_to_img),
+                'photos' => $album->photos->map(fn ($p) => [
+                    'id' => $p->id,
+                    'url' => storage_url($p->path_to_img),
                     'is_cover' => (bool) $p->is_cover,
                 ])->values(),
             ] : null;
@@ -1287,11 +1291,11 @@ class ProfileController extends Controller
                 ? $profileGroupe->coOwners()
                     ->select('users.uuid', 'users.first_name', 'users.last_name', 'users.avatar')
                     ->get()
-                    ->map(fn($u) => [
-                        'uuid'       => $u->uuid,
+                    ->map(fn ($u) => [
+                        'uuid' => $u->uuid,
                         'first_name' => $u->first_name,
-                        'last_name'  => $u->last_name,
-                        'avatar'     => $u->avatar ? storage_url($u->avatar) : null,
+                        'last_name' => $u->last_name,
+                        'avatar' => $u->avatar ? storage_url($u->avatar) : null,
                     ])
                 : [];
 
@@ -1303,8 +1307,8 @@ class ProfileController extends Controller
             }
         }
 
-        $data['photos']          = $this->buildPhotos($user);
-        $data['past_events']     = $this->buildPastEvents($user->id);
+        $data['photos'] = $this->buildPhotos($user);
+        $data['past_events'] = $this->buildPastEvents($user->id);
         $data['visited_centres'] = $this->buildVisitedCentres($user->id);
 
         return response()->json($data);
@@ -1319,7 +1323,7 @@ class ProfileController extends Controller
             if ($center->profile->user_id !== $user->id) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Unauthorized access'
+                    'message' => 'Unauthorized access',
                 ], 403);
             }
 
@@ -1329,15 +1333,15 @@ class ProfileController extends Controller
                 'price' => 'required|numeric|min:0',
                 'unit' => 'required|string|max:50',
                 'is_available' => 'boolean',
-                'nbr_place' => 'nullable|integer|min:1'
-                
+                'nbr_place' => 'nullable|integer|min:1',
+
             ]);
 
             if ($validator->fails()) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Validation failed',
-                    'errors' => $validator->errors()
+                    'errors' => $validator->errors(),
                 ], 422);
             }
 
@@ -1349,7 +1353,7 @@ class ProfileController extends Controller
             if ($existingService) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'A custom service with this name already exists'
+                    'message' => 'A custom service with this name already exists',
                 ], 409);
             }
 
@@ -1370,13 +1374,13 @@ class ProfileController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Custom service added successfully',
-                'data' => $service
+                'data' => $service,
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to add custom service',
-                'error' => 'server_error'
+                'error' => 'server_error',
             ], 500);
         }
     }
@@ -1387,23 +1391,23 @@ class ProfileController extends Controller
     private function buildDetailsResource(\App\Models\Profile $profile, bool $isSelf): mixed
     {
         return match ($profile->type) {
-            'guide'       => (new ProfileGuideResource(
-                                $profile->profileGuide ?? new ProfileGuide(['profile_id' => $profile->id])
-                             ))->withSelf($isSelf),
-            'centre'      => (new ProfileCentreResource(
-                                $profile->profileCentre ?? new ProfileCentre(['profile_id' => $profile->id])
-                             ))->withSelf($isSelf),
-            'campeur'     => new ProfileCampeurResource(
-                                $profile->profileCampeur
-                                ?? ProfileCampeur::firstOrCreate(['profile_id' => $profile->id])
-                             ),
-            'groupe'      => (new ProfileGroupeResource(
-                                $profile->profileGroupe ?? new ProfileGroupe(['profile_id' => $profile->id])
-                             ))->withSelf($isSelf),
+            'guide' => (new ProfileGuideResource(
+                $profile->profileGuide ?? new ProfileGuide(['profile_id' => $profile->id])
+            ))->withSelf($isSelf),
+            'centre' => (new ProfileCentreResource(
+                $profile->profileCentre ?? new ProfileCentre(['profile_id' => $profile->id])
+            ))->withSelf($isSelf),
+            'campeur' => new ProfileCampeurResource(
+                $profile->profileCampeur
+                ?? ProfileCampeur::firstOrCreate(['profile_id' => $profile->id])
+            ),
+            'groupe' => (new ProfileGroupeResource(
+                $profile->profileGroupe ?? new ProfileGroupe(['profile_id' => $profile->id])
+            ))->withSelf($isSelf),
             'fournisseur' => new ProfileFournisseurResource(
-                                $profile->profileFournisseur ?? new ProfileFournisseur(['profile_id' => $profile->id])
-                             ),
-            default       => null,
+                $profile->profileFournisseur ?? new ProfileFournisseur(['profile_id' => $profile->id])
+            ),
+            default => null,
         };
     }
 
@@ -1431,18 +1435,18 @@ class ProfileController extends Controller
             ->count();
 
         return [
-            'average_note'    => round((float) $average, 2),
-            'feedback_count'  => $count,
-            'latest_feedbacks' => $feedbacks->map(fn($f) => [
-                'id'         => $f->id,
-                'note'       => $f->note,
-                'comment'    => $f->comment,
+            'average_note' => round((float) $average, 2),
+            'feedback_count' => $count,
+            'latest_feedbacks' => $feedbacks->map(fn ($f) => [
+                'id' => $f->id,
+                'note' => $f->note,
+                'comment' => $f->comment,
                 'created_at' => $f->created_at,
                 'user' => $f->user ? [
-                    'uuid'       => $f->user->uuid,
+                    'uuid' => $f->user->uuid,
                     'first_name' => $f->user->first_name,
-                    'last_name'  => $f->user->last_name,
-                    'avatar'     => $f->user->avatar ? storage_url($f->user->avatar) : null,
+                    'last_name' => $f->user->last_name,
+                    'avatar' => $f->user->avatar ? storage_url($f->user->avatar) : null,
                 ] : null,
             ])->values(),
         ];
@@ -1460,38 +1464,39 @@ class ProfileController extends Controller
                     ->orderBy('order', 'asc')
                     ->orderBy('created_at', 'desc')
                     ->get()
-                    ->map(fn($p) => [
-                        'id'       => $p->id,
-                        'url'      => storage_url($p->path_to_img),
+                    ->map(fn ($p) => [
+                        'id' => $p->id,
+                        'url' => storage_url($p->path_to_img),
                         'is_cover' => (bool) $p->is_cover,
-                        'order'    => $p->order,
+                        'order' => $p->order,
                     ])->values()->all();
             }
+
             return [];
         }
 
         $album = \App\Models\Album::with(['photos' => function ($q) {
-                $q->orderBy('order', 'asc')->orderBy('created_at', 'desc');
-            }])
+            $q->orderBy('order', 'asc')->orderBy('created_at', 'desc');
+        }])
             ->where('user_id', $user->id)
             ->where('titre', 'Profile Gallery')
             ->first()
             ?? \App\Models\Album::with(['photos' => function ($q) {
                 $q->orderBy('order', 'asc')->orderBy('created_at', 'desc');
             }])
-            ->where('user_id', $user->id)
-            ->latest()
-            ->first();
+                ->where('user_id', $user->id)
+                ->latest()
+                ->first();
 
         if (!$album) {
             return [];
         }
 
-        return $album->photos->map(fn($p) => [
-            'id'       => $p->id,
-            'url'      => storage_url($p->path_to_img),
+        return $album->photos->map(fn ($p) => [
+            'id' => $p->id,
+            'url' => storage_url($p->path_to_img),
             'is_cover' => (bool) $p->is_cover,
-            'order'    => $p->order,
+            'order' => $p->order,
         ])->values()->all();
     }
 
@@ -1501,13 +1506,13 @@ class ProfileController extends Controller
             ->whereIn('status', ['confirmed', 'completed', 'attended'])
             ->with('event')
             ->get()
-            ->filter(fn($r) => $r->event && $r->event->start_date)
-            ->sortByDesc(fn($r) => $r->event->start_date)
+            ->filter(fn ($r) => $r->event && $r->event->start_date)
+            ->sortByDesc(fn ($r) => $r->event->start_date)
             ->take(8)
-            ->map(fn($r) => [
-                'id'       => $r->event->id,
-                'title'    => $r->event->title,
-                'date'     => $r->event->start_date,
+            ->map(fn ($r) => [
+                'id' => $r->event->id,
+                'title' => $r->event->title,
+                'date' => $r->event->start_date,
                 'location' => $r->event->address ?? null,
             ])->values()->all();
     }
@@ -1518,15 +1523,15 @@ class ProfileController extends Controller
             ->whereIn('status', ['confirmed', 'completed'])
             ->with('centre')
             ->get()
-            ->filter(fn($r) => $r->centre)
+            ->filter(fn ($r) => $r->centre)
             ->sortByDesc('date_debut')
             ->unique('centre_id')
             ->take(8)
-            ->map(fn($r) => [
-                'id'       => $r->centre->id,
-                'name'     => $r->centre->name,
+            ->map(fn ($r) => [
+                'id' => $r->centre->id,
+                'name' => $r->centre->name,
                 'location' => $r->centre->ville ?? null,
-                'date'     => $r->date_debut,
+                'date' => $r->date_debut,
             ])->values()->all();
     }
 
@@ -1571,7 +1576,7 @@ class ProfileController extends Controller
 
         return response()->json([
             'profile' => $profile,
-            'details' => $details
+            'details' => $details,
         ]);
     }
 
@@ -1584,25 +1589,26 @@ class ProfileController extends Controller
 
             return response()->json([
                 'success' => true,
-                'data' => $categories
+                'data' => $categories,
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch service categories',
-                'error' => 'server_error'
+                'error' => 'server_error',
             ], 500);
         }
     }
+
     public function getCenterServices($centerId)
     {
         try {
             $center = ProfileCentre::find($centerId);
-            
+
             if (!$center) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Center not found'
+                    'message' => 'Center not found',
                 ], 404);
             }
 
@@ -1611,7 +1617,7 @@ class ProfileController extends Controller
                 ->orderBy('created_at', 'asc')
                 ->get();
 
-            $formattedServices = $services->map(function($service) {
+            $formattedServices = $services->map(function ($service) {
                 // Custom service (no category)
                 if (is_null($service->service_category_id)) {
                     return [
@@ -1647,7 +1653,7 @@ class ProfileController extends Controller
 
             // ✅ Ensure standard service exists
             $hasStandardService = $formattedServices->contains('is_standard', true);
-            
+
             if (!$hasStandardService) {
                 $defaultStandard = [
                     'id' => null,
@@ -1661,21 +1667,22 @@ class ProfileController extends Controller
                     'nbr_place' => null,
                     'is_custom' => false,
                 ];
-                
+
                 $formattedServices->prepend($defaultStandard);
             }
 
             return response()->json($formattedServices->values());
         } catch (\Exception $e) {
-            \Log::error('getCenterServices error: ' . $e->getMessage());
-            
+            \Log::error('getCenterServices error: '.$e->getMessage());
+
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch center services',
-                'error' => 'server_error'
+                'error' => 'server_error',
             ], 500);
         }
     }
+
     public function updateCenterService(Request $request, $centerId, $serviceId = null)
     {
         try {
@@ -1685,7 +1692,7 @@ class ProfileController extends Controller
             if ($center->profile->user_id !== $user->id) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Unauthorized access'
+                    'message' => 'Unauthorized access',
                 ], 403);
             }
 
@@ -1704,12 +1711,12 @@ class ProfileController extends Controller
                 return response()->json([
                     'success' => false,
                     'message' => 'Validation failed',
-                    'errors' => $validator->errors()
+                    'errors' => $validator->errors(),
                 ], 422);
             }
 
             $isCustomService = empty($request->service_category_id);
-            
+
             if (!$serviceId && $isCustomService) {
                 return $this->addCustomService($request, $centerId);
             }
@@ -1722,13 +1729,13 @@ class ProfileController extends Controller
 
             $serviceData = [
                 'profile_center_id' => $centerId,
-                'name'              => $resolvedName,
-                'price'             => $request->price,
-                'description'       => $request->description,
-                'is_available'      => $request->is_available ?? true,
-                'unit'              => $request->unit,
-                'nbr_place'         => $request->nbr_place,
-                'is_refundable'     => $request->has('is_refundable') ? (bool) $request->is_refundable : true,
+                'name' => $resolvedName,
+                'price' => $request->price,
+                'description' => $request->description,
+                'is_available' => $request->is_available ?? true,
+                'unit' => $request->unit,
+                'nbr_place' => $request->nbr_place,
+                'is_refundable' => $request->has('is_refundable') ? (bool) $request->is_refundable : true,
             ];
 
             $isStandardCategory = false;
@@ -1749,7 +1756,7 @@ class ProfileController extends Controller
                     if ($serviceCategory->is_standard && $request->price < $serviceCategory->min_price) {
                         return response()->json([
                             'success' => false,
-                            'message' => "Price must be at least {$serviceCategory->min_price} TND for this service"
+                            'message' => "Price must be at least {$serviceCategory->min_price} TND for this service",
                         ], 422);
                     }
                 }
@@ -1775,7 +1782,7 @@ class ProfileController extends Controller
             }
 
             // Update price_per_night if this is the standard service
-            if ($isStandardCategory) {                
+            if ($isStandardCategory) {
                 $center->price_per_night = $request->price;
                 $center->save();
             }
@@ -1783,19 +1790,20 @@ class ProfileController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => $serviceId ? 'Service updated successfully' : 'Service added successfully',
-                'data' => $service
+                'data' => $service,
             ]);
         } catch (\Exception $e) {
-            \Log::error('updateCenterService error: ' . $e->getMessage());
-            
+            \Log::error('updateCenterService error: '.$e->getMessage());
+
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to update service',
                 'error' => 'server_error',
-                'trace' => config('app.debug') ? $e->getTraceAsString() : null
+                'trace' => config('app.debug') ? $e->getTraceAsString() : null,
             ], 500);
         }
     }
+
     public function deleteCenterService($centerId, $serviceId)
     {
         try {
@@ -1805,7 +1813,7 @@ class ProfileController extends Controller
             if ($center->profile->user_id !== $user->id) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Unauthorized access'
+                    'message' => 'Unauthorized access',
                 ], 403);
             }
 
@@ -1818,7 +1826,7 @@ class ProfileController extends Controller
             if ($service->is_standard && !request()->boolean('deactivate_standard')) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Cannot delete standard service'
+                    'message' => 'Cannot delete standard service',
                 ], 422);
             }
 
@@ -1826,13 +1834,13 @@ class ProfileController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'Service deleted successfully'
+                'message' => 'Service deleted successfully',
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to delete service',
-                'error' => 'server_error'
+                'error' => 'server_error',
             ], 500);
         }
     }
@@ -1846,7 +1854,7 @@ class ProfileController extends Controller
             if ($center->profile->user_id !== $user->id) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Unauthorized access'
+                    'message' => 'Unauthorized access',
                 ], 403);
             }
 
@@ -1857,7 +1865,7 @@ class ProfileController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch equipment',
-                'error' => 'server_error'
+                'error' => 'server_error',
             ], 500);
         }
     }
@@ -1871,7 +1879,7 @@ class ProfileController extends Controller
             if ($center->profile->user_id !== $user->id) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Unauthorized access'
+                    'message' => 'Unauthorized access',
                 ], 403);
             }
 
@@ -1885,7 +1893,7 @@ class ProfileController extends Controller
                 return response()->json([
                     'success' => false,
                     'message' => 'Validation failed',
-                    'errors' => $validator->errors()
+                    'errors' => $validator->errors(),
                 ], 422);
             }
 
@@ -1903,13 +1911,13 @@ class ProfileController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Equipment updated successfully',
-                'data' => $equipment
+                'data' => $equipment,
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to update equipment',
-                'error' => 'server_error'
+                'error' => 'server_error',
             ], 500);
         }
     }
@@ -1920,13 +1928,13 @@ class ProfileController extends Controller
      */
     public function completion()
     {
-        $user    = Auth::user();
+        $user = Auth::user();
         $profile = $user->profile;
-        $type    = $profile?->type ?? 'campeur';
+        $type = $profile?->type ?? 'campeur';
 
-        $steps  = [];
+        $steps = [];
         $earned = 0;
-        $total  = 0;
+        $total = 0;
 
         // ── Shared fields (all roles) ──────────────────────────────────────────
         $sharedSteps = [
@@ -1934,7 +1942,7 @@ class ProfileController extends Controller
             ['key' => 'phone',         'label' => 'Phone number',        'done' => (bool) $user->phone_number,  'link' => '/settings',          'weight' => 10],
             ['key' => 'city',          'label' => 'City',                'done' => (bool) ($profile?->city ?: $user->ville), 'link' => '/settings', 'weight' => 10],
             ['key' => 'bio',           'label' => 'Bio / description',   'done' => (bool) $profile?->bio,       'link' => '/settings',          'weight' => 10],
-            ['key' => 'email_verified','label' => 'Email verified',      'done' => (bool) $user->email_verified_at, 'link' => '/emailverification', 'weight' => 15],
+            ['key' => 'email_verified', 'label' => 'Email verified',      'done' => (bool) $user->email_verified_at, 'link' => '/emailverification', 'weight' => 15],
         ];
 
         // ── Role-specific fields ───────────────────────────────────────────────
@@ -1942,10 +1950,11 @@ class ProfileController extends Controller
             'centre' => [
                 ['key' => 'centre_name',    'label' => 'Center name',        'done' => (bool) $profile?->profileCentre?->name,          'link' => '/settings',          'weight' => 10],
                 ['key' => 'centre_cap',     'label' => 'Capacity',           'done' => (bool) $profile?->profileCentre?->capacite,       'link' => '/settings',          'weight' => 5],
-                ['key' => 'centre_price',   'label' => 'Price per night',     'done' => (bool) $profile?->profileCentre?->price_per_night,'link' => '/settings',          'weight' => 5],
+                ['key' => 'centre_price',   'label' => 'Price per night',     'done' => (bool) $profile?->profileCentre?->price_per_night, 'link' => '/settings',          'weight' => 5],
                 ['key' => 'centre_contact', 'label' => 'Contact email',       'done' => (bool) $profile?->profileCentre?->contact_email,  'link' => '/settings',          'weight' => 5],
-                ['key' => 'centre_photos',  'label' => 'Center photos',       'done' => (function() use ($user) {
+                ['key' => 'centre_photos',  'label' => 'Center photos',       'done' => (function () use ($user) {
                     $cids = \App\Models\CampingCentre::where('user_id', $user->id)->pluck('id');
+
                     return $cids->isNotEmpty()
                         ? \App\Models\Photo::whereIn('camping_centre_id', $cids)->exists()
                         : \App\Models\Photo::where('user_id', $user->id)->exists();
@@ -1978,20 +1987,22 @@ class ProfileController extends Controller
         $steps = array_merge($sharedSteps, $roleSteps);
 
         foreach ($steps as $step) {
-            $total  += $step['weight'];
-            if ($step['done']) $earned += $step['weight'];
+            $total += $step['weight'];
+            if ($step['done']) {
+                $earned += $step['weight'];
+            }
         }
 
         $percentage = $total > 0 ? (int) round(($earned / $total) * 100) : 0;
 
         return response()->json([
-            'success'    => true,
+            'success' => true,
             'percentage' => $percentage,
-            'earned'     => $earned,
-            'total'      => $total,
-            'steps'      => $steps,
-            'role'       => $type,
-            'is_active'  => $user->is_active,
+            'earned' => $earned,
+            'total' => $total,
+            'steps' => $steps,
+            'role' => $type,
+            'is_active' => $user->is_active,
         ]);
     }
 }
