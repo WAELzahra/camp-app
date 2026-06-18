@@ -2,31 +2,35 @@
 
 namespace App\Http\Controllers\Event;
 
-use Illuminate\Support\Facades\Mail;
-use App\Http\Controllers\Controller;
-use App\Models\Events;
-use App\Models\CampingZone;
-use App\Models\Photo;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Storage;
-use App\Mail\NewEventNotification;
-use App\Models\Reservations_events;
-use App\Models\ProfileGroupe;
-use App\Models\User;
-use App\Models\FollowersGroupe;
-use App\Models\Profile;
-use App\Models\Circuit;
-use Illuminate\Validation\Rule;
-use App\Notifications\EventInviteNotification;
 use App\Events\NewNotificationCreated;
-use App\Models\Balance;
-use App\Models\WalletTransaction;
-use App\Models\EventReservationService;
-use App\Services\CommissionService;
+use App\Http\Controllers\Controller;
+use App\Http\Requests\Event\ApproveRejectEventRequest;
+use App\Http\Requests\Event\InviteToEventRequest;
+use App\Http\Requests\Event\NotifyNearbyEventsRequest;
+use App\Http\Requests\Event\StoreEventRequest;
+use App\Http\Requests\Event\UpdateEventReservationStatusRequest;
 use App\Http\Resources\EventReservationResource;
 use App\Http\Resources\EventResource;
+use App\Mail\NewEventNotification;
+use App\Models\Balance;
+use App\Models\CampingZone;
+use App\Models\EventReservationService;
+use App\Models\Events;
+use App\Models\FollowersGroupe;
+use App\Models\Photo;
+use App\Models\Profile;
+use App\Models\ProfileGroupe;
+use App\Models\Reservations_events;
+use App\Models\User;
+use App\Models\WalletTransaction;
+use App\Notifications\EventInviteNotification;
+use App\Services\CommissionService;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 
 class EventController extends Controller
 {
@@ -38,7 +42,7 @@ class EventController extends Controller
     public function getGroupEvents($groupId, Request $request)
     {
         $query = Events::where('group_id', $groupId)
-                    ->with(['group', 'group.acceptedSupplierLink.supplier:id,uuid,first_name,last_name,avatar', 'photos']);
+            ->with(['group', 'group.acceptedSupplierLink.supplier:id,uuid,first_name,last_name,avatar', 'photos']);
 
         // Optional filters
         if ($request->has('status')) {
@@ -57,12 +61,13 @@ class EventController extends Controller
         $events = $query->paginate($request->get('per_page', 15));
         $events->getCollection()->transform(function ($event) {
             $event->accepted_supplier = $event->group?->acceptedSupplierLink?->supplier ?? null;
+
             return $event;
         });
 
         return response()->json([
             'success' => true,
-            'data' => $events
+            'data' => $events,
         ]);
     }
 
@@ -73,23 +78,23 @@ class EventController extends Controller
     public function myEvents(Request $request)
     {
         $user = Auth::user();
-        
+
         if (!$user) {
             return response()->json(['message' => 'Unauthenticated'], 401);
         }
-        
+
         // Check if user is group (role_id = 2)
         if ($user->role_id !== 2) {
             return response()->json([
                 'success' => false,
                 'message' => 'Only groups can access their events',
-                'data' => []
+                'data' => [],
             ], 200);
         }
 
         try {
             $query = Events::where('group_id', $user->id)
-                        ->with(['group', 'group.acceptedSupplierLink.supplier:id,uuid,first_name,last_name,avatar', 'photos']);
+                ->with(['group', 'group.acceptedSupplierLink.supplier:id,uuid,first_name,last_name,avatar', 'photos']);
 
             // Optional filters
             if ($request->has('status')) {
@@ -114,27 +119,28 @@ class EventController extends Controller
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to fetch events: ' . $e->getMessage(),
-                'data' => ['data' => []]
+                'message' => 'Failed to fetch events: '.$e->getMessage(),
+                'data' => ['data' => []],
             ], 500);
         }
     }
+
     /**
      * List all events (Public) - returns ALL events for client-side filtering
      */
     public function index(Request $request)
     {
         $query = Events::with(['group', 'group.acceptedSupplierLink.supplier:id,uuid,first_name,last_name,avatar', 'photos'])
-                    ->orderByRaw('ISNULL(start_date) ASC, start_date ASC'); // NULL start_date (custom) at end
+            ->orderByRaw('ISNULL(start_date) ASC, start_date ASC'); // NULL start_date (custom) at end
 
         // Optional: Basic search - keep this as it's efficient
         if ($request->has('q')) {
             $search = $request->q;
-            $query->where(function($q) use ($search) {
+            $query->where(function ($q) use ($search) {
                 $q->where('title', 'like', "%{$search}%")
-                ->orWhere('description', 'like', "%{$search}%")
-                ->orWhere('departure_city', 'like', "%{$search}%")
-                ->orWhere('arrival_city', 'like', "%{$search}%");
+                    ->orWhere('description', 'like', "%{$search}%")
+                    ->orWhere('departure_city', 'like', "%{$search}%")
+                    ->orWhere('arrival_city', 'like', "%{$search}%");
             });
         }
 
@@ -152,6 +158,7 @@ class EventController extends Controller
             'data' => EventResource::collection($events),
         ]);
     }
+
     /**
      * Get public event details (Public)
      */
@@ -187,10 +194,10 @@ class EventController extends Controller
             ->where('status', 'scheduled')
             ->where(function ($query) use ($keyword) {
                 $query->where('title', 'like', "%$keyword%")
-                      ->orWhere('description', 'like', "%$keyword%")
-                      ->orWhere('departure_city', 'like', "%$keyword%")
-                      ->orWhere('arrival_city', 'like', "%$keyword%")
-                      ->orWhereJsonContains('tags', $keyword);
+                    ->orWhere('description', 'like', "%$keyword%")
+                    ->orWhere('departure_city', 'like', "%$keyword%")
+                    ->orWhere('arrival_city', 'like', "%$keyword%")
+                    ->orWhereJsonContains('tags', $keyword);
             })
             ->orderBy('start_date', 'asc')
             ->paginate($request->get('per_page', 15));
@@ -212,19 +219,19 @@ class EventController extends Controller
             return response()->json(['message' => 'Event not found'], 404);
         }
 
-        $url = url('/events/' . $event->id);
+        $url = url('/events/'.$event->id);
 
         $shareLinks = [
-            'facebook' => 'https://www.facebook.com/sharer/sharer.php?u=' . urlencode($url),
-            'whatsapp' => 'https://api.whatsapp.com/send?text=' . urlencode("Check out this event: " . $url),
-            'telegram' => 'https://t.me/share/url?url=' . urlencode($url) . '&text=' . urlencode('Check out this amazing event!'),
-            'twitter' => 'https://twitter.com/intent/tweet?url=' . urlencode($url) . '&text=' . urlencode($event->title),
-            'linkedin' => 'https://www.linkedin.com/sharing/share-offsite/?url=' . urlencode($url),
+            'facebook' => 'https://www.facebook.com/sharer/sharer.php?u='.urlencode($url),
+            'whatsapp' => 'https://api.whatsapp.com/send?text='.urlencode('Check out this event: '.$url),
+            'telegram' => 'https://t.me/share/url?url='.urlencode($url).'&text='.urlencode('Check out this amazing event!'),
+            'twitter' => 'https://twitter.com/intent/tweet?url='.urlencode($url).'&text='.urlencode($event->title),
+            'linkedin' => 'https://www.linkedin.com/sharing/share-offsite/?url='.urlencode($url),
         ];
 
         return response()->json([
             'success' => true,
-            'data' => $shareLinks
+            'data' => $shareLinks,
         ]);
     }
 
@@ -239,11 +246,11 @@ class EventController extends Controller
             return response()->json(['message' => 'Event not found'], 404);
         }
 
-        $publicLink = url("/events/" . $event->id);
+        $publicLink = url('/events/'.$event->id);
 
         return response()->json([
             'success' => true,
-            'data' => ['link' => $publicLink]
+            'data' => ['link' => $publicLink],
         ]);
     }
 
@@ -254,26 +261,21 @@ class EventController extends Controller
      */
     public function show($id)
     {
-        $event = Events::with(['group', 'photos', 'feedbacks' => function($q) {
+        $event = Events::with(['group', 'photos', 'feedbacks' => function ($q) {
             $q->where('status', 'approved');
         }])->findOrFail($id);
 
         return response()->json([
             'success' => true,
-            'data' => $event
+            'data' => $event,
         ]);
     }
 
     /**
      * Get nearby events (Authenticated users)
      */
-    public function notifyNearbyEvents(Request $request, $userId)
+    public function notifyNearbyEvents(NotifyNearbyEventsRequest $request, $userId)
     {
-        $request->validate([
-            'lat' => 'required|numeric',
-            'lng' => 'required|numeric',
-            'radius' => 'nullable|numeric|min:1|max:100',
-        ]);
 
         $user = User::findOrFail($userId);
         $lat = $request->lat;
@@ -283,7 +285,7 @@ class EventController extends Controller
         // Find nearby events using Haversine formula
         $events = Events::where('is_active', true)
             ->where('status', 'scheduled')
-            ->selectRaw("*, (6371 * acos(cos(radians(?)) * cos(radians(latitude)) * cos(radians(longitude) - radians(?)) + sin(radians(?)) * sin(radians(latitude)))) AS distance", [$lat, $lng, $lat])
+            ->selectRaw('*, (6371 * acos(cos(radians(?)) * cos(radians(latitude)) * cos(radians(longitude) - radians(?)) + sin(radians(?)) * sin(radians(latitude)))) AS distance', [$lat, $lng, $lat])
             ->having('distance', '<=', $radius)
             ->orderBy('distance', 'asc')
             ->get();
@@ -293,7 +295,7 @@ class EventController extends Controller
         if (class_exists('App\Models\CampingZone')) {
             $zones = CampingZone::where('status', true)
                 ->where('is_closed', false)
-                ->selectRaw("*, (6371 * acos(cos(radians(?)) * cos(radians(latitude)) * cos(radians(longitude) - radians(?)) + sin(radians(?)) * sin(radians(latitude)))) AS distance", [$lat, $lng, $lat])
+                ->selectRaw('*, (6371 * acos(cos(radians(?)) * cos(radians(latitude)) * cos(radians(longitude) - radians(?)) + sin(radians(?)) * sin(radians(latitude)))) AS distance', [$lat, $lng, $lat])
                 ->having('distance', '<=', $radius)
                 ->orderBy('distance', 'asc')
                 ->get();
@@ -304,7 +306,7 @@ class EventController extends Controller
             'data' => [
                 'events' => $events,
                 'camping_zones' => $zones,
-            ]
+            ],
         ]);
     }
 
@@ -313,73 +315,28 @@ class EventController extends Controller
     /**
      * Create a new event (Groups only)
      */
-    public function store(Request $request)
+    public function store(StoreEventRequest $request)
     {
         $user = Auth::user();
-        
+
         // Check if user is group (role_id = 2)
         if ($user->role_id !== 2) {
             return response()->json(['message' => 'Only groups can create events.'], 403);
         }
 
-        $validated = $request->validate([
-            // Event fields
-            'title' => 'required|string|max:255',
-            'description' => 'nullable|string',
-            'event_type' => 'required|in:camping,hiking,voyage,custom',
-            'start_date' => 'nullable|date|required_unless:event_type,custom',
-            'end_date'   => 'nullable|date|required_unless:event_type,custom|after_or_equal:start_date',
-            'capacity'   => 'nullable|integer|min:1',
-            'price'      => 'required|numeric|min:0',
-            
-            // Camping specific fields
-            'camping_duration' => 'nullable|integer|min:1',
-            'camping_gear' => 'nullable|string',
-            'is_group_travel' => 'sometimes|boolean',
-            
-            // Trip/Voyage fields
-            'departure_city' => 'nullable|string',
-            'arrival_city' => 'nullable|string',
-            'departure_time' => 'nullable|date_format:H:i',
-            'estimated_arrival_time' => 'nullable|date_format:H:i',
-            'bus_company' => 'nullable|string',
-            'bus_number' => 'nullable|string',
-            'city_stops' => 'nullable|array',
-            'city_stops.*.city' => 'required|string',
-            'city_stops.*.arrival_time' => 'nullable|date_format:H:i',
-            'city_stops.*.departure_time' => 'nullable|date_format:H:i',
-            
-            // Location fields
-            'latitude' => 'nullable|numeric|between:-90,90',
-            'longitude' => 'nullable|numeric|between:-180,180',
-            'address' => 'nullable|string',
-            
-            // Hiking specific fields
-            'difficulty' => 'nullable|in:easy,moderate,difficult,expert',
-            'hiking_duration' => 'nullable|numeric|min:0.5|max:48',
-            'elevation_gain' => 'nullable|integer|min:0|max:8000',
-            
-            // Tags
-            'tags' => 'nullable|array',
-            'tags.*' => 'string',
-            
-            // Images
-            'images' => 'nullable|array',
-            'images.*' => 'image|mimes:jpeg,png,jpg,gif|max:5120',
-            'cover_image_index' => 'nullable|integer|min:0',
-        ]);
+        $validated = $request->validated();
 
         // Create the event
         $event = Events::create([
             'group_id' => $user->id,
             'title' => $validated['title'],
             'description' => $validated['description'] ?? null,
-            'event_type'      => $validated['event_type'],
-            'start_date'      => $validated['start_date'] ?? null,
-            'end_date'        => $validated['end_date']   ?? null,
-            'capacity'        => $validated['capacity']   ?? null,
-            'price'           => $validated['price'],
-            'remaining_spots' => $validated['capacity']   ?? null,
+            'event_type' => $validated['event_type'],
+            'start_date' => $validated['start_date'] ?? null,
+            'end_date' => $validated['end_date'] ?? null,
+            'capacity' => $validated['capacity'] ?? null,
+            'price' => $validated['price'],
+            'remaining_spots' => $validated['capacity'] ?? null,
             'camping_duration' => $validated['camping_duration'] ?? null,
             'camping_gear' => $validated['camping_gear'] ?? null,
             'is_group_travel' => $request->boolean('is_group_travel', false),
@@ -404,14 +361,14 @@ class EventController extends Controller
         // Handle image uploads
         if ($request->hasFile('images')) {
             $coverIndex = $request->input('cover_image_index');
-            
+
             foreach ($request->file('images') as $index => $image) {
                 // Store the image
-                $path = $image->store('events/' . $event->id, 'public');
-                
+                $path = $image->store('events/'.$event->id, 'public');
+
                 // Determine if this is the cover image
-                $isCover = ($coverIndex !== null && (int)$coverIndex === $index);
-                
+                $isCover = ($coverIndex !== null && (int) $coverIndex === $index);
+
                 // Create photo record
                 Photo::create([
                     'path_to_img' => $path,
@@ -433,13 +390,13 @@ class EventController extends Controller
                 foreach ($servicesData as $svc) {
                     if (!empty($svc['name']) && isset($svc['price'])) {
                         \App\Models\EventService::create([
-                            'event_id'     => $event->id,
-                            'name'         => $svc['name'],
-                            'description'  => $svc['description'] ?? null,
-                            'price'        => (float) $svc['price'],
+                            'event_id' => $event->id,
+                            'name' => $svc['name'],
+                            'description' => $svc['description'] ?? null,
+                            'price' => (float) $svc['price'],
                             'pricing_unit' => $svc['pricing_unit'] ?? 'per person',
                             'max_quantity' => isset($svc['max_quantity']) ? (int) $svc['max_quantity'] : null,
-                            'is_active'    => true,
+                            'is_active' => true,
                         ]);
                     }
                 }
@@ -455,16 +412,17 @@ class EventController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Event created successfully. Waiting for admin approval.',
-            'data' => $event
+            'data' => $event,
         ], 201);
     }
-   /**
+
+    /**
      * Send event invitations to a list of users (Group owner only)
      *
      * POST /api/events/{id}/invite
      * Body: { "user_ids": [1, 2, 3], "message": "optional custom message" }
      */
-    public function sendInvites(Request $request, $id)
+    public function sendInvites(InviteToEventRequest $request, $id)
     {
         $sender = Auth::user();
 
@@ -474,47 +432,43 @@ class EventController extends Controller
         }
 
         $event = Events::where('id', $id)
-                       ->where('group_id', $sender->id)
-                       ->firstOrFail();
+            ->where('group_id', $sender->id)
+            ->firstOrFail();
 
-        $request->validate([
-            'user_ids'   => 'required|array|min:1',
-            'user_ids.*' => 'integer|exists:users,id',
-            'message'    => 'nullable|string|max:500',
-        ]);
-
-        $senderName = trim(($sender->first_name ?? '') . ' ' . ($sender->last_name ?? ''))
+        $senderName = trim(($sender->first_name ?? '').' '.($sender->last_name ?? ''))
                    ?: $sender->name
                    ?: 'A group';
 
         $eventPayload = [
-            'id'         => $event->id,
-            'title'      => $event->title,
+            'id' => $event->id,
+            'title' => $event->title,
             'start_date' => $event->start_date,
-            'price'      => $event->price,
+            'price' => $event->price,
             'event_type' => $event->event_type,
         ];
 
         $senderPayload = [
-            'id'   => $sender->id,
+            'id' => $sender->id,
             'name' => $senderName,
         ];
 
         $customMessage = $request->input('message', '');
 
         $notified = 0;
-        $skipped  = 0;
+        $skipped = 0;
 
         foreach ($request->user_ids as $userId) {
             // Don't notify yourself
             if ($userId == $sender->id) {
                 $skipped++;
+
                 continue;
             }
 
             $recipient = User::find($userId);
             if (!$recipient) {
                 $skipped++;
+
                 continue;
             }
 
@@ -528,20 +482,20 @@ class EventController extends Controller
                 $dbNotification = $recipient->notifications()->latest()->first();
                 if ($dbNotification) {
                     broadcast(new NewNotificationCreated(
-                        userId:         $recipient->id,
+                        userId: $recipient->id,
                         notificationId: $dbNotification->id,
-                        title:          "You're invited to {$event->title}",
-                        content:        $customMessage ?: "You have been invited to join \"{$event->title}\".",
-                        type:           'event_invitation',
-                        priority:       'medium',
-                        actionUrl:      "/event/{$event->id}/details",
-                        actionText:     'View Event',
-                        senderId:       $sender->id,
-                        createdAt:      $dbNotification->created_at->toISOString(),
+                        title: "You're invited to {$event->title}",
+                        content: $customMessage ?: "You have been invited to join \"{$event->title}\".",
+                        type: 'event_invitation',
+                        priority: 'medium',
+                        actionUrl: "/event/{$event->id}/details",
+                        actionText: 'View Event',
+                        senderId: $sender->id,
+                        createdAt: $dbNotification->created_at->toISOString(),
                     ));
                 }
             } catch (\Exception $e) {
-                \Log::error("Failed to notify user {$userId}: " . $e->getMessage());
+                \Log::error("Failed to notify user {$userId}: ".$e->getMessage());
                 $skipped++;
             }
         }
@@ -549,27 +503,28 @@ class EventController extends Controller
         return response()->json([
             'success' => true,
             'message' => "{$notified} invitation(s) sent successfully.",
-            'data'    => [
+            'data' => [
                 'notified' => $notified,
-                'skipped'  => $skipped,
+                'skipped' => $skipped,
             ],
         ]);
     }
+
     /**
      * Update an event (Group owner only)
      */
-   public function update(Request $request, $id)
+    public function update(Request $request, $id)
     {
         $user = Auth::user();
 
         $event = Events::where('id', $id)
-                       ->where('group_id', $user->id)
-                       ->firstOrFail();
+            ->where('group_id', $user->id)
+            ->firstOrFail();
 
         // Only allow updates if event is still pending or scheduled
         if (!in_array($event->status, ['pending', 'scheduled'])) {
             return response()->json([
-                'message' => 'Cannot update event that has already started or finished'
+                'message' => 'Cannot update event that has already started or finished',
             ], 403);
         }
 
@@ -592,63 +547,15 @@ class EventController extends Controller
             }
         }
 
-        $validated = $request->validate([
-            'title'                   => 'sometimes|string|max:255',
-            'description'             => 'nullable|string',
-            'event_type'              => 'sometimes|in:camping,hiking,voyage,custom',
-            'start_date'              => 'nullable|date',
-            'end_date'                => 'nullable|date|after_or_equal:start_date',
-            'capacity'                => 'nullable|integer|min:1',
-            'price'                   => 'sometimes|numeric|min:0',
-
-            // Camping
-            'camping_duration'        => 'nullable|integer|min:1',
-            'camping_gear'            => 'nullable|string',
-            'is_group_travel'         => 'sometimes|boolean',
-
-            // Transport / voyage
-            'departure_city'          => 'nullable|string',
-            'arrival_city'            => 'nullable|string',
-            'departure_time'          => 'nullable|date_format:H:i',
-            // ↓ Removed `after:departure_time` — it fails when departure_time
-            //   is absent from the request. A simple format check is enough.
-            'estimated_arrival_time'  => 'nullable|date_format:H:i',
-            'bus_company'             => 'nullable|string',
-            'bus_number'              => 'nullable|string',
-
-            // city_stops — accepts array (FormData notation) or omitted
-            'city_stops'              => 'nullable|array',
-            'city_stops.*.city'       => 'required_with:city_stops|string',
-            'city_stops.*.arrival_time'   => 'nullable|date_format:H:i',
-            'city_stops.*.departure_time' => 'nullable|date_format:H:i',
-
-            // Location
-            'latitude'                => 'nullable|numeric|between:-90,90',
-            'longitude'               => 'nullable|numeric|between:-180,180',
-            'address'                 => 'nullable|string',
-
-            // Hiking
-            'difficulty'              => 'nullable|in:easy,moderate,difficult,expert',
-            'hiking_duration'         => 'nullable|numeric|min:0.5|max:48',
-            'elevation_gain'          => 'nullable|integer|min:0|max:8000',
-
-            // Tags
-            'tags'                    => 'nullable|array',
-            'tags.*'                  => 'string',
-
-            // Image management
-            'new_images'              => 'nullable|array',
-            'new_images.*'            => 'image|mimes:jpeg,png,jpg,gif|max:5120',
-            'cover_image_index'       => 'nullable|integer|min:0',
-            'delete_images'           => 'nullable|array',
-            'delete_images.*'         => 'integer|exists:photos,id',
-        ]);
+        $validated = $request->validated();
 
         // ── Apply scalar field updates ────────────────────────────────────────
         $skip = ['new_images', 'cover_image_index', 'delete_images', 'tags', 'city_stops', 'is_group_travel'];
 
         foreach ($validated as $key => $value) {
-            if (in_array($key, $skip)) continue;
+            if (in_array($key, $skip)) {
+                continue;
+            }
             $event->$key = $value;
         }
 
@@ -677,8 +584,8 @@ class EventController extends Controller
         // ── Delete images ─────────────────────────────────────────────────────
         if ($request->has('delete_images')) {
             $photos = Photo::whereIn('id', $request->input('delete_images'))
-                           ->where('event_id', $event->id)
-                           ->get();
+                ->where('event_id', $event->id)
+                ->get();
 
             foreach ($photos as $photo) {
                 Storage::disk('public')->delete($photo->path_to_img);
@@ -688,19 +595,19 @@ class EventController extends Controller
 
         // ── Upload new images ─────────────────────────────────────────────────
         if ($request->hasFile('new_images')) {
-            $coverIndex       = $request->input('cover_image_index');
+            $coverIndex = $request->input('cover_image_index');
             $currentPhotoCount = $event->photos()->count();
 
             foreach ($request->file('new_images') as $index => $image) {
-                $path    = $image->store('events/' . $event->id, 'public');
+                $path = $image->store('events/'.$event->id, 'public');
                 $isCover = ($coverIndex !== null && (int) $coverIndex === $index);
 
                 Photo::create([
                     'path_to_img' => $path,
-                    'user_id'     => $user->id,
-                    'event_id'    => $event->id,
-                    'is_cover'    => $isCover,
-                    'order'       => $currentPhotoCount + $index,
+                    'user_id' => $user->id,
+                    'event_id' => $event->id,
+                    'is_cover' => $isCover,
+                    'order' => $currentPhotoCount + $index,
                 ]);
             }
         }
@@ -708,7 +615,7 @@ class EventController extends Controller
         // ── Update cover image (no new files) ─────────────────────────────────
         if ($request->has('cover_image_index') && !$request->hasFile('new_images')) {
             $coverIndex = (int) $request->input('cover_image_index');
-            $photos     = $event->photos()->orderBy('order')->get();
+            $photos = $event->photos()->orderBy('order')->get();
 
             if ($photos->isNotEmpty() && $coverIndex < $photos->count()) {
                 $event->photos()->update(['is_cover' => false]);
@@ -721,18 +628,19 @@ class EventController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Event updated successfully',
-            'data'    => $event,
+            'data' => $event,
         ]);
     }
+
     /**
      * Delete an event (Group owner or Admin)
      */
     public function destroy($id)
     {
         $user = Auth::user();
-        
+
         $event = Events::where('id', $id)->firstOrFail();
-        
+
         // Check if user is group owner or admin
         if ($event->group_id !== $user->id && $user->role_id !== 6) {
             return response()->json(['message' => 'Unauthorized'], 403);
@@ -741,7 +649,7 @@ class EventController extends Controller
         // Check if event has any confirmed reservations
         if ($event->reservation()->whereIn('status', ['confirmée', 'en_attente_paiement'])->exists()) {
             return response()->json([
-                'message' => 'Cannot delete event with active reservations'
+                'message' => 'Cannot delete event with active reservations',
             ], 403);
         }
 
@@ -754,7 +662,7 @@ class EventController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'Event deleted successfully'
+            'message' => 'Event deleted successfully',
         ]);
     }
 
@@ -782,11 +690,12 @@ class EventController extends Controller
                 2
             ));
             $calc = CommissionService::calculateForUser('group', $base, $event->group_id);
-            $p->commission_rate   = round($calc['rate'] * 100, 2);
+            $p->commission_rate = round($calc['rate'] * 100, 2);
             $p->commission_amount = $calc['commission'];
-            $p->net_revenue       = $calc['net_revenue'];
-            $p->base_amount       = $base;
-            $p->services_total    = $servicesTotal;
+            $p->net_revenue = $calc['net_revenue'];
+            $p->base_amount = $base;
+            $p->services_total = $servicesTotal;
+
             return $p;
         });
 
@@ -795,38 +704,22 @@ class EventController extends Controller
             'data' => EventReservationResource::collection($enriched),
         ]);
     }
+
     /**
      * Update participant status (Group owner only)
      */
-    public function updateStatus($id, Request $request)
+    public function updateStatus($id, UpdateEventReservationStatusRequest $request)
     {
         $user = Auth::user();
-
-        $request->validate([
-            'status' => [
-                'required',
-                Rule::in([
-                    'en_attente_paiement',
-                    'confirmée',
-                    'en_attente_validation',
-                    'refusée',
-                    'annulée_par_utilisateur',
-                    'annulée_par_organisateur',
-                    'remboursement_en_attente',
-                    'remboursée_partielle',
-                    'remboursée_totale',
-                ]),
-            ],
-        ]);
 
         $reservation = Reservations_events::findOrFail($id);
 
         $event = Events::where('id', $reservation->event_id)
-                       ->where('group_id', $user->id)
-                       ->firstOrFail();
+            ->where('group_id', $user->id)
+            ->firstOrFail();
 
-        $newStatus     = $request->status;
-        $netBase       = round(($reservation->nbr_place * $event->price) - ($reservation->discount_amount ?? 0), 2);
+        $newStatus = $request->status;
+        $netBase = round(($reservation->nbr_place * $event->price) - ($reservation->discount_amount ?? 0), 2);
         $servicesTotal = round(EventReservationService::where('event_reservation_id', $reservation->id)->sum('subtotal'), 2);
 
         // ── Case 1: Group cancels a CONFIRMED (already paid) reservation → full refund ──
@@ -836,7 +729,7 @@ class EventController extends Controller
 
             DB::beginTransaction();
             try {
-                $feeData    = CommissionService::addServiceFee($netBase + $servicesTotal);
+                $feeData = CommissionService::addServiceFee($netBase + $servicesTotal);
                 $totalToPay = round($feeData['total'], 2);
                 // Use stored net_amount for exact clawback (prevents mismatch if rate changed)
                 $origTx = \App\Models\WalletTransaction::where('user_id', $reservation->group_id)
@@ -874,7 +767,8 @@ class EventController extends Controller
                 DB::commit();
             } catch (\Throwable $e) {
                 DB::rollBack();
-                \Log::error('Event organizer cancellation refund failed: ' . $e->getMessage());
+                \Log::error('Event organizer cancellation refund failed: '.$e->getMessage());
+
                 return response()->json(['success' => false, 'message' => 'Erreur lors du remboursement.'], 500);
             }
         }
@@ -928,7 +822,8 @@ class EventController extends Controller
                     DB::commit();
                 } catch (\Throwable $e) {
                     DB::rollBack();
-                    \Log::error('Event approval wallet payment failed: ' . $e->getMessage());
+                    \Log::error('Event approval wallet payment failed: '.$e->getMessage());
+
                     return response()->json(['success' => false, 'message' => 'Erreur lors du paiement.'], 500);
                 }
 
@@ -936,7 +831,7 @@ class EventController extends Controller
                 // Refund escrowed funds — funds were locked at booking, return them now
                 DB::beginTransaction();
                 try {
-                    $feeData    = CommissionService::addServiceFee($netBase + $servicesTotal);
+                    $feeData = CommissionService::addServiceFee($netBase + $servicesTotal);
                     $totalToPay = round($feeData['total'], 2);
                     Balance::forUser($reservation->user_id)->refundEscrow($totalToPay);
                     WalletTransaction::logCredit(
@@ -950,7 +845,8 @@ class EventController extends Controller
                     DB::commit();
                 } catch (\Throwable $e) {
                     DB::rollBack();
-                    \Log::error('Event rejection escrow refund failed: ' . $e->getMessage());
+                    \Log::error('Event rejection escrow refund failed: '.$e->getMessage());
+
                     return response()->json(['success' => false, 'message' => 'Erreur lors du remboursement.'], 500);
                 }
             }
@@ -961,7 +857,7 @@ class EventController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'Status updated successfully'
+            'message' => 'Status updated successfully',
         ]);
     }
 
@@ -970,19 +866,14 @@ class EventController extends Controller
     /**
      * Approve or reject event (Admin only)
      */
-    public function moderate(Request $request, $id)
+    public function moderate(ApproveRejectEventRequest $request, $id)
     {
         $user = Auth::user();
-        
+
         // Check if admin (role_id = 6)
         if ($user->role_id !== 6) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
-
-        $request->validate([
-            'action' => 'required|in:approve,reject',
-            'rejection_reason' => 'required_if:action,reject|string'
-        ]);
 
         $event = Events::findOrFail($id);
 
@@ -1001,7 +892,7 @@ class EventController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => $message
+            'message' => $message,
         ]);
     }
 
@@ -1011,7 +902,7 @@ class EventController extends Controller
     public function adminIndex(Request $request)
     {
         $user = Auth::user();
-        
+
         if ($user->role_id !== 6) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
@@ -1030,7 +921,7 @@ class EventController extends Controller
 
         return response()->json([
             'success' => true,
-            'data' => $events
+            'data' => $events,
         ]);
     }
 
@@ -1043,15 +934,19 @@ class EventController extends Controller
     {
         try {
             $profile = Profile::where('user_id', $groupId)->first();
-            if (!$profile) return;
+            if (!$profile) {
+                return;
+            }
 
             $profileGroupe = ProfileGroupe::where('profile_id', $profile->id)->first();
-            if (!$profileGroupe) return;
+            if (!$profileGroupe) {
+                return;
+            }
 
             $followersUserIds = FollowersGroupe::where('groupe_id', $profileGroupe->id)
-                                              ->pluck('user_id')
-                                              ->toArray();
-            
+                ->pluck('user_id')
+                ->toArray();
+
             $users = User::whereIn('id', $followersUserIds)->get();
 
             foreach ($users as $user) {
@@ -1061,7 +956,7 @@ class EventController extends Controller
             }
         } catch (\Exception $e) {
             // Log error but don't fail the request
-            \Log::error('Failed to send event notifications: ' . $e->getMessage());
+            \Log::error('Failed to send event notifications: '.$e->getMessage());
         }
     }
 }

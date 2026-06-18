@@ -3,9 +3,10 @@
 namespace App\Http\Controllers\Event;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Event\StoreEventServiceRequest;
+use App\Http\Requests\Event\UpdateEventServiceRequest;
 use App\Models\Events;
 use App\Models\EventService;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 class EventServiceController extends Controller
@@ -28,7 +29,7 @@ class EventServiceController extends Controller
     /**
      * Create a new service for an event (organizer only).
      */
-    public function store(Request $request, $eventId)
+    public function store(StoreEventServiceRequest $request, $eventId)
     {
         $event = Events::findOrFail($eventId);
 
@@ -36,13 +37,7 @@ class EventServiceController extends Controller
             return response()->json(['success' => false, 'message' => 'Unauthorized.'], 403);
         }
 
-        $validated = $request->validate([
-            'name'         => 'required|string|max:255',
-            'description'  => 'nullable|string',
-            'price'        => 'required|numeric|min:0',
-            'pricing_unit' => 'required|string|max:100',
-            'max_quantity' => 'nullable|integer|min:1',
-        ]);
+        $validated = $request->validated();
 
         $service = EventService::create(array_merge($validated, ['event_id' => $event->id]));
 
@@ -52,7 +47,7 @@ class EventServiceController extends Controller
     /**
      * Update an existing service (organizer only).
      */
-    public function update(Request $request, $eventId, $serviceId)
+    public function update(UpdateEventServiceRequest $request, $eventId, $serviceId)
     {
         $event = Events::findOrFail($eventId);
 
@@ -62,14 +57,7 @@ class EventServiceController extends Controller
 
         $service = EventService::where('event_id', $event->id)->findOrFail($serviceId);
 
-        $validated = $request->validate([
-            'name'         => 'sometimes|string|max:255',
-            'description'  => 'nullable|string',
-            'price'        => 'sometimes|numeric|min:0',
-            'pricing_unit' => 'sometimes|string|max:100',
-            'max_quantity' => 'nullable|integer|min:1',
-            'is_active'    => 'sometimes|boolean',
-        ]);
+        $validated = $request->validated();
 
         $service->update($validated);
 
