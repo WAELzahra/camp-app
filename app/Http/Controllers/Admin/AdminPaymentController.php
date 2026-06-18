@@ -3,6 +3,11 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\AdjustBalanceRequest;
+use App\Http\Requests\Admin\AdminPasswordRequest;
+use App\Http\Requests\Admin\RejectRefundRequest;
+use App\Http\Requests\Admin\UpdatePaymentStatusRequest;
+use App\Http\Requests\Admin\WithdrawalActionRequest;
 use App\Models\Balance;
 use App\Models\Payments;
 use App\Models\RefundRequest;
@@ -42,12 +47,12 @@ class AdminPaymentController extends Controller
             $s = $request->search;
             $query->where(function ($q) use ($s) {
                 $q->where('description', 'like', "%{$s}%")
-                  ->orWhere('konnect_payment_id', 'like', "%{$s}%")
-                  ->orWhereHas('user', fn($u) => $u
-                      ->where('first_name', 'like', "%{$s}%")
-                      ->orWhere('last_name',  'like', "%{$s}%")
-                      ->orWhere('email',       'like', "%{$s}%"))
-                  ->orWhereHas('event', fn($e) => $e->where('title', 'like', "%{$s}%"));
+                    ->orWhere('konnect_payment_id', 'like', "%{$s}%")
+                    ->orWhereHas('user', fn ($u) => $u
+                        ->where('first_name', 'like', "%{$s}%")
+                        ->orWhere('last_name', 'like', "%{$s}%")
+                        ->orWhere('email', 'like', "%{$s}%"))
+                    ->orWhereHas('event', fn ($e) => $e->where('title', 'like', "%{$s}%"));
             });
         }
 
@@ -75,27 +80,27 @@ class AdminPaymentController extends Controller
 
         return response()->json([
             'success' => true,
-            'data'    => [
-                'id'                  => $payment->id,
-                'montant'             => $payment->montant,
-                'description'         => $payment->description,
-                'status'              => $payment->status,
-                'commission'          => $payment->commission,
-                'net_revenue'         => $payment->net_revenue,
-                'konnect_session_id'  => $payment->konnect_session_id,
-                'created_at'          => $payment->created_at,
-                'updated_at'          => $payment->updated_at,
+            'data' => [
+                'id' => $payment->id,
+                'montant' => $payment->montant,
+                'description' => $payment->description,
+                'status' => $payment->status,
+                'commission' => $payment->commission,
+                'net_revenue' => $payment->net_revenue,
+                'konnect_session_id' => $payment->konnect_session_id,
+                'created_at' => $payment->created_at,
+                'updated_at' => $payment->updated_at,
                 'user' => $payment->user ? [
-                    'uuid'         => $payment->user->uuid,
-                    'first_name'   => $payment->user->first_name,
-                    'last_name'    => $payment->user->last_name,
-                    'email'        => $payment->user->email,
+                    'uuid' => $payment->user->uuid,
+                    'first_name' => $payment->user->first_name,
+                    'last_name' => $payment->user->last_name,
+                    'email' => $payment->user->email,
                     'phone_number' => $payment->user->phone_number,
-                    'avatar'       => $payment->user->avatar ? storage_url($payment->user->avatar) : null,
+                    'avatar' => $payment->user->avatar ? storage_url($payment->user->avatar) : null,
                 ] : null,
-                'event'       => $payment->event,
+                'event' => $payment->event,
                 'reservation' => $payment->reservation ? [
-                    'status'    => $payment->reservation->status,
+                    'status' => $payment->reservation->status,
                     'nbr_place' => $payment->reservation->nbr_place,
                 ] : null,
                 'refund_request' => $refund,
@@ -105,19 +110,19 @@ class AdminPaymentController extends Controller
 
     public function stats()
     {
-        $totalRevenue    = Payments::where('status', 'paid')->sum('montant');
-        $totalNet        = Payments::where('status', 'paid')->sum('net_revenue');
+        $totalRevenue = Payments::where('status', 'paid')->sum('montant');
+        $totalNet = Payments::where('status', 'paid')->sum('net_revenue');
         $totalCommission = Payments::where('status', 'paid')->sum('commission');
-        $pending         = Payments::where('status', 'pending')->count();
-        $paid            = Payments::where('status', 'paid')->count();
-        $failed          = Payments::where('status', 'failed')->count();
-        $refunded        = Payments::whereIn('status', ['refunded_partial', 'refunded_total'])->count();
-        $total           = Payments::count();
+        $pending = Payments::where('status', 'pending')->count();
+        $paid = Payments::where('status', 'paid')->count();
+        $failed = Payments::where('status', 'failed')->count();
+        $refunded = Payments::whereIn('status', ['refunded_partial', 'refunded_total'])->count();
+        $total = Payments::count();
 
-        $pendingRefunds     = RefundRequest::where('status', 'en_attente')->count();
+        $pendingRefunds = RefundRequest::where('status', 'en_attente')->count();
         $pendingWithdrawals = WithdrawalRequest::where('status', 'en_attente')->count();
 
-        $totalBalances  = Balance::sum('solde_disponible');
+        $totalBalances = Balance::sum('solde_disponible');
         $totalWithdrawn = Balance::sum('total_retire');
 
         // ── Wallet commission stats (real revenue) ─────────────────────────
@@ -137,53 +142,49 @@ class AdminPaymentController extends Controller
             ->keyBy('reference_type');
 
         $walletStats = [
-            'total_volume'        => round((float) ($walletCredits->total_volume      ?? 0), 2),
-            'total_commission'    => round((float) ($walletCredits->total_commission  ?? 0), 2),
-            'total_net_paid'      => round((float) ($walletCredits->total_net_paid    ?? 0), 2),
-            'total_transactions'  => (int) ($walletCredits->total_transactions         ?? 0),
-            'by_source'           => [
-                'centre_reservation'   => [
-                    'commission' => round((float) ($walletBySource['centre_reservation']?->commission   ?? 0), 2),
-                    'volume'     => round((float) ($walletBySource['centre_reservation']?->volume       ?? 0), 2),
-                    'count'      => (int) ($walletBySource['centre_reservation']?->count                ?? 0),
+            'total_volume' => round((float) ($walletCredits->total_volume ?? 0), 2),
+            'total_commission' => round((float) ($walletCredits->total_commission ?? 0), 2),
+            'total_net_paid' => round((float) ($walletCredits->total_net_paid ?? 0), 2),
+            'total_transactions' => (int) ($walletCredits->total_transactions ?? 0),
+            'by_source' => [
+                'centre_reservation' => [
+                    'commission' => round((float) ($walletBySource['centre_reservation']?->commission ?? 0), 2),
+                    'volume' => round((float) ($walletBySource['centre_reservation']?->volume ?? 0), 2),
+                    'count' => (int) ($walletBySource['centre_reservation']?->count ?? 0),
                 ],
-                'event_reservation'    => [
-                    'commission' => round((float) ($walletBySource['event_reservation']?->commission    ?? 0), 2),
-                    'volume'     => round((float) ($walletBySource['event_reservation']?->volume        ?? 0), 2),
-                    'count'      => (int) ($walletBySource['event_reservation']?->count                 ?? 0),
+                'event_reservation' => [
+                    'commission' => round((float) ($walletBySource['event_reservation']?->commission ?? 0), 2),
+                    'volume' => round((float) ($walletBySource['event_reservation']?->volume ?? 0), 2),
+                    'count' => (int) ($walletBySource['event_reservation']?->count ?? 0),
                 ],
                 'materiel_reservation' => [
                     'commission' => round((float) ($walletBySource['materiel_reservation']?->commission ?? 0), 2),
-                    'volume'     => round((float) ($walletBySource['materiel_reservation']?->volume     ?? 0), 2),
-                    'count'      => (int) ($walletBySource['materiel_reservation']?->count              ?? 0),
+                    'volume' => round((float) ($walletBySource['materiel_reservation']?->volume ?? 0), 2),
+                    'count' => (int) ($walletBySource['materiel_reservation']?->count ?? 0),
                 ],
             ],
             'pending_withdrawals' => $pendingWithdrawals,
-            'pending_refunds'     => $pendingRefunds,
-            'total_balances'      => round((float) $totalBalances,  2),
-            'total_withdrawn'     => round((float) $totalWithdrawn, 2),
+            'pending_refunds' => $pendingRefunds,
+            'total_balances' => round((float) $totalBalances, 2),
+            'total_withdrawn' => round((float) $totalWithdrawn, 2),
         ];
 
         return response()->json([
             'success' => true,
-            'data'    => array_merge(
+            'data' => array_merge(
                 compact('totalRevenue', 'totalNet', 'totalCommission',
-                        'pending', 'paid', 'failed', 'refunded', 'total',
-                        'pendingRefunds', 'pendingWithdrawals',
-                        'totalBalances', 'totalWithdrawn'),
+                    'pending', 'paid', 'failed', 'refunded', 'total',
+                    'pendingRefunds', 'pendingWithdrawals',
+                    'totalBalances', 'totalWithdrawn'),
                 ['wallet' => $walletStats]
             ),
         ]);
     }
 
-    public function updateStatus(Request $request, $id)
+    public function updateStatus(UpdatePaymentStatusRequest $request, $id)
     {
-        $request->validate([
-            'status'   => 'required|in:pending,paid,failed,refunded_partial,refunded_total',
-            'password' => 'required|string',
-        ]);
 
-        if (! $this->checkPassword($request)) {
+        if (!$this->checkPassword($request)) {
             return response()->json(['success' => false, 'message' => 'Mot de passe incorrect.'], 403);
         }
 
@@ -203,7 +204,7 @@ class AdminPaymentController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Statut mis à jour.',
-            'data'    => $payment->fresh(['user:id,first_name,last_name,email', 'event:id,title,price']),
+            'data' => $payment->fresh(['user:id,first_name,last_name,email', 'event:id,title,price']),
         ]);
     }
 
@@ -230,11 +231,10 @@ class AdminPaymentController extends Controller
         return response()->json(['success' => true, 'data' => $refunds]);
     }
 
-    public function approveRefund(Request $request, $id)
+    public function approveRefund(AdminPasswordRequest $request, $id)
     {
-        $request->validate(['password' => 'required|string']);
 
-        if (! $this->checkPassword($request)) {
+        if (!$this->checkPassword($request)) {
             return response()->json(['success' => false, 'message' => 'Mot de passe incorrect.'], 403);
         }
 
@@ -277,6 +277,7 @@ class AdminPaymentController extends Controller
                         $reservation->centre_id
                     );
                 }
+
                 return; // nothing more to do for wallet-centre refunds
             }
 
@@ -310,7 +311,7 @@ class AdminPaymentController extends Controller
                 $reservation = Reservations_events::find($refund->reservation_event_id);
                 if ($reservation) {
                     $statusMap = [
-                        'refunded_total'   => 'remboursée_totale',
+                        'refunded_total' => 'remboursée_totale',
                         'refunded_partial' => 'remboursée_partielle',
                     ];
                     $payment = $refund->payment;
@@ -326,18 +327,14 @@ class AdminPaymentController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Remboursement approuvé. Balance camper créditée.',
-            'data'    => $refund->fresh(['payment.user:id,first_name,last_name,email', 'payment.event:id,title,price']),
+            'data' => $refund->fresh(['payment.user:id,first_name,last_name,email', 'payment.event:id,title,price']),
         ]);
     }
 
-    public function rejectRefund(Request $request, $id)
+    public function rejectRefund(RejectRefundRequest $request, $id)
     {
-        $request->validate([
-            'password' => 'required|string',
-            'reason'   => 'nullable|string|max:500',
-        ]);
 
-        if (! $this->checkPassword($request)) {
+        if (!$this->checkPassword($request)) {
             return response()->json(['success' => false, 'message' => 'Mot de passe incorrect.'], 403);
         }
 
@@ -352,7 +349,7 @@ class AdminPaymentController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Remboursement refusé.',
-            'data'    => $refund->fresh(['payment.user:id,first_name,last_name,email', 'payment.event:id,title,price']),
+            'data' => $refund->fresh(['payment.user:id,first_name,last_name,email', 'payment.event:id,title,price']),
         ]);
     }
 
@@ -367,10 +364,10 @@ class AdminPaymentController extends Controller
 
         if ($request->filled('search')) {
             $s = $request->search;
-            $query->whereHas('user', fn($u) => $u
+            $query->whereHas('user', fn ($u) => $u
                 ->where('first_name', 'like', "%{$s}%")
-                ->orWhere('last_name',  'like', "%{$s}%")
-                ->orWhere('email',       'like', "%{$s}%"));
+                ->orWhere('last_name', 'like', "%{$s}%")
+                ->orWhere('email', 'like', "%{$s}%"));
         }
 
         if ($request->filled('min_solde')) {
@@ -382,23 +379,17 @@ class AdminPaymentController extends Controller
         return response()->json(['success' => true, 'data' => $balances]);
     }
 
-    public function adjustBalance(Request $request, $userId)
+    public function adjustBalance(AdjustBalanceRequest $request, $userId)
     {
-        $request->validate([
-            'montant'   => 'required|numeric|min:0.01',
-            'type'      => 'required|in:credit,debit',
-            'note'      => 'nullable|string|max:500',
-            'password'  => 'required|string',
-        ]);
 
-        if (! $this->checkPassword($request)) {
+        if (!$this->checkPassword($request)) {
             return response()->json(['success' => false, 'message' => 'Mot de passe incorrect.'], 403);
         }
 
         $balance = Balance::forUser($userId);
-        $amount  = round((float) $request->montant, 2);
+        $amount = round((float) $request->montant, 2);
         $adminId = \Illuminate\Support\Facades\Auth::id();
-        $note    = $request->note ?: 'Ajustement manuel admin';
+        $note = $request->note ?: 'Ajustement manuel admin';
 
         if ($request->type === 'debit' && $balance->solde_disponible < $amount) {
             return response()->json(['success' => false, 'message' => 'Solde insuffisant.'], 400);
@@ -427,13 +418,14 @@ class AdminPaymentController extends Controller
         } catch (\Throwable $e) {
             \Illuminate\Support\Facades\DB::rollBack();
             \Log::error('adjustBalance failed', ['error' => $e->getMessage()]);
+
             return response()->json(['success' => false, 'message' => 'Erreur lors de l\'ajustement.'], 500);
         }
 
         return response()->json([
             'success' => true,
             'message' => 'Balance ajustée.',
-            'data'    => $balance->fresh(['user:id,first_name,last_name,email']),
+            'data' => $balance->fresh(['user:id,first_name,last_name,email']),
         ]);
     }
 
@@ -452,10 +444,10 @@ class AdminPaymentController extends Controller
 
         if ($request->filled('search')) {
             $s = $request->search;
-            $query->whereHas('user', fn($u) => $u
+            $query->whereHas('user', fn ($u) => $u
                 ->where('first_name', 'like', "%{$s}%")
-                ->orWhere('last_name',  'like', "%{$s}%")
-                ->orWhere('email',       'like', "%{$s}%"));
+                ->orWhere('last_name', 'like', "%{$s}%")
+                ->orWhere('email', 'like', "%{$s}%"));
         }
 
         $withdrawals = $query->paginate($request->get('per_page', 15));
@@ -463,20 +455,16 @@ class AdminPaymentController extends Controller
         return response()->json(['success' => true, 'data' => $withdrawals]);
     }
 
-    public function approveWithdrawal(Request $request, $id)
+    public function approveWithdrawal(WithdrawalActionRequest $request, $id)
     {
-        $request->validate([
-            'password'   => 'required|string',
-            'admin_note' => 'nullable|string|max:500',
-        ]);
 
-        if (! $this->checkPassword($request)) {
+        if (!$this->checkPassword($request)) {
             return response()->json(['success' => false, 'message' => 'Mot de passe incorrect.'], 403);
         }
 
         $withdrawal = WithdrawalRequest::findOrFail($id);
 
-        if (! in_array($withdrawal->status, ['en_attente', 'en_cours'])) {
+        if (!in_array($withdrawal->status, ['en_attente', 'en_cours'])) {
             return response()->json(['success' => false, 'message' => 'Cette demande a déjà été traitée.'], 400);
         }
 
@@ -492,8 +480,8 @@ class AdminPaymentController extends Controller
             $balance->increment('total_retire', $withdrawal->montant);
 
             $withdrawal->update([
-                'status'       => 'approuvé',
-                'admin_note'   => $request->admin_note,
+                'status' => 'approuvé',
+                'admin_note' => $request->admin_note,
                 'processed_by' => auth()->id(),
                 'processed_at' => now(),
             ]);
@@ -502,18 +490,14 @@ class AdminPaymentController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Retrait approuvé. Balance débitée.',
-            'data'    => $withdrawal->fresh('user:id,first_name,last_name,email'),
+            'data' => $withdrawal->fresh('user:id,first_name,last_name,email'),
         ]);
     }
 
-    public function completeWithdrawal(Request $request, $id)
+    public function completeWithdrawal(WithdrawalActionRequest $request, $id)
     {
-        $request->validate([
-            'password'   => 'required|string',
-            'admin_note' => 'nullable|string|max:500',
-        ]);
 
-        if (! $this->checkPassword($request)) {
+        if (!$this->checkPassword($request)) {
             return response()->json(['success' => false, 'message' => 'Mot de passe incorrect.'], 403);
         }
 
@@ -524,32 +508,28 @@ class AdminPaymentController extends Controller
         }
 
         $withdrawal->update([
-            'status'       => 'complété',
-            'admin_note'   => $request->admin_note ?? $withdrawal->admin_note,
+            'status' => 'complété',
+            'admin_note' => $request->admin_note ?? $withdrawal->admin_note,
             'processed_at' => now(),
         ]);
 
         return response()->json([
             'success' => true,
             'message' => 'Retrait marqué comme complété.',
-            'data'    => $withdrawal->fresh('user:id,first_name,last_name,email'),
+            'data' => $withdrawal->fresh('user:id,first_name,last_name,email'),
         ]);
     }
 
-    public function rejectWithdrawal(Request $request, $id)
+    public function rejectWithdrawal(WithdrawalActionRequest $request, $id)
     {
-        $request->validate([
-            'password'   => 'required|string',
-            'admin_note' => 'nullable|string|max:500',
-        ]);
 
-        if (! $this->checkPassword($request)) {
+        if (!$this->checkPassword($request)) {
             return response()->json(['success' => false, 'message' => 'Mot de passe incorrect.'], 403);
         }
 
         $withdrawal = WithdrawalRequest::findOrFail($id);
 
-        if (! in_array($withdrawal->status, ['en_attente', 'en_cours'])) {
+        if (!in_array($withdrawal->status, ['en_attente', 'en_cours'])) {
             return response()->json(['success' => false, 'message' => 'Cette demande a déjà été traitée.'], 400);
         }
 
@@ -558,8 +538,8 @@ class AdminPaymentController extends Controller
         // Le montant n'a pas encore été débité (pas encore approuvé), donc rien à rembourser.
 
         $withdrawal->update([
-            'status'       => 'rejeté',
-            'admin_note'   => $request->admin_note,
+            'status' => 'rejeté',
+            'admin_note' => $request->admin_note,
             'processed_by' => auth()->id(),
             'processed_at' => now(),
         ]);
@@ -567,7 +547,7 @@ class AdminPaymentController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Demande de retrait refusée.',
-            'data'    => $withdrawal->fresh('user:id,first_name,last_name,email'),
+            'data' => $withdrawal->fresh('user:id,first_name,last_name,email'),
         ]);
     }
 
@@ -578,9 +558,9 @@ class AdminPaymentController extends Controller
     public function walletPayments(Request $request)
     {
         $query = WalletTransaction::with([
-                'user:id,first_name,last_name,email,avatar',
-                'relatedUser:id,first_name,last_name,email,avatar',
-            ])
+            'user:id,first_name,last_name,email,avatar',
+            'relatedUser:id,first_name,last_name,email,avatar',
+        ])
             ->where('type', 'credit')
             ->latest();
 
@@ -594,10 +574,10 @@ class AdminPaymentController extends Controller
 
         if ($request->filled('search')) {
             $s = $request->search;
-            $query->whereHas('user', fn($u) => $u
+            $query->whereHas('user', fn ($u) => $u
                 ->where('first_name', 'like', "%{$s}%")
-                ->orWhere('last_name',  'like', "%{$s}%")
-                ->orWhere('email',       'like', "%{$s}%"));
+                ->orWhere('last_name', 'like', "%{$s}%")
+                ->orWhere('email', 'like', "%{$s}%"));
         }
 
         $txns = $query->paginate($request->get('per_page', 15));
@@ -606,27 +586,29 @@ class AdminPaymentController extends Controller
         // For older records without relatedUser, fall back to reservation lookup
         $col = $txns->getCollection();
 
-        $centreIds   = $col->where('reference_type', 'centre_reservation')->whereNull('related_user_id')->pluck('reference_id')->filter()->unique()->values();
-        $eventIds    = $col->where('reference_type', 'event_reservation')->whereNull('related_user_id')->pluck('reference_id')->filter()->unique()->values();
+        $centreIds = $col->where('reference_type', 'centre_reservation')->whereNull('related_user_id')->pluck('reference_id')->filter()->unique()->values();
+        $eventIds = $col->where('reference_type', 'event_reservation')->whereNull('related_user_id')->pluck('reference_id')->filter()->unique()->values();
         $materielIds = $col->where('reference_type', 'materiel_reservation')->whereNull('related_user_id')->pluck('reference_id')->filter()->unique()->values();
 
-        $centreRes   = $centreIds->isNotEmpty()   ? Reservations_centre::whereIn('id', $centreIds)->get(['id','user_id','platform_fee_amount'])->keyBy('id')               : collect();
-        $eventRes    = $eventIds->isNotEmpty()    ? \App\Models\Reservations_events::whereIn('id', $eventIds)->get(['id','user_id','platform_fee_amount'])->keyBy('id')     : collect();
-        $materielRes = $materielIds->isNotEmpty() ? \App\Models\Reservations_materielles::whereIn('id', $materielIds)->get(['id','user_id','platform_fee_amount'])->keyBy('id') : collect();
+        $centreRes = $centreIds->isNotEmpty() ? Reservations_centre::whereIn('id', $centreIds)->get(['id', 'user_id', 'platform_fee_amount'])->keyBy('id') : collect();
+        $eventRes = $eventIds->isNotEmpty() ? \App\Models\Reservations_events::whereIn('id', $eventIds)->get(['id', 'user_id', 'platform_fee_amount'])->keyBy('id') : collect();
+        $materielRes = $materielIds->isNotEmpty() ? \App\Models\Reservations_materielles::whereIn('id', $materielIds)->get(['id', 'user_id', 'platform_fee_amount'])->keyBy('id') : collect();
 
         // Also fetch platform_fee_amount for all transactions (not just fallback ones)
-        $allCentreIds   = $col->where('reference_type', 'centre_reservation')->pluck('reference_id')->filter()->unique()->values();
-        $allEventIds    = $col->where('reference_type', 'event_reservation')->pluck('reference_id')->filter()->unique()->values();
+        $allCentreIds = $col->where('reference_type', 'centre_reservation')->pluck('reference_id')->filter()->unique()->values();
+        $allEventIds = $col->where('reference_type', 'event_reservation')->pluck('reference_id')->filter()->unique()->values();
         $allMaterielIds = $col->where('reference_type', 'materiel_reservation')->pluck('reference_id')->filter()->unique()->values();
 
-        $allCentreRes   = $allCentreIds->isNotEmpty()   ? Reservations_centre::whereIn('id', $allCentreIds)->get(['id','user_id','platform_fee_amount'])->keyBy('id')               : collect();
-        $allEventRes    = $allEventIds->isNotEmpty()    ? \App\Models\Reservations_events::whereIn('id', $allEventIds)->get(['id','user_id','platform_fee_amount'])->keyBy('id')     : collect();
-        $allMaterielRes = $allMaterielIds->isNotEmpty() ? \App\Models\Reservations_materielles::whereIn('id', $allMaterielIds)->get(['id','user_id','platform_fee_amount'])->keyBy('id') : collect();
+        $allCentreRes = $allCentreIds->isNotEmpty() ? Reservations_centre::whereIn('id', $allCentreIds)->get(['id', 'user_id', 'platform_fee_amount'])->keyBy('id') : collect();
+        $allEventRes = $allEventIds->isNotEmpty() ? \App\Models\Reservations_events::whereIn('id', $allEventIds)->get(['id', 'user_id', 'platform_fee_amount'])->keyBy('id') : collect();
+        $allMaterielRes = $allMaterielIds->isNotEmpty() ? \App\Models\Reservations_materielles::whereIn('id', $allMaterielIds)->get(['id', 'user_id', 'platform_fee_amount'])->keyBy('id') : collect();
 
         $fallbackIds = collect();
         $fallbackMap = [];
         foreach ($col as $txn) {
-            if ($txn->related_user_id) continue;
+            if ($txn->related_user_id) {
+                continue;
+            }
             $rid = $txn->reference_id;
             $payerId = null;
             if ($txn->reference_type === 'centre_reservation' && $rid && isset($centreRes[$rid])) {
@@ -643,7 +625,7 @@ class AdminPaymentController extends Controller
         }
 
         $fallbackUsers = $fallbackIds->isNotEmpty()
-            ? \App\Models\User::whereIn('id', $fallbackIds->unique())->get(['id','first_name','last_name','email'])->keyBy('id')
+            ? \App\Models\User::whereIn('id', $fallbackIds->unique())->get(['id', 'first_name', 'last_name', 'email'])->keyBy('id')
             : collect();
 
         $col->transform(function ($txn) use ($fallbackMap, $fallbackUsers, $allCentreRes, $allEventRes, $allMaterielRes) {
@@ -656,11 +638,11 @@ class AdminPaymentController extends Controller
 
             // Attach platform_fee_amount from the reservation
             $rid = $txn->reference_id;
-            $txn->platform_fee_amount = match($txn->reference_type) {
-                'centre_reservation'   => (float) ($allCentreRes[$rid]?->platform_fee_amount  ?? 0),
-                'event_reservation'    => (float) ($allEventRes[$rid]?->platform_fee_amount   ?? 0),
+            $txn->platform_fee_amount = match ($txn->reference_type) {
+                'centre_reservation' => (float) ($allCentreRes[$rid]?->platform_fee_amount ?? 0),
+                'event_reservation' => (float) ($allEventRes[$rid]?->platform_fee_amount ?? 0),
                 'materiel_reservation' => (float) ($allMaterielRes[$rid]?->platform_fee_amount ?? 0),
-                default                => 0,
+                default => 0,
             };
 
             return $txn;

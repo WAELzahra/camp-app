@@ -2,26 +2,29 @@
 
 namespace App\Http\Controllers\Admin;
 
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Validator;
-use Illuminate\Support\Facades\DB;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\BulkReservationActionRequest;
+use App\Http\Requests\Admin\CheckMaterialAvailabilityRequest;
+use App\Http\Requests\Admin\ExportReservationsRequest;
+use App\Http\Requests\Admin\IndexReservationsRequest;
+use App\Mail\ReservationStatusUpdated;
+use App\Models\Balance;
+use App\Models\CampingCentre;
+use App\Models\Events;
+use App\Models\Materielles;
+use App\Models\Payments;
+use App\Models\PromoCode;
+use App\Models\Reservation_guide;
 use App\Models\Reservations_centre;
 use App\Models\Reservations_events;
 use App\Models\Reservations_materielles;
-use App\Models\Reservation_guide;
 use App\Models\User;
-use App\Models\Events;
-use App\Models\Materielles;
-use App\Models\Circuit;
-use App\Models\Payments;
-use App\Models\CampingCentre;
-use App\Models\PromoCode;
-use App\Models\Balance;
 use App\Models\WalletTransaction;
-use App\Mail\ReservationStatusUpdated;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Validator;
 
 class AdminReservationsController extends Controller
 {
@@ -54,16 +57,16 @@ class AdminReservationsController extends Controller
             'remboursée_totale' => 'Remboursée totale',
         ],
         'materielle' => [
-            'pending'                  => 'En attente',
-            'pending_payment'          => 'En attente de paiement',
-            'confirmed'                => 'Confirmée',
-            'paid'                     => 'Payée',
-            'retrieved'                => 'Récupérée',
-            'returned'                 => 'Retournée',
-            'rejected'                 => 'Rejetée',
-            'cancelled_by_camper'      => 'Annulée par le campeur',
+            'pending' => 'En attente',
+            'pending_payment' => 'En attente de paiement',
+            'confirmed' => 'Confirmée',
+            'paid' => 'Payée',
+            'retrieved' => 'Récupérée',
+            'returned' => 'Retournée',
+            'rejected' => 'Rejetée',
+            'cancelled_by_camper' => 'Annulée par le campeur',
             'cancelled_by_fournisseur' => 'Annulée par le fournisseur',
-            'disputed'                 => 'Litige',
+            'disputed' => 'Litige',
         ],
         'guides' => [
             'pending' => 'En attente',
@@ -76,19 +79,8 @@ class AdminReservationsController extends Controller
     /**
      * Liste toutes les réservations (tous types confondus)
      */
-    public function index(Request $request)
+    public function index(IndexReservationsRequest $request)
     {
-        $request->validate([
-            'type' => 'nullable|in:center,events,materielle,guides,all',
-            'status' => 'nullable|string',
-            'search' => 'nullable|string|max:255',
-            'date_from' => 'nullable|date',
-            'date_to' => 'nullable|date|after_or_equal:date_from',
-            'user_id' => 'nullable|exists:users,id',
-            'sort_by' => 'nullable|in:date_debut,date_fin,created_at,status,id',
-            'sort_dir' => 'nullable|in:asc,desc',
-            'per_page' => 'nullable|integer|min:1|max:100',
-        ]);
 
         $type = $request->get('type', 'all');
         $reservations = collect();
@@ -116,9 +108,9 @@ class AdminReservationsController extends Controller
         // Tri global
         $sortBy = $request->get('sort_by', 'date_debut');
         $sortDir = $request->get('sort_dir', 'desc');
-        
+
         $reservations = $reservations->sortBy([
-            [$sortBy, $sortDir]
+            [$sortBy, $sortDir],
         ])->values();
 
         // Pagination manuelle
@@ -135,7 +127,7 @@ class AdminReservationsController extends Controller
                 'total' => $reservations->count(),
                 'last_page' => ceil($reservations->count() / $perPage),
                 'types' => $this->getReservationCounts(),
-            ]
+            ],
         ]);
     }
 
@@ -178,13 +170,13 @@ class AdminReservationsController extends Controller
 
         if ($request->has('search')) {
             $search = $request->search;
-            $query->where(function($q) use ($search) {
+            $query->where(function ($q) use ($search) {
                 $q->where('note', 'like', "%{$search}%")
-                  ->orWhereHas('user', function($uq) use ($search) {
-                      $uq->where('first_name', 'like', "%{$search}%")
-                         ->orWhere('last_name', 'like', "%{$search}%")
-                         ->orWhere('email', 'like', "%{$search}%");
-                  });
+                    ->orWhereHas('user', function ($uq) use ($search) {
+                        $uq->where('first_name', 'like', "%{$search}%")
+                            ->orWhere('last_name', 'like', "%{$search}%")
+                            ->orWhere('email', 'like', "%{$search}%");
+                    });
             });
         }
 
@@ -199,32 +191,33 @@ class AdminReservationsController extends Controller
         $items = $query->get();
 
         $centreIds = $items->pluck('centre_id')->filter()->unique()->toArray();
-        $centres   = CampingCentre::whereIn('id', $centreIds)->get()->keyBy('id');
+        $centres = CampingCentre::whereIn('id', $centreIds)->get()->keyBy('id');
 
-        $promoIds   = $items->pluck('promo_code_id')->filter()->unique()->toArray();
+        $promoIds = $items->pluck('promo_code_id')->filter()->unique()->toArray();
         $promoCodes = PromoCode::whereIn('id', $promoIds)
             ->get(['id', 'code', 'discount_type', 'discount_value'])
             ->keyBy('id');
 
-        return $items->map(function($item) use ($centres, $promoCodes) {
+        return $items->map(function ($item) use ($centres, $promoCodes) {
             $centre = $centres[$item->centre_id] ?? null;
-            $item->centre = $centre ? (object)[
-                'id'      => $centre->id,
-                'name'    => $centre->nom,
+            $item->centre = $centre ? (object) [
+                'id' => $centre->id,
+                'name' => $centre->nom,
                 'address' => $centre->adresse,
             ] : null;
 
-            $item->display_name  = "Réservation Centre #{$item->id}";
-            $item->subtitle      = "Centre: " . ($centre ? $centre->nom : 'N/A');
-            $item->capacity      = $item->nbr_place;
-            $item->price         = (float)($item->total_price ?? 0);
-            $item->code          = "CR" . str_pad($item->id, 3, '0', STR_PAD_LEFT);
-            $item->nights_count  = $item->nights ?? (
+            $item->display_name = "Réservation Centre #{$item->id}";
+            $item->subtitle = 'Centre: '.($centre ? $centre->nom : 'N/A');
+            $item->capacity = $item->nbr_place;
+            $item->price = (float) ($item->total_price ?? 0);
+            $item->code = 'CR'.str_pad($item->id, 3, '0', STR_PAD_LEFT);
+            $item->nights_count = $item->nights ?? (
                 $item->date_debut && $item->date_fin
                     ? max(1, \Carbon\Carbon::parse($item->date_debut)->diffInDays(\Carbon\Carbon::parse($item->date_fin)))
                     : null
             );
             $item->promo_code = $item->promo_code_id ? ($promoCodes[$item->promo_code_id] ?? null) : null;
+
             return $item;
         });
     }
@@ -270,11 +263,11 @@ class AdminReservationsController extends Controller
 
         if ($request->has('search')) {
             $search = $request->search;
-            $query->where(function($q) use ($search) {
+            $query->where(function ($q) use ($search) {
                 $q->where('reservations_events.name', 'like', "%{$search}%")
-                  ->orWhere('reservations_events.email', 'like', "%{$search}%")
-                  ->orWhere('reservations_events.phone', 'like', "%{$search}%")
-                  ->orWhere('ev.title', 'like', "%{$search}%");
+                    ->orWhere('reservations_events.email', 'like', "%{$search}%")
+                    ->orWhere('reservations_events.phone', 'like', "%{$search}%")
+                    ->orWhere('ev.title', 'like', "%{$search}%");
             });
         }
 
@@ -288,23 +281,24 @@ class AdminReservationsController extends Controller
 
         $items = $query->get();
 
-        $promoIds   = $items->pluck('promo_code_id')->filter()->unique()->toArray();
+        $promoIds = $items->pluck('promo_code_id')->filter()->unique()->toArray();
         $promoCodes = PromoCode::whereIn('id', $promoIds)
             ->get(['id', 'code', 'discount_type', 'discount_value'])
             ->keyBy('id');
 
-        return $items->map(function($item) use ($promoCodes) {
+        return $items->map(function ($item) use ($promoCodes) {
             $item->display_name = $item->name ?? "Réservation Événement #{$item->id}";
-            $item->subtitle = "Événement: " . ($item->event->title ?? 'N/A');
+            $item->subtitle = 'Événement: '.($item->event->title ?? 'N/A');
             $item->capacity = $item->nbr_place;
 
-            $gross    = (float)($item->event_price_per_person ?? 0) * (int)$item->nbr_place;
-            $discount = (float)($item->discount_amount ?? 0);
-            $fee      = (float)($item->platform_fee_amount ?? 0);
+            $gross = (float) ($item->event_price_per_person ?? 0) * (int) $item->nbr_place;
+            $discount = (float) ($item->discount_amount ?? 0);
+            $fee = (float) ($item->platform_fee_amount ?? 0);
             $item->price = max(0, round($gross - $discount + $fee, 2));
 
-            $item->code = "ER" . str_pad($item->id, 3, '0', STR_PAD_LEFT);
+            $item->code = 'ER'.str_pad($item->id, 3, '0', STR_PAD_LEFT);
             $item->promo_code = $item->promo_code_id ? ($promoCodes[$item->promo_code_id] ?? null) : null;
+
             return $item;
         });
     }
@@ -351,15 +345,15 @@ class AdminReservationsController extends Controller
 
         if ($request->has('search')) {
             $search = $request->search;
-            $query->where(function($q) use ($search) {
-                $q->orWhereHas('user', function($uq) use ($search) {
-                      $uq->where('first_name', 'like', "%{$search}%")
-                         ->orWhere('last_name', 'like', "%{$search}%")
-                         ->orWhere('email', 'like', "%{$search}%");
-                  })
-                  ->orWhereHas('materielle', function($mq) use ($search) {
-                      $mq->where('nom', 'like', "%{$search}%");
-                  });
+            $query->where(function ($q) use ($search) {
+                $q->orWhereHas('user', function ($uq) use ($search) {
+                    $uq->where('first_name', 'like', "%{$search}%")
+                        ->orWhere('last_name', 'like', "%{$search}%")
+                        ->orWhere('email', 'like', "%{$search}%");
+                })
+                    ->orWhereHas('materielle', function ($mq) use ($search) {
+                        $mq->where('nom', 'like', "%{$search}%");
+                    });
             });
         }
 
@@ -373,33 +367,34 @@ class AdminReservationsController extends Controller
 
         $items = $query->get();
 
-        $promoIds   = $items->pluck('promo_code_id')->filter()->unique()->toArray();
+        $promoIds = $items->pluck('promo_code_id')->filter()->unique()->toArray();
         $promoCodes = PromoCode::whereIn('id', $promoIds)
             ->get(['id', 'code', 'discount_type', 'discount_value'])
             ->keyBy('id');
 
-        return $items->map(function($item) use ($promoCodes) {
+        return $items->map(function ($item) use ($promoCodes) {
             // Compute supplier display name from User first_name/last_name
             if ($item->fournisseur) {
-                $fn = trim(($item->fournisseur->first_name ?? '') . ' ' . ($item->fournisseur->last_name ?? ''));
-                $item->fournisseur->name  = $fn ?: ($item->fournisseur->email ?? 'Unknown');
+                $fn = trim(($item->fournisseur->first_name ?? '').' '.($item->fournisseur->last_name ?? ''));
+                $item->fournisseur->name = $fn ?: ($item->fournisseur->email ?? 'Unknown');
                 $item->fournisseur->email = $item->fournisseur->email ?? null;
                 $item->fournisseur->phone = $item->fournisseur->phone_number ?? $item->fournisseur->phone ?? null;
             }
 
             $item->display_name = "Réservation Matériel #{$item->id}";
-            $item->subtitle = "Matériel: " . ($item->materielle->nom ?? 'N/A')
-                . " (" . ucfirst($item->type_reservation ?? 'location') . ")";
-            $item->capacity  = $item->quantite;
-            $item->price     = $item->montant_total ?? 0;
-            $item->code      = "MR" . str_pad($item->id, 3, '0', STR_PAD_LEFT);
+            $item->subtitle = 'Matériel: '.($item->materielle->nom ?? 'N/A')
+                .' ('.ucfirst($item->type_reservation ?? 'location').')';
+            $item->capacity = $item->quantite;
+            $item->price = $item->montant_total ?? 0;
+            $item->code = 'MR'.str_pad($item->id, 3, '0', STR_PAD_LEFT);
             $item->promo_code = $item->promo_code_id ? ($promoCodes[$item->promo_code_id] ?? null) : null;
             // PIN status for admin display (never expose the hashed pin_code itself)
-            $item->pin_status = match(true) {
-                $item->pin_used_at !== null  => 'used',
+            $item->pin_status = match (true) {
+                $item->pin_used_at !== null => 'used',
                 in_array($item->status, ['confirmed', 'paid']) => 'generated',
                 default => 'not_generated',
             };
+
             return $item;
         });
     }
@@ -408,64 +403,65 @@ class AdminReservationsController extends Controller
      * Récupère les réservations de guides (CORRIGÉ)
      */
     private function getGuideReservations(Request $request)
-{
-    $query = Reservation_guide::with(['user', 'circuit', 'guide'])
-        ->select(
-            'id',
-            'reserver_id as user_id',
-            'guide_id',
-            'circuit_id',
-            'creation_date as date_debut',
-            'creation_date as date_fin',
-            'type',
-            'discription as note',
-            'status',
-            'created_at',
-            'updated_at',
-            DB::raw("'guides' as reservation_type")
-        );
+    {
+        $query = Reservation_guide::with(['user', 'circuit', 'guide'])
+            ->select(
+                'id',
+                'reserver_id as user_id',
+                'guide_id',
+                'circuit_id',
+                'creation_date as date_debut',
+                'creation_date as date_fin',
+                'type',
+                'discription as note',
+                'status',
+                'created_at',
+                'updated_at',
+                DB::raw("'guides' as reservation_type")
+            );
 
-    // Filtres
-    if ($request->has('status') && $request->status !== 'all') {
-        $query->where('status', $request->status);
-    }
+        // Filtres
+        if ($request->has('status') && $request->status !== 'all') {
+            $query->where('status', $request->status);
+        }
 
-    if ($request->has('user_id')) {
-        $query->where('reserver_id', $request->user_id);
-    }
+        if ($request->has('user_id')) {
+            $query->where('reserver_id', $request->user_id);
+        }
 
-    if ($request->has('search')) {
-        $search = $request->search;
-        $query->where(function($q) use ($search) {
-            $q->where('discription', 'like', "%{$search}%")
-              ->orWhereHas('user', function($uq) use ($search) {
-                  $uq->where('first_name', 'like', "%{$search}%")
-                     ->orWhere('last_name', 'like', "%{$search}%")
-                     ->orWhere('email', 'like', "%{$search}%");
-              })
-              ->orWhereHas('circuit', function($cq) use ($search) {
-                  $cq->where('name', 'like', "%{$search}%");
-              });
+        if ($request->has('search')) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('discription', 'like', "%{$search}%")
+                    ->orWhereHas('user', function ($uq) use ($search) {
+                        $uq->where('first_name', 'like', "%{$search}%")
+                            ->orWhere('last_name', 'like', "%{$search}%")
+                            ->orWhere('email', 'like', "%{$search}%");
+                    })
+                    ->orWhereHas('circuit', function ($cq) use ($search) {
+                        $cq->where('name', 'like', "%{$search}%");
+                    });
+            });
+        }
+
+        if ($request->has('date_from')) {
+            $query->whereDate('creation_date', '>=', $request->date_from);
+        }
+
+        if ($request->has('date_to')) {
+            $query->whereDate('creation_date', '<=', $request->date_to);
+        }
+
+        return $query->get()->map(function ($item) {
+            $item->display_name = "Réservation Guide #{$item->id}";
+            $item->subtitle = 'Circuit: '.($item->circuit->name ?? 'N/A');
+            $item->capacity = 1;
+            $item->price = 0;
+            $item->code = 'GR'.str_pad($item->id, 3, '0', STR_PAD_LEFT);
+
+            return $item;
         });
     }
-
-    if ($request->has('date_from')) {
-        $query->whereDate('creation_date', '>=', $request->date_from);
-    }
-
-    if ($request->has('date_to')) {
-        $query->whereDate('creation_date', '<=', $request->date_to);
-    }
-
-    return $query->get()->map(function($item) {
-        $item->display_name = "Réservation Guide #{$item->id}";
-        $item->subtitle = "Circuit: " . ($item->circuit->name ?? 'N/A');
-        $item->capacity = 1;
-        $item->price = 0;
-        $item->code = "GR" . str_pad($item->id, 3, '0', STR_PAD_LEFT);
-        return $item;
-    });
-}
 
     /**
      * Récupère les détails d'une réservation spécifique
@@ -475,7 +471,7 @@ class AdminReservationsController extends Controller
         if (!array_key_exists($type, self::RESERVATION_TYPES)) {
             return response()->json([
                 'success' => false,
-                'message' => 'Type de réservation invalide'
+                'message' => 'Type de réservation invalide',
             ], 400);
         }
 
@@ -488,12 +484,12 @@ class AdminReservationsController extends Controller
 
             return response()->json([
                 'success' => true,
-                'data' => $reservation
+                'data' => $reservation,
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Réservation non trouvée'
+                'message' => 'Réservation non trouvée',
             ], 404);
         }
     }
@@ -506,42 +502,42 @@ class AdminReservationsController extends Controller
         if (!array_key_exists($type, self::RESERVATION_TYPES)) {
             return response()->json([
                 'success' => false,
-                'message' => 'Type de réservation invalide'
+                'message' => 'Type de réservation invalide',
             ], 400);
         }
 
         $modelClass = self::RESERVATION_TYPES[$type];
-        
+
         try {
             $reservation = $modelClass::findOrFail($id);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Réservation non trouvée'
+                'message' => 'Réservation non trouvée',
             ], 404);
         }
 
         if (!$this->canModifyReservation($reservation, $type)) {
             return response()->json([
                 'success' => false,
-                'message' => 'Non autorisé à modifier cette réservation'
+                'message' => 'Non autorisé à modifier cette réservation',
             ], 403);
         }
 
         $validator = $this->getValidatorForType($request, $type, $reservation);
-        
+
         if ($validator->fails()) {
             return response()->json([
                 'success' => false,
-                'errors' => $validator->errors()
+                'errors' => $validator->errors(),
             ], 422);
         }
 
         $rejectedStatuses = [
-            'center'     => ['rejected', 'canceled'],
-            'events'     => ['refusée', 'annulée_par_organisateur', 'annulée_par_utilisateur'],
+            'center' => ['rejected', 'canceled'],
+            'events' => ['refusée', 'annulée_par_organisateur', 'annulée_par_utilisateur'],
             'materielle' => ['rejected', 'cancelled_by_fournisseur', 'cancelled_by_camper'],
-            'guides'     => ['rejected', 'canceled'],
+            'guides' => ['rejected', 'canceled'],
         ];
 
         DB::beginTransaction();
@@ -569,9 +565,10 @@ class AdminReservationsController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
+
             return response()->json([
                 'success' => false,
-                'message' => 'An unexpected error occurred. Please try again.'
+                'message' => 'An unexpected error occurred. Please try again.',
             ], 500);
         }
 
@@ -585,7 +582,7 @@ class AdminReservationsController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Réservation mise à jour avec succès',
-            'data' => $reservation->fresh($this->getRelationsForType($type))
+            'data' => $reservation->fresh($this->getRelationsForType($type)),
         ]);
     }
 
@@ -596,10 +593,10 @@ class AdminReservationsController extends Controller
     private function processAdminRefund($reservation, string $type): void
     {
         $refTypeMap = [
-            'center'     => 'centre_reservation',
-            'events'     => 'event_reservation',
+            'center' => 'centre_reservation',
+            'events' => 'event_reservation',
             'materielle' => 'materiel_reservation',
-            'guides'     => null,
+            'guides' => null,
         ];
 
         $referenceType = $refTypeMap[$type] ?? null;
@@ -610,6 +607,7 @@ class AdminReservationsController extends Controller
         $userId = $reservation->user_id ?? $reservation->reserver_id ?? null;
         if (!$userId) {
             \Log::warning('Admin refund skipped: no user_id', ['type' => $type, 'reservation_id' => $reservation->id]);
+
             return;
         }
 
@@ -623,6 +621,7 @@ class AdminReservationsController extends Controller
 
         if ($alreadyRefunded) {
             \Log::info('Admin refund skipped: already refunded', ['type' => $type, 'reservation_id' => $reservation->id]);
+
             return;
         }
 
@@ -640,12 +639,14 @@ class AdminReservationsController extends Controller
                 'user_id' => $userId, 'reference_type' => $referenceType,
                 'payment_method' => $reservation->payment_method ?? 'unknown',
             ]);
+
             return;
         }
 
         $amount = (float) $escrowTx->amount_gross;
         if ($amount <= 0) {
             \Log::info('Admin refund skipped: zero amount in escrow tx', ['type' => $type, 'reservation_id' => $reservation->id]);
+
             return;
         }
 
@@ -659,18 +660,18 @@ class AdminReservationsController extends Controller
                 Auth::id()
             );
             \Log::info('Admin refund issued', [
-                'type'           => $type,
+                'type' => $type,
                 'reservation_id' => $reservation->id,
-                'amount'         => $amount,
-                'user_id'        => $userId,
-                'admin_id'       => Auth::id(),
+                'amount' => $amount,
+                'user_id' => $userId,
+                'admin_id' => Auth::id(),
             ]);
         } catch (\Throwable $e) {
             \Log::error('Admin refund failed', [
-                'type'           => $type,
+                'type' => $type,
                 'reservation_id' => $reservation->id,
-                'user_id'        => $userId,
-                'error'          => $e->getMessage(),
+                'user_id' => $userId,
+                'error' => $e->getMessage(),
             ]);
         }
     }
@@ -678,20 +679,13 @@ class AdminReservationsController extends Controller
     /**
      * Actions groupées sur les réservations
      */
-    public function bulkAction(Request $request)
+    public function bulkAction(BulkReservationActionRequest $request)
     {
-        $request->validate([
-            'type' => 'required|in:center,events,materielle,guides',
-            'ids' => 'required|array|min:1',
-            'ids.*' => 'integer',
-            'action' => 'required|in:approve,reject,pending,cancel,delete',
-            'reason' => 'nullable|string|max:500'
-        ]);
 
         $modelClass = self::RESERVATION_TYPES[$request->type];
         $results = [
             'success' => [],
-            'failed' => []
+            'failed' => [],
         ];
 
         // Collected after the loop so wallet refunds run OUTSIDE the DB transaction
@@ -706,11 +700,13 @@ class AdminReservationsController extends Controller
 
                     if (!$reservation) {
                         $results['failed'][] = ['id' => $id, 'reason' => 'Réservation non trouvée'];
+
                         continue;
                     }
 
                     if (!$this->canModifyReservation($reservation, $request->type)) {
                         $results['failed'][] = ['id' => $id, 'reason' => 'Non autorisé'];
+
                         continue;
                     }
 
@@ -732,6 +728,7 @@ class AdminReservationsController extends Controller
                         case 'delete':
                             $reservation->delete();
                             $results['success'][] = ['id' => $id, 'action' => 'deleted'];
+
                             continue 2;
                     }
 
@@ -761,9 +758,10 @@ class AdminReservationsController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
+
             return response()->json([
                 'success' => false,
-                'message' => 'Erreur lors des actions groupées: ' . $e->getMessage()
+                'message' => 'Erreur lors des actions groupées: '.$e->getMessage(),
             ], 500);
         }
 
@@ -775,7 +773,7 @@ class AdminReservationsController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Actions groupées effectuées',
-            'data' => $results
+            'data' => $results,
         ]);
     }
 
@@ -787,19 +785,19 @@ class AdminReservationsController extends Controller
         if (!array_key_exists($type, self::RESERVATION_TYPES)) {
             return response()->json([
                 'success' => false,
-                'message' => 'Type de réservation invalide'
+                'message' => 'Type de réservation invalide',
             ], 400);
         }
 
         $modelClass = self::RESERVATION_TYPES[$type];
-        
+
         try {
             $reservation = $modelClass::findOrFail($id);
 
             if (!$this->canModifyReservation($reservation, $type)) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Non autorisé à supprimer cette réservation'
+                    'message' => 'Non autorisé à supprimer cette réservation',
                 ], 403);
             }
 
@@ -811,13 +809,13 @@ class AdminReservationsController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'Réservation supprimée avec succès'
+                'message' => 'Réservation supprimée avec succès',
             ]);
 
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Réservation non trouvée'
+                'message' => 'Réservation non trouvée',
             ], 404);
         }
     }
@@ -830,7 +828,7 @@ class AdminReservationsController extends Controller
         $stats = [];
 
         foreach (self::RESERVATION_TYPES as $type => $modelClass) {
-            $baseQuery = function() use ($modelClass, $request) {
+            $baseQuery = function () use ($modelClass, $request) {
                 $q = $modelClass::query();
                 if ($request->has('date_from')) {
                     $q->whereDate('created_at', '>=', $request->date_from);
@@ -838,17 +836,18 @@ class AdminReservationsController extends Controller
                 if ($request->has('date_to')) {
                     $q->whereDate('created_at', '<=', $request->date_to);
                 }
+
                 return $q;
             };
 
             $stats[$type] = [
-                'total'     => $baseQuery()->count(),
+                'total' => $baseQuery()->count(),
                 'by_status' => $baseQuery()
                     ->selectRaw('status, COUNT(*) as count')
                     ->groupBy('status')
                     ->get()
                     ->pluck('count', 'status'),
-                'recent'    => $baseQuery()
+                'recent' => $baseQuery()
                     ->whereDate('created_at', '>=', now()->subDays(7))
                     ->count(),
             ];
@@ -859,22 +858,15 @@ class AdminReservationsController extends Controller
 
         return response()->json([
             'success' => true,
-            'data' => $stats
+            'data' => $stats,
         ]);
     }
 
     /**
      * Export des réservations
      */
-    public function export(Request $request)
+    public function export(ExportReservationsRequest $request)
     {
-        $request->validate([
-            'type' => 'required|in:center,events,materielle,guides,all',
-            'format' => 'required|in:csv,excel',
-            'status' => 'nullable|string',
-            'date_from' => 'nullable|date',
-            'date_to' => 'nullable|date',
-        ]);
 
         $reservations = $this->getReservationsForExport($request);
 
@@ -888,24 +880,19 @@ class AdminReservationsController extends Controller
     /**
      * Vérifier la disponibilité du matériel
      */
-    public function checkMaterialAvailability(Request $request, $materialId)
+    public function checkMaterialAvailability(CheckMaterialAvailabilityRequest $request, $materialId)
     {
-        $request->validate([
-            'date_debut' => 'required|date',
-            'date_fin' => 'required|date|after:date_debut',
-            'quantite' => 'required|integer|min:1'
-        ]);
 
         $materiel = Materielles::findOrFail($materialId);
-        
+
         $reservationsExistantes = Reservations_materielles::where('materielle_id', $materialId)
             ->whereIn('status', ['confirmed', 'paid', 'retrieved'])
-            ->where(function($q) use ($request) {
+            ->where(function ($q) use ($request) {
                 $q->whereBetween('date_debut', [$request->date_debut, $request->date_fin])
-                  ->orWhereBetween('date_fin', [$request->date_debut, $request->date_fin]);
+                    ->orWhereBetween('date_fin', [$request->date_debut, $request->date_fin]);
             })
             ->sum('quantite');
-        
+
         $disponible = ($materiel->quantite_dispo - $reservationsExistantes) >= $request->quantite;
 
         return response()->json([
@@ -913,21 +900,20 @@ class AdminReservationsController extends Controller
             'material' => $materiel->nom,
             'disponible' => $disponible,
             'quantite_disponible' => $materiel->quantite_dispo - $reservationsExistantes,
-            'quantite_demandee' => $request->quantite
+            'quantite_demandee' => $request->quantite,
         ]);
     }
 
     /**
      * Méthodes utilitaires privées
      */
-
     private function getRelationsForType($type)
     {
         $relations = [
-            'center'     => ['user', 'centre', 'serviceItems.service.category'],
-            'events'     => ['user', 'event', 'group'],
+            'center' => ['user', 'centre', 'serviceItems.service.category'],
+            'events' => ['user', 'event', 'group'],
             'materielle' => ['user', 'fournisseur', 'materielle'],
-            'guides'     => ['user', 'circuit', 'guide'],
+            'guides' => ['user', 'circuit', 'guide'],
         ];
 
         return $relations[$type] ?? [];
@@ -958,7 +944,7 @@ class AdminReservationsController extends Controller
         }
 
         $reservation->status_label = $this->getStatusLabel($type, $reservation->status);
-        
+
         return $reservation;
     }
 
@@ -985,10 +971,10 @@ class AdminReservationsController extends Controller
                 'phone' => 'sometimes|string',
             ],
             'materielle' => [
-                'status'       => 'sometimes|in:pending,confirmed,paid,retrieved,returned,rejected,cancelled_by_camper,cancelled_by_fournisseur,disputed',
-                'quantite'     => 'sometimes|integer|min:1',
-                'date_debut'   => 'sometimes|date',
-                'date_fin'     => 'sometimes|date|after_or_equal:date_debut',
+                'status' => 'sometimes|in:pending,confirmed,paid,retrieved,returned,rejected,cancelled_by_camper,cancelled_by_fournisseur,disputed',
+                'quantite' => 'sometimes|integer|min:1',
+                'date_debut' => 'sometimes|date',
+                'date_fin' => 'sometimes|date|after_or_equal:date_debut',
                 'montant_total' => 'sometimes|numeric|min:0',
             ],
             'guides' => [
@@ -1046,8 +1032,7 @@ class AdminReservationsController extends Controller
         }
     }
 
-
-        /**
+    /**
      * Envoie un email de confirmation
      */
     public function sendConfirmationEmail(Request $request, $type, $id)
@@ -1055,43 +1040,44 @@ class AdminReservationsController extends Controller
         if (!array_key_exists($type, self::RESERVATION_TYPES)) {
             return response()->json([
                 'success' => false,
-                'message' => 'Type de réservation invalide'
+                'message' => 'Type de réservation invalide',
             ], 400);
         }
 
         $modelClass = self::RESERVATION_TYPES[$type];
-        
+
         try {
             $reservation = $modelClass::with($this->getRelationsForType($type))->findOrFail($id);
-            
+
             $email = null;
             if ($type === 'events' && isset($reservation->email)) {
                 $email = $reservation->email;
             } elseif (isset($reservation->user) && isset($reservation->user->email)) {
                 $email = $reservation->user->email;
             }
-            
+
             if (!$email) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Aucun email associé à cette réservation'
+                    'message' => 'Aucun email associé à cette réservation',
                 ], 400);
             }
-            
+
             Mail::to($email)->send(new ReservationStatusUpdated($reservation, $type));
 
             return response()->json([
                 'success' => true,
-                'message' => 'Confirmation email sent successfully'
+                'message' => 'Confirmation email sent successfully',
             ]);
 
         } catch (\Throwable $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'An unexpected error occurred. Please try again.'
+                'message' => 'An unexpected error occurred. Please try again.',
             ], 500);
         }
     }
+
     /**
      * Generate an emergency admin override PIN for a materielle reservation.
      * Used when the camper's PIN is unavailable (app crash, no phone, etc.).
@@ -1114,74 +1100,74 @@ class AdminReservationsController extends Controller
 
         $rawPin = $reservation->generateAdminPin();
 
-        \Log::warning("Admin generated emergency master PIN", [
-            'admin_id'       => Auth::id(),
+        \Log::warning('Admin generated emergency master PIN', [
+            'admin_id' => Auth::id(),
             'reservation_id' => $id,
-            'camper_id'      => $reservation->user_id,
+            'camper_id' => $reservation->user_id,
         ]);
 
         return response()->json([
             'success' => true,
             'message' => 'Emergency PIN generated. Show this to the supplier — it will not be shown again.',
-            'pin'     => $rawPin,
+            'pin' => $rawPin,
         ]);
     }
 
     /**
-    * Crée une nouvelle réservation
+     * Crée une nouvelle réservation
      */
     public function store(Request $request, $type)
     {
         if (!array_key_exists($type, self::RESERVATION_TYPES)) {
             return response()->json([
                 'success' => false,
-                'message' => 'Type de réservation invalide'
+                'message' => 'Type de réservation invalide',
             ], 400);
         }
 
         $rules = [
             'center' => [
-                'user_id'     => 'required|exists:users,id',
-                'centre_id'   => 'required|exists:centres,id',
-                'date_debut'  => 'required|date',
-                'date_fin'    => 'required|date|after_or_equal:date_debut',
-                'nbr_place'   => 'required|integer|min:1',
-                'status'      => 'sometimes|in:pending,approved,rejected,modified,canceled',
-                'note'        => 'nullable|string',
+                'user_id' => 'required|exists:users,id',
+                'centre_id' => 'required|exists:centres,id',
+                'date_debut' => 'required|date',
+                'date_fin' => 'required|date|after_or_equal:date_debut',
+                'nbr_place' => 'required|integer|min:1',
+                'status' => 'sometimes|in:pending,approved,rejected,modified,canceled',
+                'note' => 'nullable|string',
                 'payments_id' => 'nullable|exists:payments,id',
             ],
             'events' => [
-                'user_id'    => 'required|exists:users,id',
-                'event_id'   => 'required|exists:events,id',
-                'group_id'   => 'required|exists:groups,id',
-                'name'       => 'required|string|max:255',
-                'email'      => 'nullable|email',
-                'phone'      => 'nullable|string|max:20',
-                'nbr_place'  => 'required|integer|min:1',
-                'status'     => 'sometimes|in:en_attente_paiement,confirmée,en_attente_validation,refusée,annulée_par_utilisateur,annulée_par_organisateur,remboursement_en_attente,remboursée_partielle,remboursée_totale',
+                'user_id' => 'required|exists:users,id',
+                'event_id' => 'required|exists:events,id',
+                'group_id' => 'required|exists:groups,id',
+                'name' => 'required|string|max:255',
+                'email' => 'nullable|email',
+                'phone' => 'nullable|string|max:20',
+                'nbr_place' => 'required|integer|min:1',
+                'status' => 'sometimes|in:en_attente_paiement,confirmée,en_attente_validation,refusée,annulée_par_utilisateur,annulée_par_organisateur,remboursement_en_attente,remboursée_partielle,remboursée_totale',
                 'payment_id' => 'nullable|exists:payments,id',
                 'created_by' => 'nullable|exists:users,id',
             ],
             'materielle' => [
-                'user_id'        => 'required|exists:users,id',
-                'materielle_id'  => 'required|exists:materielles,id',
+                'user_id' => 'required|exists:users,id',
+                'materielle_id' => 'required|exists:materielles,id',
                 'fournisseur_id' => 'required|exists:fournisseurs,id',
-                'date_debut'     => 'required|date',
-                'date_fin'       => 'required|date|after_or_equal:date_debut',
-                'quantite'       => 'required|integer|min:1',
-                'montant_payer'  => 'required|numeric|min:0',
-                'status'         => 'sometimes|in:pending,approved,rejected,canceled',
-                'payments_id'    => 'nullable|exists:payments,id',
+                'date_debut' => 'required|date',
+                'date_fin' => 'required|date|after_or_equal:date_debut',
+                'quantite' => 'required|integer|min:1',
+                'montant_payer' => 'required|numeric|min:0',
+                'status' => 'sometimes|in:pending,approved,rejected,canceled',
+                'payments_id' => 'nullable|exists:payments,id',
             ],
             'guides' => [
-                'user_id'    => 'required|exists:users,id',
-                'guide_id'   => 'required|exists:users,id',
+                'user_id' => 'required|exists:users,id',
+                'guide_id' => 'required|exists:users,id',
                 'circuit_id' => 'required|exists:circuits,id',
                 'date_debut' => 'required|date',
-                'date_fin'   => 'nullable|date|after_or_equal:date_debut',
-                'type'       => 'nullable|string|max:255',
-                'discription'=> 'nullable|string',
-                'status'     => 'sometimes|in:pending,approved,rejected,canceled',
+                'date_fin' => 'nullable|date|after_or_equal:date_debut',
+                'type' => 'nullable|string|max:255',
+                'discription' => 'nullable|string',
+                'status' => 'sometimes|in:pending,approved,rejected,canceled',
             ],
         ];
 
@@ -1190,7 +1176,7 @@ class AdminReservationsController extends Controller
         if ($validator->fails()) {
             return response()->json([
                 'success' => false,
-                'errors'  => $validator->errors()
+                'errors' => $validator->errors(),
             ], 422);
         }
 
@@ -1201,12 +1187,12 @@ class AdminReservationsController extends Controller
             if ($type === 'guides') {
                 // Map frontend field names to actual DB column names
                 $guideData = [
-                    'reserver_id'   => $data['user_id'],
-                    'guide_id'      => $data['guide_id'],
-                    'circuit_id'    => $data['circuit_id'],
+                    'reserver_id' => $data['user_id'],
+                    'guide_id' => $data['guide_id'],
+                    'circuit_id' => $data['circuit_id'],
                     'creation_date' => $data['date_debut'],
-                    'type'          => $data['type']        ?? null,
-                    'discription'   => $data['discription'] ?? null,
+                    'type' => $data['type'] ?? null,
+                    'discription' => $data['discription'] ?? null,
                 ];
                 // Add status if the column exists
                 if (isset($data['status'])) {
@@ -1221,9 +1207,10 @@ class AdminReservationsController extends Controller
                 $event = Events::findOrFail($data['event_id']);
                 if ($event->nbr_place_restante < $data['nbr_place']) {
                     DB::rollBack();
+
                     return response()->json([
                         'success' => false,
-                        'message' => 'Pas assez de places disponibles pour cet événement'
+                        'message' => 'Pas assez de places disponibles pour cet événement',
                     ], 422);
                 }
                 $event->nbr_place_restante -= $data['nbr_place'];
@@ -1247,18 +1234,18 @@ class AdminReservationsController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Réservation créée avec succès',
-                'data'    => $reservation
+                'data' => $reservation,
             ], 201);
 
         } catch (\Exception $e) {
             DB::rollBack();
+
             return response()->json([
                 'success' => false,
-                'message' => 'An unexpected error occurred. Please try again.'
+                'message' => 'An unexpected error occurred. Please try again.',
             ], 500);
         }
     }
-
 
     private function shouldSendEmail($reservation, $type)
     {
@@ -1268,7 +1255,7 @@ class AdminReservationsController extends Controller
         } elseif (isset($reservation->user) && isset($reservation->user->email)) {
             $email = $reservation->user->email;
         }
-        
+
         return $email && filter_var($email, FILTER_VALIDATE_EMAIL);
     }
 
@@ -1291,47 +1278,47 @@ class AdminReservationsController extends Controller
             }
         } catch (\Throwable $e) {
             // Never let a mail failure crash the HTTP response
-            \Log::error("Reservation status email failed [{$type}#{$reservation->id}]: " . $e->getMessage());
+            \Log::error("Reservation status email failed [{$type}#{$reservation->id}]: ".$e->getMessage());
         }
     }
 
     private function getApprovedStatus($type)
     {
         return [
-            'center'     => 'approved',
-            'events'     => 'confirmée',
+            'center' => 'approved',
+            'events' => 'confirmée',
             'materielle' => 'confirmed',   // DB enum: confirmed (not approved)
-            'guides'     => 'approved',
+            'guides' => 'approved',
         ][$type];
     }
 
     private function getRejectedStatus($type)
     {
         return [
-            'center'     => 'rejected',
-            'events'     => 'refusée',
+            'center' => 'rejected',
+            'events' => 'refusée',
             'materielle' => 'rejected',
-            'guides'     => 'rejected',
+            'guides' => 'rejected',
         ][$type];
     }
 
     private function getPendingStatus($type)
     {
         return [
-            'center'     => 'pending',
-            'events'     => 'en_attente_validation',
+            'center' => 'pending',
+            'events' => 'en_attente_validation',
             'materielle' => 'pending',
-            'guides'     => 'pending',
+            'guides' => 'pending',
         ][$type];
     }
 
     private function getCanceledStatus($type)
     {
         return [
-            'center'     => 'canceled',
-            'events'     => 'annulée_par_organisateur',
+            'center' => 'canceled',
+            'events' => 'annulée_par_organisateur',
             'materielle' => 'cancelled_by_fournisseur',  // admin cancels on behalf of supplier
-            'guides'     => 'canceled',
+            'guides' => 'canceled',
         ][$type];
     }
 
@@ -1353,34 +1340,36 @@ class AdminReservationsController extends Controller
     private function getReservationsForExport(Request $request)
     {
         $type = $request->type;
-        
+
         if ($type === 'all') {
             $reservations = collect();
             foreach (['center', 'events', 'materielle', 'guides'] as $t) {
-                $method = 'get' . ucfirst($t) . 'Reservations';
+                $method = 'get'.ucfirst($t).'Reservations';
                 if (method_exists($this, $method)) {
                     $reservations = $reservations->concat($this->$method($request));
                 }
             }
+
             return $reservations;
         }
 
-        $method = 'get' . ucfirst($type) . 'Reservations';
+        $method = 'get'.ucfirst($type).'Reservations';
+
         return method_exists($this, $method) ? $this->$method($request) : collect();
     }
 
     private function exportToCsv($reservations)
     {
-        $filename = 'reservations_' . date('Y-m-d_His') . '.csv';
-        
+        $filename = 'reservations_'.date('Y-m-d_His').'.csv';
+
         $headers = [
             'Content-Type' => 'text/csv',
             'Content-Disposition' => "attachment; filename=\"$filename\"",
         ];
 
-        $callback = function() use ($reservations) {
+        $callback = function () use ($reservations) {
             $file = fopen('php://output', 'w');
-            
+
             fputcsv($file, [
                 'ID',
                 'Type',
@@ -1393,13 +1382,13 @@ class AdminReservationsController extends Controller
                 'Capacité',
                 'Prix',
                 'Statut',
-                'Date création'
+                'Date création',
             ]);
 
             foreach ($reservations as $r) {
                 $clientName = 'N/A';
                 $clientEmail = 'N/A';
-                
+
                 if (isset($r->user) && isset($r->user->name)) {
                     $clientName = $r->user->name;
                     $clientEmail = $r->user->email ?? 'N/A';
@@ -1407,7 +1396,7 @@ class AdminReservationsController extends Controller
                     $clientName = $r->name;
                     $clientEmail = $r->email ?? 'N/A';
                 }
-                
+
                 fputcsv($file, [
                     $r->id,
                     $r->reservation_type ?? 'N/A',
@@ -1420,7 +1409,7 @@ class AdminReservationsController extends Controller
                     $r->capacity ?? $r->nbr_place ?? $r->quantite ?? 'N/A',
                     $r->price ?? $r->montant_payer ?? $r->total_price ?? '0',
                     $r->status ?? 'N/A',
-                    isset($r->created_at) ? $r->created_at->format('Y-m-d H:i:s') : 'N/A'
+                    isset($r->created_at) ? $r->created_at->format('Y-m-d H:i:s') : 'N/A',
                 ]);
             }
 

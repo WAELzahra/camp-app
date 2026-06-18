@@ -3,11 +3,13 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\AddCommissionUserRequest;
+use App\Http\Requests\Admin\SearchCommissionUsersRequest;
+use App\Http\Requests\Admin\StoreCustomCommissionRequest;
+use App\Http\Requests\Admin\UpdateCustomCommissionRequest;
 use App\Models\CustomCommissionRule;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 
 class AdminCustomCommissionController extends Controller
 {
@@ -24,7 +26,7 @@ class AdminCustomCommissionController extends Controller
             ->with(['users:id,first_name,last_name,email,avatar,role_id', 'users.role:id,name'])
             ->orderByDesc('created_at')
             ->get()
-            ->map(fn($rule) => $this->formatRule($rule));
+            ->map(fn ($rule) => $this->formatRule($rule));
 
         return response()->json(['data' => $rules]);
     }
@@ -33,14 +35,9 @@ class AdminCustomCommissionController extends Controller
      * POST /admin/custom-commissions
      * Create a new rule.
      */
-    public function store(Request $request): JsonResponse
+    public function store(StoreCustomCommissionRequest $request): JsonResponse
     {
-        $data = $request->validate([
-            'name'            => 'required|string|max:255',
-            'description'     => 'nullable|string|max:1000',
-            'commission_rate' => 'required|numeric|min:0|max:100',
-            'is_active'       => 'sometimes|boolean',
-        ]);
+        $data = $request->validated();
 
         $rule = CustomCommissionRule::create($data);
         $rule->load(['users:id,first_name,last_name,email,avatar,role_id', 'users.role:id,name']);
@@ -69,16 +66,11 @@ class AdminCustomCommissionController extends Controller
      * If activating a previously inactive rule, warns about users that already have
      * another active rule (their assignment will follow first-match priority in that case).
      */
-    public function update(Request $request, int $id): JsonResponse
+    public function update(UpdateCustomCommissionRequest $request, int $id): JsonResponse
     {
         $rule = CustomCommissionRule::findOrFail($id);
 
-        $data = $request->validate([
-            'name'            => 'sometimes|string|max:255',
-            'description'     => 'nullable|string|max:1000',
-            'commission_rate' => 'sometimes|numeric|min:0|max:100',
-            'is_active'       => 'sometimes|boolean',
-        ]);
+        $data = $request->validated();
 
         // When activating a rule, check for users that already have a different active rule.
         $conflicts = [];
@@ -88,17 +80,17 @@ class AdminCustomCommissionController extends Controller
             if ($userIdsInThisRule->isNotEmpty()) {
                 $conflictingRules = CustomCommissionRule::where('is_active', true)
                     ->where('id', '!=', $id)
-                    ->whereHas('users', fn($q) => $q->whereIn('user_id', $userIdsInThisRule))
-                    ->with(['users' => fn($q) => $q->whereIn('users.id', $userIdsInThisRule)
+                    ->whereHas('users', fn ($q) => $q->whereIn('user_id', $userIdsInThisRule))
+                    ->with(['users' => fn ($q) => $q->whereIn('users.id', $userIdsInThisRule)
                         ->select('users.id', 'first_name', 'last_name')])
                     ->get();
 
                 foreach ($conflictingRules as $conflictRule) {
                     foreach ($conflictRule->users as $u) {
                         $conflicts[] = [
-                            'user_id'        => $u->id,
-                            'user_name'      => "{$u->first_name} {$u->last_name}",
-                            'existing_rule'  => $conflictRule->name,
+                            'user_id' => $u->id,
+                            'user_name' => "{$u->first_name} {$u->last_name}",
+                            'existing_rule' => $conflictRule->name,
                         ];
                     }
                 }
@@ -110,12 +102,12 @@ class AdminCustomCommissionController extends Controller
         $rule->loadCount('users');
 
         $message = $activating && count($conflicts) > 0
-            ? 'Règle mise à jour. Attention : ' . count($conflicts) . ' utilisateur(s) ont déjà une autre règle active — leur taux sera celui de la règle la plus ancienne.'
+            ? 'Règle mise à jour. Attention : '.count($conflicts).' utilisateur(s) ont déjà une autre règle active — leur taux sera celui de la règle la plus ancienne.'
             : 'Règle mise à jour.';
 
         return response()->json([
-            'data'      => $this->formatRule($rule),
-            'message'   => $message,
+            'data' => $this->formatRule($rule),
+            'message' => $message,
             'conflicts' => $conflicts,
         ]);
     }
@@ -136,13 +128,11 @@ class AdminCustomCommissionController extends Controller
      * POST /admin/custom-commissions/{id}/users
      * Add a user to a rule. Body: { user_id }
      */
-    public function addUser(Request $request, int $id): JsonResponse
+    public function addUser(AddCommissionUserRequest $request, int $id): JsonResponse
     {
         $rule = CustomCommissionRule::findOrFail($id);
 
-        $data = $request->validate([
-            'user_id' => 'required|integer|exists:users,id',
-        ]);
+        $data = $request->validated();
 
         $user = User::findOrFail($data['user_id']);
 
@@ -153,7 +143,7 @@ class AdminCustomCommissionController extends Controller
 
         // Check if user already has an active rule
         $existing = CustomCommissionRule::where('is_active', true)
-            ->whereHas('users', fn($q) => $q->where('user_id', $user->id))
+            ->whereHas('users', fn ($q) => $q->where('user_id', $user->id))
             ->where('id', '!=', $id)
             ->first();
 
@@ -188,15 +178,10 @@ class AdminCustomCommissionController extends Controller
      * GET /admin/custom-commissions/users/search?q=&role_id=&exclude_rule_id=
      * Search eligible users by name/email, optionally filtered by role.
      */
-    public function searchUsers(Request $request): JsonResponse
+    public function searchUsers(SearchCommissionUsersRequest $request): JsonResponse
     {
-        $request->validate([
-            'q'               => 'sometimes|string|max:100',
-            'role_id'         => 'sometimes|integer',
-            'exclude_rule_id' => 'sometimes|integer',
-        ]);
 
-        $q      = $request->input('q', '');
+        $q = $request->input('q', '');
         $roleId = $request->input('role_id');
 
         $query = User::with('role:id,name')
@@ -210,8 +195,8 @@ class AdminCustomCommissionController extends Controller
         if ($q) {
             $query->where(function ($sub) use ($q) {
                 $sub->where('first_name', 'like', "%{$q}%")
-                    ->orWhere('last_name',  'like', "%{$q}%")
-                    ->orWhere('email',      'like', "%{$q}%")
+                    ->orWhere('last_name', 'like', "%{$q}%")
+                    ->orWhere('email', 'like', "%{$q}%")
                     ->orWhereRaw("CONCAT(first_name, ' ', last_name) LIKE ?", ["%{$q}%"]);
             });
         }
@@ -224,8 +209,8 @@ class AdminCustomCommissionController extends Controller
         $activeRulesByUser = [];
         if (!empty($userIds)) {
             $rulesWithUsers = CustomCommissionRule::where('is_active', true)
-                ->whereHas('users', fn($q) => $q->whereIn('user_id', $userIds))
-                ->with(['users' => fn($q) => $q->whereIn('users.id', $userIds)->select('users.id')])
+                ->whereHas('users', fn ($q) => $q->whereIn('user_id', $userIds))
+                ->with(['users' => fn ($q) => $q->whereIn('users.id', $userIds)->select('users.id')])
                 ->get(['id', 'name']);
 
             foreach ($rulesWithUsers as $r) {
@@ -235,15 +220,15 @@ class AdminCustomCommissionController extends Controller
             }
         }
 
-        $mapped = $users->map(fn($u) => [
-            'id'           => $u->id,
-            'first_name'   => $u->first_name,
-            'last_name'    => $u->last_name,
-            'email'        => $u->email,
-            'avatar'       => $u->avatar,
-            'role_id'      => $u->role_id,
-            'role_name'    => $u->role?->name ?? 'unknown',
-            'active_rule'  => $activeRulesByUser[$u->id] ?? null, // null = no custom rule assigned
+        $mapped = $users->map(fn ($u) => [
+            'id' => $u->id,
+            'first_name' => $u->first_name,
+            'last_name' => $u->last_name,
+            'email' => $u->email,
+            'avatar' => $u->avatar,
+            'role_id' => $u->role_id,
+            'role_name' => $u->role?->name ?? 'unknown',
+            'active_rule' => $activeRulesByUser[$u->id] ?? null, // null = no custom rule assigned
         ]);
 
         return response()->json(['data' => $mapped]);
@@ -254,25 +239,25 @@ class AdminCustomCommissionController extends Controller
     private function formatRule(CustomCommissionRule $rule): array
     {
         return [
-            'id'              => $rule->id,
-            'name'            => $rule->name,
-            'description'     => $rule->description,
+            'id' => $rule->id,
+            'name' => $rule->name,
+            'description' => $rule->description,
             'commission_rate' => $rule->commission_rate,
-            'is_active'       => $rule->is_active,
-            'users_count'     => $rule->users_count ?? $rule->users->count(),
-            'users'           => $rule->relationLoaded('users')
-                ? $rule->users->map(fn($u) => [
-                    'id'         => $u->id,
+            'is_active' => $rule->is_active,
+            'users_count' => $rule->users_count ?? $rule->users->count(),
+            'users' => $rule->relationLoaded('users')
+                ? $rule->users->map(fn ($u) => [
+                    'id' => $u->id,
                     'first_name' => $u->first_name,
-                    'last_name'  => $u->last_name,
-                    'email'      => $u->email,
-                    'avatar'     => $u->avatar,
-                    'role_id'    => $u->role_id,
-                    'role_name'  => $u->role?->name ?? 'unknown',
+                    'last_name' => $u->last_name,
+                    'email' => $u->email,
+                    'avatar' => $u->avatar,
+                    'role_id' => $u->role_id,
+                    'role_name' => $u->role?->name ?? 'unknown',
                 ])
                 : [],
-            'created_at'      => $rule->created_at?->toIso8601String(),
-            'updated_at'      => $rule->updated_at?->toIso8601String(),
+            'created_at' => $rule->created_at?->toIso8601String(),
+            'updated_at' => $rule->updated_at?->toIso8601String(),
         ];
     }
 }

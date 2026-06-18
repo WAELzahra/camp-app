@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\PromoCode\CheckPromoCodeRequest;
+use App\Http\Requests\PromoCode\StorePromoCodeRequest;
 use App\Models\PromoCode;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -16,19 +18,14 @@ class PromoCodeController extends Controller
      * POST /promo-code/validate
      * Body: { code, reservation_type, price }
      */
-    public function checkCode(Request $request)
+    public function checkCode(CheckPromoCodeRequest $request)
     {
-        $request->validate([
-            'code'             => 'required|string|max:50',
-            'reservation_type' => 'required|in:centre,materiel,event',
-            'price'            => 'required|numeric|min:0',
-        ]);
 
         $promo = PromoCode::where('code', strtoupper(trim($request->code)))->first();
 
         if (!$promo) {
             return response()->json([
-                'valid'   => false,
+                'valid' => false,
                 'message' => 'Invalid promo code.',
             ], 422);
         }
@@ -37,24 +34,24 @@ class PromoCodeController extends Controller
 
         if (!$check['valid']) {
             return response()->json([
-                'valid'   => false,
+                'valid' => false,
                 'message' => $check['reason'],
             ], 422);
         }
 
-        $discount      = $promo->calculateDiscount((float) $request->price);
-        $finalPrice    = max(0, round((float) $request->price - $discount, 2));
+        $discount = $promo->calculateDiscount((float) $request->price);
+        $finalPrice = max(0, round((float) $request->price - $discount, 2));
 
         return response()->json([
-            'valid'          => true,
-            'message'        => 'Promo code applied successfully!',
-            'promo_code_id'  => $promo->id,
-            'code'           => $promo->code,
-            'discount_type'  => $promo->discount_type,
+            'valid' => true,
+            'message' => 'Promo code applied successfully!',
+            'promo_code_id' => $promo->id,
+            'code' => $promo->code,
+            'discount_type' => $promo->discount_type,
             'discount_value' => $promo->discount_value,
-            'discount_amount'=> $discount,
+            'discount_amount' => $discount,
             'original_price' => (float) $request->price,
-            'final_price'    => $finalPrice,
+            'final_price' => $finalPrice,
         ]);
     }
 
@@ -68,7 +65,7 @@ class PromoCodeController extends Controller
         $query = PromoCode::query();
 
         if ($request->filled('search')) {
-            $query->where('code', 'like', '%' . $request->search . '%');
+            $query->where('code', 'like', '%'.$request->search.'%');
         }
 
         if ($request->filled('is_active')) {
@@ -85,18 +82,9 @@ class PromoCodeController extends Controller
     }
 
     /** POST /admin/promo-codes */
-    public function store(Request $request)
+    public function store(StorePromoCodeRequest $request)
     {
-        $validated = $request->validate([
-            'code'           => 'required|string|max:50|unique:promo_codes,code',
-            'discount_type'  => 'required|in:percentage,fixed',
-            'discount_value' => 'required|numeric|min:0.01',
-            'applicable_to'  => 'required|in:all,centre,materiel,event',
-            'min_price'      => 'nullable|numeric|min:0',
-            'max_uses'       => 'nullable|integer|min:1',
-            'is_active'      => 'boolean',
-            'expires_in_days'=> 'nullable|integer|min:1|max:3650',
-        ]);
+        $validated = $request->validated();
 
         // Validate percentage does not exceed 100
         if ($validated['discount_type'] === 'percentage' && $validated['discount_value'] > 100) {
@@ -109,18 +97,18 @@ class PromoCodeController extends Controller
         }
 
         $promo = PromoCode::create([
-            'code'           => strtoupper(trim($validated['code'])),
-            'discount_type'  => $validated['discount_type'],
+            'code' => strtoupper(trim($validated['code'])),
+            'discount_type' => $validated['discount_type'],
             'discount_value' => $validated['discount_value'],
-            'applicable_to'  => $validated['applicable_to'],
-            'min_price'      => $validated['min_price'] ?? null,
-            'max_uses'       => $validated['max_uses'] ?? null,
-            'is_active'      => $validated['is_active'] ?? true,
-            'expires_at'     => $expiresAt,
+            'applicable_to' => $validated['applicable_to'],
+            'min_price' => $validated['min_price'] ?? null,
+            'max_uses' => $validated['max_uses'] ?? null,
+            'is_active' => $validated['is_active'] ?? true,
+            'expires_at' => $expiresAt,
         ]);
 
         return response()->json([
-            'message'    => 'Promo code created successfully.',
+            'message' => 'Promo code created successfully.',
             'promo_code' => $promo,
         ], 201);
     }
@@ -129,6 +117,7 @@ class PromoCodeController extends Controller
     public function show(int $id)
     {
         $promo = PromoCode::findOrFail($id);
+
         return response()->json($promo);
     }
 
@@ -139,7 +128,7 @@ class PromoCodeController extends Controller
         $promo->update(['is_active' => !$promo->is_active]);
 
         return response()->json([
-            'message'   => 'Promo code ' . ($promo->is_active ? 'enabled' : 'disabled') . '.',
+            'message' => 'Promo code '.($promo->is_active ? 'enabled' : 'disabled').'.',
             'is_active' => $promo->is_active,
         ]);
     }
