@@ -2,16 +2,18 @@
 
 namespace App\Http\Controllers\Admin;
 
-use App\Http\Controllers\Controller;
-use App\Models\Reservations_events;
-use App\Models\Reservations_centre;
-use App\Models\Reservations_materielles;
-use App\Models\WalletRechargeRequest;
-use App\Models\Balance;
-use App\Models\WalletTransaction;
-use App\Models\User;
-use App\Notifications\CustomNotification;
 use App\Events\NewNotificationCreated;
+use App\Http\Controllers\Controller;
+use App\Http\Requests\Payment\ConfirmWalletRechargeRequest;
+use App\Http\Requests\Payment\RejectPaymentRequest;
+use App\Models\Balance;
+use App\Models\Reservations_centre;
+use App\Models\Reservations_events;
+use App\Models\Reservations_materielles;
+use App\Models\User;
+use App\Models\WalletRechargeRequest;
+use App\Models\WalletTransaction;
+use App\Notifications\CustomNotification;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -39,42 +41,42 @@ class AdminPaymentReviewController extends Controller
             ->where('payment_method', 'manual')
             ->latest('payment_submitted_at')
             ->get()
-            ->map(fn($r) => $this->formatRow($r, 'events'));
+            ->map(fn ($r) => $this->formatRow($r, 'events'));
 
         $centres = Reservations_centre::with(['user'])
             ->whereIn('status', $statuses)
             ->where('payment_method', 'manual')
             ->latest('payment_submitted_at')
             ->get()
-            ->map(fn($r) => $this->formatRow($r, 'centres'));
+            ->map(fn ($r) => $this->formatRow($r, 'centres'));
 
         $materielles = Reservations_materielles::with(['user', 'materielle'])
             ->whereIn('status', $statuses)
             ->where('payment_method', 'manual')
             ->latest('payment_submitted_at')
             ->get()
-            ->map(fn($r) => $this->formatRow($r, 'materielles'));
+            ->map(fn ($r) => $this->formatRow($r, 'materielles'));
 
         $walletRecharges = WalletRechargeRequest::with('user')
             ->where('status', 'paiement_soumis')
             ->latest('submitted_at')
             ->get()
-            ->map(fn($r) => [
-                'id'                   => $r->id,
-                'type'                 => 'wallet',
-                'method'               => $r->method,
-                'payment_reference'    => $r->method === 'bank_transfer'
+            ->map(fn ($r) => [
+                'id' => $r->id,
+                'type' => 'wallet',
+                'method' => $r->method,
+                'payment_reference' => $r->method === 'bank_transfer'
                                             ? $r->transfer_reference
                                             : $r->payment_reference,
-                'transfer_reference'   => $r->transfer_reference,
-                'status'               => $r->status,
-                'payment_option'       => 'full',
-                'amount_now'           => $r->amount,
-                'amount_later'         => 0,
-                'balance_due_at'       => null,
+                'transfer_reference' => $r->transfer_reference,
+                'status' => $r->status,
+                'payment_option' => 'full',
+                'amount_now' => $r->amount,
+                'amount_later' => 0,
+                'balance_due_at' => null,
                 'payment_submitted_at' => $r->submitted_at,
-                'camper_name'          => $r->user?->first_name . ' ' . $r->user?->last_name,
-                'camper_email'         => $r->user?->email,
+                'camper_name' => $r->user?->first_name.' '.$r->user?->last_name,
+                'camper_email' => $r->user?->email,
             ]);
 
         return response()->json([
@@ -101,11 +103,11 @@ class AdminPaymentReviewController extends Controller
         }
 
         $wasBalance = ($reservation->status === 'solde_soumis');
-        $newStatus  = $this->resolveConfirmedStatus($reservation, $type);
+        $newStatus = $this->resolveConfirmedStatus($reservation, $type);
 
-        $reservation->status               = $newStatus;
+        $reservation->status = $newStatus;
         $reservation->payment_confirmed_at = now();
-        $reservation->confirmed_by         = Auth::id();
+        $reservation->confirmed_by = Auth::id();
         if ($wasBalance) {
             $reservation->amount_later = 0; // balance settled in full
         }
@@ -122,9 +124,9 @@ class AdminPaymentReviewController extends Controller
 
         return response()->json([
             'message' => 'Paiement confirmé.',
-            'status'  => $newStatus,
-            'id'      => $id,
-            'type'    => $type,
+            'status' => $newStatus,
+            'id' => $id,
+            'type' => $type,
         ]);
     }
 
@@ -132,9 +134,8 @@ class AdminPaymentReviewController extends Controller
      * POST /admin/payments/{type}/{id}/reject
      * Rejects a submitted payment — camper is asked to retry.
      */
-    public function reject(string $type, int $id, Request $request): JsonResponse
+    public function reject(string $type, int $id, RejectPaymentRequest $request): JsonResponse
     {
-        $request->validate(['reason' => 'nullable|string|max:500']);
 
         $reservation = $this->findAny($type, $id);
         if (!$reservation) {
@@ -151,8 +152,10 @@ class AdminPaymentReviewController extends Controller
         // the camper can resubmit; a rejected initial payment becomes paiement_invalide.
         $wasBalance = ($reservation->status === 'solde_soumis');
         $reservation->status = $wasBalance
-            ? match ($type) { 'events' => 'confirmée', 'centres' => 'approved', default => 'confirmed' }
-            : 'paiement_invalide';
+            ? match ($type) {
+                'events' => 'confirmée', 'centres' => 'approved', default => 'confirmed'
+            }
+        : 'paiement_invalide';
         $reservation->save();
 
         $this->notifyUser(
@@ -166,7 +169,7 @@ class AdminPaymentReviewController extends Controller
 
         return response()->json([
             'message' => 'Paiement rejeté. Le camper est notifié de soumettre à nouveau.',
-            'status'  => $reservation->status,
+            'status' => $reservation->status,
         ]);
     }
 
@@ -174,13 +177,11 @@ class AdminPaymentReviewController extends Controller
      * POST /admin/payments/wallet/{id}/confirm
      * Confirms a wallet recharge: credits the user's balance and logs the transaction.
      */
-    public function confirmWallet(Request $request, int $id): JsonResponse
+    public function confirmWallet(ConfirmWalletRechargeRequest $request, int $id): JsonResponse
     {
         // The admin may correct the credited amount to the amount actually received
         // (e.g. the camper claimed 100 but only 80 arrived). Defaults to the claim.
-        $validated = $request->validate([
-            'amount' => 'sometimes|nullable|numeric|min:0.01|max:100000',
-        ]);
+        $validated = $request->validated();
 
         $req = WalletRechargeRequest::find($id);
 
@@ -189,18 +190,19 @@ class AdminPaymentReviewController extends Controller
         }
 
         $alreadyTreated = false;
-        $credited       = 0.0;
-        $reference      = '';
+        $credited = 0.0;
+        $reference = '';
 
         DB::transaction(function () use ($id, $validated, &$req, &$alreadyTreated, &$credited, &$reference) {
             // Re-fetch under a row lock so two concurrent confirmations can't double-credit.
             $req = WalletRechargeRequest::whereKey($id)->lockForUpdate()->first();
             if (!$req || $req->status !== 'paiement_soumis') {
                 $alreadyTreated = true;
+
                 return;
             }
 
-            $credited  = isset($validated['amount']) && $validated['amount'] !== null
+            $credited = isset($validated['amount']) && $validated['amount'] !== null
                 ? round((float) $validated['amount'], 2)
                 : (float) $req->amount;
             $reference = $req->method === 'bank_transfer'
@@ -211,21 +213,21 @@ class AdminPaymentReviewController extends Controller
             $balance->crediter($credited);
 
             WalletTransaction::logCredit(
-                userId:           $req->user_id,
-                category:         'deposit',
-                amountGross:      $credited,
-                commissionRate:   0,
+                userId: $req->user_id,
+                category: 'deposit',
+                amountGross: $credited,
+                commissionRate: 0,
                 commissionAmount: 0,
-                netAmount:        $credited,
-                referenceType:    'wallet_recharge',
-                referenceId:      $req->id,
-                description:      "Rechargement wallet — {$reference}",
+                netAmount: $credited,
+                referenceType: 'wallet_recharge',
+                referenceId: $req->id,
+                description: "Rechargement wallet — {$reference}",
             );
 
-            $req->status          = 'confirmed';
+            $req->status = 'confirmed';
             $req->credited_amount = $credited;
-            $req->confirmed_at    = now();
-            $req->confirmed_by    = Auth::id();
+            $req->confirmed_at = now();
+            $req->confirmed_by = Auth::id();
             $req->save();
         });
 
@@ -241,8 +243,8 @@ class AdminPaymentReviewController extends Controller
         );
 
         return response()->json([
-            'message'         => 'Rechargement confirmé. Solde mis à jour.',
-            'id'              => $id,
+            'message' => 'Rechargement confirmé. Solde mis à jour.',
+            'id' => $id,
             'credited_amount' => $credited,
         ]);
     }
@@ -277,7 +279,9 @@ class AdminPaymentReviewController extends Controller
     private function notifyUser(int $userId, string $title, string $content, string $priority = 'medium'): void
     {
         $user = User::find($userId);
-        if (!$user) return;
+        if (!$user) {
+            return;
+        }
 
         $data = ['title' => $title, 'content' => $content, 'type' => 'payment', 'priority' => $priority];
 
@@ -287,6 +291,7 @@ class AdminPaymentReviewController extends Controller
             \Log::warning('AdminPaymentReview: in-app notification failed', [
                 'user_id' => $userId, 'error' => $e->getMessage(),
             ]);
+
             return;
         }
 
@@ -294,12 +299,12 @@ class AdminPaymentReviewController extends Controller
         if ($latest) {
             try {
                 event(new NewNotificationCreated(
-                    userId:         $user->id,
+                    userId: $user->id,
                     notificationId: $latest->id,
-                    title:          $title,
-                    content:        $content,
-                    type:           'payment',
-                    priority:       $priority,
+                    title: $title,
+                    content: $content,
+                    type: 'payment',
+                    priority: $priority,
                 ));
             } catch (\Throwable $e) {
                 // WebSocket server unavailable — notification is already saved in DB, real-time push is best-effort
@@ -312,28 +317,28 @@ class AdminPaymentReviewController extends Controller
 
     private function findAny(string $type, int $id): mixed
     {
-        return match($type) {
-            'events'     => Reservations_events::find($id),
-            'centres'    => Reservations_centre::find($id),
-            'materielles'=> Reservations_materielles::find($id),
-            default      => null,
+        return match ($type) {
+            'events' => Reservations_events::find($id),
+            'centres' => Reservations_centre::find($id),
+            'materielles' => Reservations_materielles::find($id),
+            default => null,
         };
     }
 
     private function formatRow(mixed $r, string $type): array
     {
         return [
-            'id'                   => $r->id,
-            'type'                 => $type,
-            'payment_reference'    => $r->payment_reference,
-            'status'               => $r->status,
-            'payment_option'       => $r->payment_option,
-            'amount_now'           => $r->amount_now,
-            'amount_later'         => $r->amount_later,
-            'balance_due_at'       => $r->balance_due_at,
+            'id' => $r->id,
+            'type' => $type,
+            'payment_reference' => $r->payment_reference,
+            'status' => $r->status,
+            'payment_option' => $r->payment_option,
+            'amount_now' => $r->amount_now,
+            'amount_later' => $r->amount_later,
+            'balance_due_at' => $r->balance_due_at,
             'payment_submitted_at' => $r->payment_submitted_at,
-            'camper_name'          => $r->user?->first_name . ' ' . $r->user?->last_name,
-            'camper_email'         => $r->user?->email,
+            'camper_name' => $r->user?->first_name.' '.$r->user?->last_name,
+            'camper_email' => $r->user?->email,
         ];
     }
 
@@ -350,17 +355,17 @@ class AdminPaymentReviewController extends Controller
     {
         if ($r->status === 'solde_soumis') {
             return match ($type) {
-                'events'  => 'confirmée',
+                'events' => 'confirmée',
                 'centres' => 'approved',
-                default   => 'confirmed', // materielles
+                default => 'confirmed', // materielles
             };
         }
 
         // Initial payment confirmed → host review queue.
         return match ($type) {
-            'events'  => 'en_attente_validation',
+            'events' => 'en_attente_validation',
             'centres' => 'pending',
-            default   => 'pending', // materielles
+            default => 'pending', // materielles
         };
     }
 }

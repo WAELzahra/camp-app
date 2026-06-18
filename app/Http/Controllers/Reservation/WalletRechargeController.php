@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Reservation;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Payment\BankTransferClaimRequest;
+use App\Http\Requests\Payment\InitiateWalletRechargeRequest;
 use App\Models\WalletRechargeRequest;
 use App\Services\ManualPaymentService;
 use App\Services\PaymentReferenceService;
@@ -16,20 +18,18 @@ class WalletRechargeController extends Controller
      * POST /my/wallet/recharge
      * Creates a pending recharge request and returns the payment reference + Flouci link.
      */
-    public function initiate(Request $request): JsonResponse
+    public function initiate(InitiateWalletRechargeRequest $request): JsonResponse
     {
         if (!ManualPaymentService::isEnabled()) {
             return response()->json(['message' => 'Le paiement par virement n\'est pas disponible.'], 422);
         }
 
-        $data = $request->validate([
-            'amount' => 'required|numeric|min:1|max:10000',
-        ]);
+        $data = $request->validated();
 
         $req = WalletRechargeRequest::create([
             'user_id' => Auth::id(),
-            'amount'  => round((float) $data['amount'], 2),
-            'status'  => 'pending',
+            'amount' => round((float) $data['amount'], 2),
+            'status' => 'pending',
         ]);
 
         $req->payment_reference = PaymentReferenceService::forWalletRecharge(Auth::id());
@@ -37,11 +37,11 @@ class WalletRechargeController extends Controller
 
         return response()->json([
             'data' => [
-                'id'                => $req->id,
-                'amount'            => $req->amount,
+                'id' => $req->id,
+                'amount' => $req->amount,
                 'payment_reference' => $req->payment_reference,
-                'status'            => $req->status,
-                'flouci_link'       => ManualPaymentService::flouciLink(),
+                'status' => $req->status,
+                'flouci_link' => ManualPaymentService::flouciLink(),
             ],
         ], 201);
     }
@@ -52,33 +52,30 @@ class WalletRechargeController extends Controller
      * money to the platform's bank account and posts the amount + their own bank
      * reference. The request is submitted immediately for admin review.
      */
-    public function bankTransferClaim(Request $request): JsonResponse
+    public function bankTransferClaim(BankTransferClaimRequest $request): JsonResponse
     {
         if (!(bool) \App\Models\PlatformSetting::get('bank_transfer_enabled', false)) {
             return response()->json(['message' => 'Le rechargement par virement bancaire n\'est pas disponible.'], 422);
         }
 
-        $data = $request->validate([
-            'amount'             => 'required|numeric|min:1|max:10000',
-            'transfer_reference' => 'required|string|max:120',
-        ]);
+        $data = $request->validated();
 
         $req = WalletRechargeRequest::create([
-            'user_id'            => Auth::id(),
-            'amount'             => round((float) $data['amount'], 2),
-            'method'             => 'bank_transfer',
+            'user_id' => Auth::id(),
+            'amount' => round((float) $data['amount'], 2),
+            'method' => 'bank_transfer',
             'transfer_reference' => trim($data['transfer_reference']),
-            'status'             => 'paiement_soumis',
-            'submitted_at'       => now(),
+            'status' => 'paiement_soumis',
+            'submitted_at' => now(),
         ]);
 
         return response()->json([
             'message' => 'Demande envoyée. L\'admin validera votre virement après réception.',
-            'data'    => [
-                'id'                 => $req->id,
-                'amount'             => $req->amount,
+            'data' => [
+                'id' => $req->id,
+                'amount' => $req->amount,
                 'transfer_reference' => $req->transfer_reference,
-                'status'             => $req->status,
+                'status' => $req->status,
             ],
         ], 201);
     }
@@ -99,13 +96,13 @@ class WalletRechargeController extends Controller
             return response()->json(['message' => 'Cette demande a déjà été soumise ou confirmée.'], 422);
         }
 
-        $req->status       = 'paiement_soumis';
+        $req->status = 'paiement_soumis';
         $req->submitted_at = now();
         $req->save();
 
         return response()->json([
             'message' => 'Virement soumis. L\'admin validera sous 24h.',
-            'status'  => 'paiement_soumis',
+            'status' => 'paiement_soumis',
         ]);
     }
 

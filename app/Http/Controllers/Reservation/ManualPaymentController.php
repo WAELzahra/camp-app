@@ -3,15 +3,15 @@
 namespace App\Http\Controllers\Reservation;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Payment\UpdatePaymentPreferencesRequest;
+use App\Models\PlatformSetting as PS;
 use App\Models\ProviderPaymentPreference;
-use App\Models\Reservations_events;
 use App\Models\Reservations_centre;
+use App\Models\Reservations_events;
 use App\Models\Reservations_materielles;
 use App\Services\ManualPaymentService;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use App\Models\PlatformSetting as PS;
 
 /**
  * Handles the camper-side of the manual payment lifecycle and provider
@@ -41,13 +41,13 @@ class ManualPaymentController extends Controller
         // created before the pending_payment status existed.)
         if (is_null($reservation->payment_confirmed_at)
             && in_array($reservation->status, ['pending_payment', 'pending', 'en_attente_validation', 'paiement_invalide'])) {
-            $reservation->status               = 'paiement_soumis';
+            $reservation->status = 'paiement_soumis';
             $reservation->payment_submitted_at = now();
             $reservation->save();
 
             return response()->json([
                 'message' => 'Paiement soumis. Un administrateur va vérifier votre virement sous peu.',
-                'status'  => 'paiement_soumis',
+                'status' => 'paiement_soumis',
             ]);
         }
 
@@ -55,19 +55,19 @@ class ManualPaymentController extends Controller
         // camper now submits the remaining balance (amount_later still owed).
         if ((float) ($reservation->amount_later ?? 0) > 0
             && in_array($reservation->status, ['confirmée_solde_en_attente', 'approved', 'confirmée', 'confirmed'])) {
-            $reservation->status               = 'solde_soumis';
+            $reservation->status = 'solde_soumis';
             $reservation->payment_submitted_at = now();
             $reservation->save();
 
             return response()->json([
                 'message' => 'Solde soumis. Un administrateur va vérifier votre virement sous peu.',
-                'status'  => 'solde_soumis',
+                'status' => 'solde_soumis',
             ]);
         }
 
         return response()->json([
             'message' => 'Le paiement ne peut pas être soumis pour ce statut.',
-            'status'  => $reservation->status,
+            'status' => $reservation->status,
         ], 422);
     }
 
@@ -92,14 +92,14 @@ class ManualPaymentController extends Controller
             && in_array($reservation->status, ['confirmée_solde_en_attente', 'approved', 'confirmée', 'confirmed']);
 
         return response()->json([
-            'reference'      => $reservation->payment_reference,
-            'option'         => $reservation->payment_option,
-            'amount_now'     => $isBalanceStep ? $reservation->amount_later : $reservation->amount_now,
-            'amount_later'   => $isBalanceStep ? 0 : $reservation->amount_later,
+            'reference' => $reservation->payment_reference,
+            'option' => $reservation->payment_option,
+            'amount_now' => $isBalanceStep ? $reservation->amount_later : $reservation->amount_now,
+            'amount_later' => $isBalanceStep ? 0 : $reservation->amount_later,
             'balance_due_at' => $reservation->balance_due_at,
-            'flouci_link'    => ManualPaymentService::flouciLink(),
-            'status'         => $reservation->status,
-            'is_balance_step'=> $isBalanceStep,
+            'flouci_link' => ManualPaymentService::flouciLink(),
+            'status' => $reservation->status,
+            'is_balance_step' => $isBalanceStep,
         ]);
     }
 
@@ -112,17 +112,17 @@ class ManualPaymentController extends Controller
      */
     public function providerPreferences(int $userId): JsonResponse
     {
-        $pref    = ProviderPaymentPreference::forUser($userId);
-        $minPct  = (int) PS::get('deposit_min_percentage', 20);
-        $maxPct  = (int) PS::get('deposit_max_percentage', 80);
-        $minTotal= (int) PS::get('deposit_min_total', 150);
+        $pref = ProviderPaymentPreference::forUser($userId);
+        $minPct = (int) PS::get('deposit_min_percentage', 20);
+        $maxPct = (int) PS::get('deposit_max_percentage', 80);
+        $minTotal = (int) PS::get('deposit_min_total', 150);
 
         return response()->json([
-            'accepts_deposits'   => $pref->accepts_deposits,
+            'accepts_deposits' => $pref->accepts_deposits,
             'deposit_percentage' => $pref->deposit_percentage,
-            'deposit_min_total'  => $minTotal,
-            'min_percentage'     => $minPct,
-            'max_percentage'     => $maxPct,
+            'deposit_min_total' => $minTotal,
+            'min_percentage' => $minPct,
+            'max_percentage' => $maxPct,
         ]);
     }
 
@@ -133,16 +133,16 @@ class ManualPaymentController extends Controller
     public function getPreferences(): JsonResponse
     {
         $userId = Auth::id();
-        $pref   = ProviderPaymentPreference::forUser($userId);
+        $pref = ProviderPaymentPreference::forUser($userId);
 
         $minPct = (int) PS::get('deposit_min_percentage', 20);
         $maxPct = (int) PS::get('deposit_max_percentage', 80);
 
         return response()->json([
-            'accepts_deposits'   => $pref->accepts_deposits,
+            'accepts_deposits' => $pref->accepts_deposits,
             'deposit_percentage' => $pref->deposit_percentage,
-            'min_percentage'     => $minPct,
-            'max_percentage'     => $maxPct,
+            'min_percentage' => $minPct,
+            'max_percentage' => $maxPct,
         ]);
     }
 
@@ -150,25 +150,19 @@ class ManualPaymentController extends Controller
      * PUT /my/payment-preferences
      * Updates the authenticated provider's deposit preferences.
      */
-    public function updatePreferences(Request $request): JsonResponse
+    public function updatePreferences(UpdatePaymentPreferencesRequest $request): JsonResponse
     {
-        $minPct = (int) PS::get('deposit_min_percentage', 20);
-        $maxPct = (int) PS::get('deposit_max_percentage', 80);
-
-        $validated = $request->validate([
-            'accepts_deposits'   => 'required|boolean',
-            'deposit_percentage' => "required_if:accepts_deposits,true|integer|min:{$minPct}|max:{$maxPct}",
-        ]);
+        $validated = $request->validated();
 
         $pref = ProviderPaymentPreference::forUser(Auth::id());
         $pref->update([
-            'accepts_deposits'   => $validated['accepts_deposits'],
+            'accepts_deposits' => $validated['accepts_deposits'],
             'deposit_percentage' => $validated['deposit_percentage'] ?? $pref->deposit_percentage,
         ]);
 
         return response()->json([
-            'message'            => 'Préférences de paiement mises à jour.',
-            'accepts_deposits'   => $pref->accepts_deposits,
+            'message' => 'Préférences de paiement mises à jour.',
+            'accepts_deposits' => $pref->accepts_deposits,
             'deposit_percentage' => $pref->deposit_percentage,
         ]);
     }
@@ -178,11 +172,12 @@ class ManualPaymentController extends Controller
     private function findOwn(string $type, int $id): mixed
     {
         $userId = Auth::id();
-        return match($type) {
-            'events'     => Reservations_events::where('id', $id)->where('user_id', $userId)->first(),
-            'centres'    => Reservations_centre::where('id', $id)->where('user_id', $userId)->first(),
-            'materielles'=> Reservations_materielles::where('id', $id)->where('user_id', $userId)->first(),
-            default      => null,
+
+        return match ($type) {
+            'events' => Reservations_events::where('id', $id)->where('user_id', $userId)->first(),
+            'centres' => Reservations_centre::where('id', $id)->where('user_id', $userId)->first(),
+            'materielles' => Reservations_materielles::where('id', $id)->where('user_id', $userId)->first(),
+            default => null,
         };
     }
 }
