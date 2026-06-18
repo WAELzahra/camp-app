@@ -86,7 +86,25 @@ controllers. So we create them while refactoring those controllers (Phase 3), no
 For each controller: create `App\Http\Requests\...Request`, move `rules()` + `messages()` +
 `authorize()`, replace inline `validate()`/`Validator::make()`, use `$request->validated()`.
 
-**Tier A — complex / high-value (do first, with the service extraction in Phase 3)**
+> **Progress (2026-06-18):** Tier A ✅ done. Tier B in progress — done: Event, Annonce,
+> Boutique, Center, Materielle (+AdminMaterielle). Suite green (76) after every batch.
+> Convention established + helper `scripts/convert_validate.php` swaps `validate([...])`
+> → `validated()`. Rules:
+> - `authorize()` returns `true` (route middleware/policies still own auth; per-record
+>   checks stay in controllers) — keeps the 422 contract identical for the frontend.
+> - **Leave** `Validator::make()` calls that validate computed/json data OR return a custom
+>   error shape (e.g. AdminAnnonceController's `{success,errors}`) — converting would change
+>   the response contract.
+> - When a controller mutates the request before validating (e.g. json_decode a field),
+>   move that into the Form Request's `prepareForValidation()`.
+>
+> **Remaining Tier B:** zonecamping/* (CampingZones, CampingCentres, PublicCamping,
+> ZonePolygon), Admin/CampingCentre, Admin/CampingZone, Admin/CancellationPolicy,
+> Admin/ServiceCategory, Admin/AdminEquipment, Admin/AdminExpense, ExpenseController,
+> CentreClaimController, Organizer/OrganizerSupplier, profile/ProfileController,
+> BankInfoController, Api/CenterServiceApiController.
+
+**Tier A — complex / high-value (do first, with the service extraction in Phase 3)** ✅
 - [ ] Reservation/ReservationsCentreController (store, update, centerModify, reject, partialAccept)
 - [ ] Reservation/ReservationEventController
 - [ ] Reservation/ReservationMaterielleController
