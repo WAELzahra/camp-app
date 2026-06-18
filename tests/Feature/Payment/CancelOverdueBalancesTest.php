@@ -32,7 +32,9 @@ class CancelOverdueBalancesTest extends TestCase
 
     private function createCamper(string $email = 'camper@example.com'): User
     {
+        // uuid is set explicitly because Event::fake() disables the model's creating hook.
         return User::create([
+            'uuid'       => (string) \Illuminate\Support\Str::uuid(),
             'first_name' => 'Test',
             'last_name'  => 'Camper',
             'email'      => $email,

@@ -46,10 +46,9 @@ class ManualPaymentTest extends TestCase
 
     private function enableManual(): void
     {
-        PlatformSetting::insert([
-            ['key' => 'manual_payment_enabled', 'value' => '1',                          'type' => 'boolean', 'label' => 'Manual',  'group' => 'payment', 'description' => '', 'created_at' => now(), 'updated_at' => now()],
-            ['key' => 'payment_link_flouci',    'value' => 'https://flouci.example.com', 'type' => 'string',  'label' => 'Flouci',  'group' => 'payment', 'description' => '', 'created_at' => now(), 'updated_at' => now()],
-        ]);
+        // platform_settings rows are pre-seeded by migration, so upsert (not insert).
+        PlatformSetting::updateOrCreate(['key' => 'manual_payment_enabled'], ['value' => '1', 'type' => 'boolean', 'label' => 'Manual', 'group' => 'payment']);
+        PlatformSetting::updateOrCreate(['key' => 'payment_link_flouci'], ['value' => 'https://flouci.example.com', 'type' => 'string', 'label' => 'Flouci', 'group' => 'payment']);
     }
 
     private function makeCentreReservation(int $userId, array $attrs = []): Reservations_centre
@@ -82,7 +81,7 @@ class ManualPaymentTest extends TestCase
 
         $response->assertOk()
             ->assertJsonFragment(['reference' => 'CTR-TEST-001'])
-            ->assertJsonPath('amount_now', 200.0)
+            ->assertJsonPath('amount_now', fn ($v) => (float) $v === 200.0)
             ->assertJsonPath('is_balance_step', false);
     }
 
@@ -102,8 +101,8 @@ class ManualPaymentTest extends TestCase
 
         $response->assertOk()
             ->assertJsonPath('is_balance_step', true)
-            ->assertJsonPath('amount_now', 210.0)
-            ->assertJsonPath('amount_later', 0);
+            ->assertJsonPath('amount_now', fn ($v) => (float) $v === 210.0)
+            ->assertJsonPath('amount_later', fn ($v) => (float) $v === 0.0);
     }
 
     public function test_payment_info_returns_flouci_link(): void

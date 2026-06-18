@@ -38,10 +38,9 @@ class WalletRechargeTest extends TestCase
 
     private function enableManual(): void
     {
-        PlatformSetting::insert([
-            ['key' => 'manual_payment_enabled', 'value' => '1',                          'type' => 'boolean', 'label' => 'Manual', 'group' => 'payment', 'description' => '', 'created_at' => now(), 'updated_at' => now()],
-            ['key' => 'payment_link_flouci',    'value' => 'https://flouci.example.com', 'type' => 'string',  'label' => 'Flouci', 'group' => 'payment', 'description' => '', 'created_at' => now(), 'updated_at' => now()],
-        ]);
+        // platform_settings rows are pre-seeded by migration, so upsert (not insert).
+        PlatformSetting::updateOrCreate(['key' => 'manual_payment_enabled'], ['value' => '1', 'type' => 'boolean', 'label' => 'Manual', 'group' => 'payment']);
+        PlatformSetting::updateOrCreate(['key' => 'payment_link_flouci'], ['value' => 'https://flouci.example.com', 'type' => 'string', 'label' => 'Flouci', 'group' => 'payment']);
     }
 
     private function makeRechargeRequest(int $userId, array $attrs = []): WalletRechargeRequest
@@ -65,7 +64,7 @@ class WalletRechargeTest extends TestCase
         $response = $this->postJson('/api/my/wallet/recharge', ['amount' => 150]);
 
         $response->assertCreated()
-            ->assertJsonPath('data.amount', 150.0)
+            ->assertJsonPath('data.amount', fn ($v) => (float) $v === 150.0)
             ->assertJsonPath('data.status', 'pending');
 
         $this->assertDatabaseHas('wallet_recharge_requests', [

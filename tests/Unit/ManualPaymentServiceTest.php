@@ -18,14 +18,11 @@ class ManualPaymentServiceTest extends TestCase
 
     private function setting(string $key, string $value, string $type): void
     {
-        PlatformSetting::create([
-            'key'         => $key,
-            'value'       => $value,
-            'type'        => $type,
-            'label'       => $key,
-            'group'       => 'payment',
-            'description' => '',
-        ]);
+        // platform_settings rows are pre-seeded by migration, so upsert (not create).
+        PlatformSetting::updateOrCreate(
+            ['key' => $key],
+            ['value' => $value, 'type' => $type, 'label' => $key, 'group' => 'payment', 'description' => ''],
+        );
     }
 
     private function createProvider(string $email = 'provider@example.com'): User
