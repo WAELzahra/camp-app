@@ -2,36 +2,31 @@
 
 namespace App\Http\Controllers\Reservation;
 
-use App\Models\Reservations_events;
-use App\Models\Events;
-use App\Models\Payments;
-use App\Models\PromoCode;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Mail;
-use App\Mail\ReservationStatusUpdated;
-use Carbon\Carbon;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Facades\Response;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Validator;
-use Symfony\Component\HttpFoundation\StreamedResponse;
 use App\Http\Controllers\Controller;
-use App\Mail\EventReservationCanceledNotifyOwner;
+use App\Http\Requests\Reservation\AddManualParticipantRequest;
+use App\Http\Requests\Reservation\CreateEventReservationWithPaymentRequest;
+use App\Mail\EventReservationCanceledByGroup;
 use App\Mail\EventReservationCreated;
 use App\Mail\EventReservationStatusChanged;
-use App\Mail\EventReservationCanceledByGroup;
 use App\Models\Balance;
-use App\Models\WalletTransaction;
 use App\Models\EventReservationMaterial;
 use App\Models\EventReservationService;
+use App\Models\Events;
 use App\Models\EventService;
 use App\Models\Materielles;
 use App\Models\OrganizerSupplierLink;
+use App\Models\Payments;
+use App\Models\PromoCode;
+use App\Models\Reservations_events;
+use App\Models\WalletTransaction;
 use App\Services\CancellationPolicyService;
 use App\Services\CommissionService;
 use App\Services\ManualPaymentService;
 use App\Services\PaymentReferenceService;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
 
 class ReservationEventController extends Controller
 {
@@ -61,25 +56,26 @@ class ReservationEventController extends Controller
             'participants' => $participants,
         ]);
     }
+
     /**
      * Get all participations for the authenticated user (camper)
      */
     public function myParticipations(Request $request)
     {
         $user = Auth::user();
-        
+
         // Only campers (role_id = 1) can access their participations
         if ($user->role_id !== 1) {
             return response()->json([
                 'success' => false,
                 'message' => 'Only campers can access their participations',
-                'data' => ['data' => []]
+                'data' => ['data' => []],
             ], 200);
         }
 
         try {
             $query = Reservations_events::where('user_id', $user->id)
-                ->with(['event' => function($q) {
+                ->with(['event' => function ($q) {
                     $q->with('photos');
                 }]);
 
@@ -89,7 +85,7 @@ class ReservationEventController extends Controller
             }
 
             if ($request->has('event_type') && $request->event_type) {
-                $query->whereHas('event', function($q) use ($request) {
+                $query->whereHas('event', function ($q) use ($request) {
                     $q->where('event_type', $request->event_type);
                 });
             }
@@ -102,7 +98,7 @@ class ReservationEventController extends Controller
             $participations = $query->paginate($request->get('per_page', 15));
 
             // Transform events to include cover_image
-            $participations->getCollection()->transform(function($participation) {
+            $participations->getCollection()->transform(function ($participation) {
                 if ($participation->event && $participation->event->photos->isNotEmpty()) {
                     $coverPhoto = $participation->event->photos->firstWhere('is_cover', true);
                     if ($coverPhoto) {
@@ -111,21 +107,23 @@ class ReservationEventController extends Controller
                         $participation->event->cover_image = $participation->event->photos->first()->url;
                     }
                 }
+
                 return $participation;
             });
 
             return response()->json([
                 'success' => true,
-                'data' => $participations
+                'data' => $participations,
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to fetch participations: ' . $e->getMessage(),
-                'data' => ['data' => []]
+                'message' => 'Failed to fetch participations: '.$e->getMessage(),
+                'data' => ['data' => []],
             ], 500);
         }
     }
+
     public function cancelByUser(Request $request, $id)
     {
         $user = Auth::user();
@@ -148,20 +146,20 @@ class ReservationEventController extends Controller
         $event = \App\Models\Events::findOrFail($reservation->event_id);
 
         // ── Fee calculation using dynamic cancellation policy ───────────────────
-        $netBase        = round($reservation->nbr_place * $event->price - ($reservation->discount_amount ?? 0), 2);
-        $servicesTotal  = round(EventReservationService::where('event_reservation_id', $reservation->id)->sum('subtotal'), 2);
+        $netBase = round($reservation->nbr_place * $event->price - ($reservation->discount_amount ?? 0), 2);
+        $servicesTotal = round(EventReservationService::where('event_reservation_id', $reservation->id)->sum('subtotal'), 2);
         $platformFeeAmt = (float) ($reservation->platform_fee_amount ?? 0);
         // gross = full amount camper paid for event + services (policy fee base)
-        $gross          = round($netBase + $servicesTotal + $platformFeeAmt, 2);
-        $startDate      = \Carbon\Carbon::parse($event->start_date);
+        $gross = round($netBase + $servicesTotal + $platformFeeAmt, 2);
+        $startDate = \Carbon\Carbon::parse($event->start_date);
 
         // Policy applies to gross (total paid), consistent with centre & equipment
-        $feeCalc                = CancellationPolicyService::preview('event', $startDate, $gross, null, \Carbon\Carbon::parse($reservation->created_at));
+        $feeCalc = CancellationPolicyService::preview('event', $startDate, $gross, null, \Carbon\Carbon::parse($reservation->created_at));
         $cancellationFeePercent = $feeCalc ? $feeCalc['fee_percentage'] : 0;
-        $cancellationFee        = $feeCalc ? $feeCalc['fee_amount']     : 0;
-        $refundAmount           = $feeCalc ? $feeCalc['refund_amount']  : $gross;
-        $processingFee          = 0;
-        $isLate                 = $feeCalc ? ($feeCalc['hours_remaining'] < 24) : false;
+        $cancellationFee = $feeCalc ? $feeCalc['fee_amount'] : 0;
+        $refundAmount = $feeCalc ? $feeCalc['refund_amount'] : $gross;
+        $processingFee = 0;
+        $isLate = $feeCalc ? ($feeCalc['hours_remaining'] < 24) : false;
 
         // ── Wallet refund ────────────────────────────────────────────────────────
         if ($reservation->payment_method === 'wallet' && $reservation->status === 'en_attente_validation') {
@@ -180,7 +178,7 @@ class ReservationEventController extends Controller
                 DB::commit();
             } catch (\Throwable $e) {
                 DB::rollBack();
-                \Log::error('Event pending cancellation escrow refund failed: ' . $e->getMessage());
+                \Log::error('Event pending cancellation escrow refund failed: '.$e->getMessage());
             }
         } elseif ($reservation->payment_method === 'wallet' && $reservation->status === 'confirmée') {
             // Use the stored net_amount from the original credit to guarantee exact clawback,
@@ -197,8 +195,8 @@ class ReservationEventController extends Controller
 
             // Platform cancellation fee reduces camper's refund
             $platformCancFee = \App\Models\PlatformCancellationFee::feeAmount('camper', $gross);
-            $actualRefund    = max(0, round($refundAmount - $platformCancFee, 2));
-            $cancFeeForOrg   = round($gross - $refundAmount, 2); // policy fee the organizer keeps
+            $actualRefund = max(0, round($refundAmount - $platformCancFee, 2));
+            $cancFeeForOrg = round($gross - $refundAmount, 2); // policy fee the organizer keeps
 
             // Credited material items that need clawback and refund
             $creditedMaterials = EventReservationMaterial::where('event_reservation_id', $reservation->id)
@@ -260,14 +258,14 @@ class ReservationEventController extends Controller
                 DB::commit();
             } catch (\Throwable $e) {
                 DB::rollBack();
-                \Log::error('Event cancellation wallet refund failed: ' . $e->getMessage());
+                \Log::error('Event cancellation wallet refund failed: '.$e->getMessage());
             }
         }
         // If status was en_attente_validation, no money was ever taken — nothing to refund
 
         // ── Update reservation status ────────────────────────────────────────────
         $reservation->update([
-            'status'     => 'annulée_par_utilisateur',
+            'status' => 'annulée_par_utilisateur',
             'updated_at' => now(),
         ]);
 
@@ -277,15 +275,15 @@ class ReservationEventController extends Controller
         // ── Send email to camper ─────────────────────────────────────────────────
         try {
             Mail::to($user->email)->send(new \App\Mail\EventReservationCanceledByUser(
-                user:            $user,
-                event:           $event,
-                reservation:     $reservation,
-                refundAmount:    $refundAmount,
+                user: $user,
+                event: $event,
+                reservation: $reservation,
+                refundAmount: $refundAmount,
                 cancellationFee: $cancellationFee,
-                processingFee:   $processingFee,
+                processingFee: $processingFee,
             ));
         } catch (\Exception $e) {
-            \Log::error('Failed to send cancellation email to user: ' . $e->getMessage());
+            \Log::error('Failed to send cancellation email to user: '.$e->getMessage());
         }
 
         // ── Send email to event owner ────────────────────────────────────────────
@@ -293,31 +291,32 @@ class ReservationEventController extends Controller
             $owner = \App\Models\User::find($event->group_id);
             if ($owner) {
                 Mail::to($owner->email)->send(new \App\Mail\EventReservationCanceledNotifyOwner(
-                    owner:       $owner,
-                    user:        $user,
-                    event:       $event,
+                    owner: $owner,
+                    user: $user,
+                    event: $event,
                     reservation: $reservation,
                 ));
             }
         } catch (\Exception $e) {
-            \Log::error('Failed to send cancellation notification to owner: ' . $e->getMessage());
+            \Log::error('Failed to send cancellation notification to owner: '.$e->getMessage());
         }
 
         return response()->json([
             'success' => true,
             'message' => 'Reservation canceled successfully.',
-            'data'    => [
-                'reservation_id'          => $reservation->id,
-                'status'                  => 'annulée_par_utilisateur',
-                'total_price'             => $netBase + $servicesTotal,
-                'cancellation_fee'        => $cancellationFee,
-                'cancellation_fee_percent'=> $cancellationFeePercent,
-                'processing_fee'          => $processingFee,
-                'refund_amount'           => $refundAmount,
-                'is_late_cancellation'    => $isLate,
+            'data' => [
+                'reservation_id' => $reservation->id,
+                'status' => 'annulée_par_utilisateur',
+                'total_price' => $netBase + $servicesTotal,
+                'cancellation_fee' => $cancellationFee,
+                'cancellation_fee_percent' => $cancellationFeePercent,
+                'processing_fee' => $processingFee,
+                'refund_amount' => $refundAmount,
+                'is_late_cancellation' => $isLate,
             ],
         ]);
     }
+
     /**
      * Statistiques du nombre de participants par statut pour un événement.
      */
@@ -343,16 +342,8 @@ class ReservationEventController extends Controller
     /**
      * Ajouter manuellement un participant à un événement.
      */
-    public function addManualParticipant(Request $request, $eventId)
+    public function addManualParticipant(AddManualParticipantRequest $request, $eventId)
     {
-        $request->validate([
-            'name'      => 'required|string|max:255',
-            'email'     => 'nullable|email|max:255',
-            'phone'     => 'nullable|string|max:50',
-            'nbr_place' => 'required|integer|min:1',
-            'status'    => 'nullable|in:confirmée,en_attente_paiement,en_attente_validation',
-        ]);
-
         $event = Events::findOrFail($eventId);
 
         // null remaining_spots = no capacity limit (custom events)
@@ -362,13 +353,13 @@ class ReservationEventController extends Controller
         }
 
         $reservation = Reservations_events::create([
-            'event_id'   => $eventId,
-            'group_id'   => auth()->id(),
-            'name'       => $request->name,
-            'email'      => $request->email,
-            'phone'      => $request->phone,
-            'nbr_place'  => $request->nbr_place,
-            'status'     => $request->status ?? 'confirmée',
+            'event_id' => $eventId,
+            'group_id' => auth()->id(),
+            'name' => $request->name,
+            'email' => $request->email,
+            'phone' => $request->phone,
+            'nbr_place' => $request->nbr_place,
+            'status' => $request->status ?? 'confirmée',
             'created_by' => auth()->id(),
         ]);
 
@@ -383,7 +374,7 @@ class ReservationEventController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Participant added successfully.',
-            'data'    => $reservation,
+            'data' => $reservation,
         ]);
     }
 
@@ -414,20 +405,20 @@ class ReservationEventController extends Controller
             $query->where('status', $request->status);
         }
         if ($request->filled('name')) {
-            $query->where('name', 'like', '%' . $request->name . '%');
+            $query->where('name', 'like', '%'.$request->name.'%');
         }
         if ($request->filled('phone')) {
-            $query->where('phone', 'like', '%' . $request->phone . '%');
+            $query->where('phone', 'like', '%'.$request->phone.'%');
         }
         if ($request->filled('email')) {
-            $query->where('email', 'like', '%' . $request->email . '%');
+            $query->where('email', 'like', '%'.$request->email.'%');
         }
 
         $results = $query->get();
 
         if ($results->isEmpty()) {
             return response()->json([
-                'message' => 'Aucun participant trouvé pour cet événement avec les critères spécifiés.'
+                'message' => 'Aucun participant trouvé pour cet événement avec les critères spécifiés.',
             ], 404);
         }
 
@@ -437,72 +428,71 @@ class ReservationEventController extends Controller
     /**
      * Mettre à jour un participant ajouté manuellement, avec gestion des places.
      */
-public function updateManualParticipant(Request $request, $reservationId)
-{
-    $reservation = Reservations_events::findOrFail($reservationId);
+    public function updateManualParticipant(Request $request, $reservationId)
+    {
+        $reservation = Reservations_events::findOrFail($reservationId);
 
-    if ($reservation->created_by !== auth()->id()) {
-        return response()->json(['message' => 'Non autorisé à modifier ce participant.'], 403);
-    }
-
-    // Récupérer les données JSON brutes
-    $data = $request->json()->all();
-
-    if (empty($data)) {
-        return response()->json(['message' => 'Aucune donnée reçue pour la mise à jour.'], 400);
-    }
-
-    // Valider uniquement les champs présents
-    $rules = [
-        'name' => 'sometimes|string',
-        'email' => 'sometimes|email',
-        'phone' => 'sometimes|string',
-        'nbr_place' => 'sometimes|integer|min:1',
-    ];
-
-    $validator = \Validator::make($data, $rules);
-
-    if ($validator->fails()) {
-        return response()->json(['errors' => $validator->errors()], 422);
-    }
-
-    // Construire le tableau des champs à mettre à jour
-    $dataToUpdate = [];
-
-    foreach (['name', 'email', 'phone', 'nbr_place'] as $field) {
-        if (array_key_exists($field, $data)) {
-            $dataToUpdate[$field] = $data[$field];
-        }
-    }
-
-    if (empty($dataToUpdate)) {
-        return response()->json(['message' => 'Aucune donnée à mettre à jour.'], 400);
-    }
-
-    // Si nbr_place est modifié, vérifier la disponibilité des places restantes
-    if (isset($dataToUpdate['nbr_place'])) {
-        $diff = $dataToUpdate['nbr_place'] - $reservation->nbr_place;
-        $event = Events::findOrFail($reservation->event_id);
-
-        if ($diff > 0 && $event->nbr_place_restante < $diff) {
-            return response()->json(['message' => 'Pas assez de places disponibles.'], 400);
+        if ($reservation->created_by !== auth()->id()) {
+            return response()->json(['message' => 'Non autorisé à modifier ce participant.'], 403);
         }
 
-        $event->nbr_place_restante -= $diff;
-        $event->save();
+        // Récupérer les données JSON brutes
+        $data = $request->json()->all();
+
+        if (empty($data)) {
+            return response()->json(['message' => 'Aucune donnée reçue pour la mise à jour.'], 400);
+        }
+
+        // Valider uniquement les champs présents
+        $rules = [
+            'name' => 'sometimes|string',
+            'email' => 'sometimes|email',
+            'phone' => 'sometimes|string',
+            'nbr_place' => 'sometimes|integer|min:1',
+        ];
+
+        $validator = \Validator::make($data, $rules);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        // Construire le tableau des champs à mettre à jour
+        $dataToUpdate = [];
+
+        foreach (['name', 'email', 'phone', 'nbr_place'] as $field) {
+            if (array_key_exists($field, $data)) {
+                $dataToUpdate[$field] = $data[$field];
+            }
+        }
+
+        if (empty($dataToUpdate)) {
+            return response()->json(['message' => 'Aucune donnée à mettre à jour.'], 400);
+        }
+
+        // Si nbr_place est modifié, vérifier la disponibilité des places restantes
+        if (isset($dataToUpdate['nbr_place'])) {
+            $diff = $dataToUpdate['nbr_place'] - $reservation->nbr_place;
+            $event = Events::findOrFail($reservation->event_id);
+
+            if ($diff > 0 && $event->nbr_place_restante < $diff) {
+                return response()->json(['message' => 'Pas assez de places disponibles.'], 400);
+            }
+
+            $event->nbr_place_restante -= $diff;
+            $event->save();
+        }
+
+        // Mise à jour en base
+        $reservation->update($dataToUpdate);
+
+        return response()->json([
+            'message' => 'Participant mis à jour avec succès.',
+            'participant' => $reservation->fresh(),
+        ]);
     }
 
-    // Mise à jour en base
-    $reservation->update($dataToUpdate);
-
-    return response()->json([
-        'message' => 'Participant mis à jour avec succès.',
-        'participant' => $reservation->fresh(),
-    ]);
-}
-
-
-/**
+    /**
      * Créer une réservation avec le statut "en_attente_paiement".
      *
      * Accepts: event_id, nbr_place, group_id, name, email, phone
@@ -518,30 +508,9 @@ public function updateManualParticipant(Request $request, $reservationId)
         return response()->json(['conflict' => false]);
     }
 
-    public function createReservationWithPayment(Request $request)
+    public function createReservationWithPayment(CreateEventReservationWithPaymentRequest $request)
     {
         $user = auth()->user();
-
-        $request->validate([
-            'event_id'          => 'required|exists:events,id',
-            'nbr_place'         => 'required|integer|min:1',
-            'group_id'          => 'required|exists:users,id',
-            'promo_code'        => 'nullable|string|max:50',
-            'name'              => 'nullable|string|max:255',
-            'email'             => 'nullable|email|max:255',
-            'phone'             => 'nullable|string|max:50',
-            'payment_method'    => 'nullable|in:wallet,card,manual',
-            'payment_option'    => 'nullable|in:full,deposit',
-            'group_skill_level' => 'nullable|in:beginner,intermediate,advanced,mixed',
-            'trip_purpose'      => 'nullable|string|max:255',
-            'materials'         => 'nullable|array',
-            'materials.*.materielle_id' => 'required_with:materials|exists:materielles,id',
-            'materials.*.quantite'      => 'required_with:materials|integer|min:1',
-            'services'                  => 'nullable|array',
-            'services.*.service_id'     => 'required_with:services|exists:event_services,id',
-            'services.*.quantity'       => 'required_with:services|integer|min:1',
-            'services.*.notes'          => 'nullable|string|max:500',
-        ]);
 
         $eventPaymentMethod = $request->input('payment_method', 'wallet');
 
@@ -563,13 +532,13 @@ public function updateManualParticipant(Request $request, $reservationId)
         $event = Events::findOrFail($request->event_id);
 
         $resolvedName = $request->name
-            ?? trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? ''))
+            ?? trim(($user->first_name ?? '').' '.($user->last_name ?? ''))
             ?: $user->email;
 
         // ── Promo code ───────────────────────────────────────────────────────────
-        $promoCodeId    = null;
+        $promoCodeId = null;
         $discountAmount = 0;
-        $basePrice      = (float) $event->price * (int) $request->nbr_place;
+        $basePrice = (float) $event->price * (int) $request->nbr_place;
 
         if (!empty($request->promo_code)) {
             $promo = PromoCode::where('code', strtoupper(trim($request->promo_code)))->first();
@@ -581,11 +550,11 @@ public function updateManualParticipant(Request $request, $reservationId)
                 return response()->json(['message' => $check['reason']], 422);
             }
             $discountAmount = $promo->calculateDiscount($basePrice);
-            $promoCodeId    = $promo->id;
+            $promoCodeId = $promo->id;
         }
 
         // ── Validate and price materials (optional) ──────────────────────────────
-        $materialItems  = [];
+        $materialItems = [];
         $materialsTotal = 0;
 
         if ($request->filled('materials') && is_array($request->materials)) {
@@ -602,13 +571,13 @@ public function updateManualParticipant(Request $request, $reservationId)
                 if (!$acceptedSupplierIds->contains($mat->fournisseur_id)) {
                     return response()->json(['success' => false, 'message' => "Material #{$item['materielle_id']} supplier is not associated with this organizer."], 422);
                 }
-                $qty   = (int) $item['quantite'];
+                $qty = (int) $item['quantite'];
                 $price = (float) $mat->tarif_nuit;
                 $total = round($price * $qty, 2);
                 $materialsTotal += $total;
                 $materialItems[] = [
-                    'materielle'    => $mat,
-                    'quantite'      => $qty,
+                    'materielle' => $mat,
+                    'quantite' => $qty,
                     'prix_unitaire' => $price,
                     'montant_total' => $total,
                 ];
@@ -616,7 +585,7 @@ public function updateManualParticipant(Request $request, $reservationId)
         }
 
         // ── Validate and price event services (optional add-ons) ────────────────
-        $serviceItems  = [];
+        $serviceItems = [];
         $servicesTotal = 0;
 
         if ($request->filled('services') && is_array($request->services)) {
@@ -625,26 +594,26 @@ public function updateManualParticipant(Request $request, $reservationId)
                 if (!$svc || !$svc->is_active || $svc->event_id != $request->event_id) {
                     return response()->json(['success' => false, 'message' => "Service #{$item['service_id']} is not available for this event."], 422);
                 }
-                $qty      = (int) $item['quantity'];
-                $price    = (float) $svc->price;
+                $qty = (int) $item['quantity'];
+                $price = (float) $svc->price;
                 $subtotal = round($price * $qty, 2);
                 $servicesTotal += $subtotal;
                 $serviceItems[] = [
-                    'service'              => $svc,
-                    'quantity'             => $qty,
-                    'notes'                => $item['notes'] ?? null,
-                    'price_snapshot'       => $price,
-                    'pricing_unit_snapshot'=> $svc->pricing_unit,
-                    'subtotal'             => $subtotal,
+                    'service' => $svc,
+                    'quantity' => $qty,
+                    'notes' => $item['notes'] ?? null,
+                    'price_snapshot' => $price,
+                    'pricing_unit_snapshot' => $svc->pricing_unit,
+                    'subtotal' => $subtotal,
                 ];
             }
         }
 
         // ── Price calculation ────────────────────────────────────────────────────
-        $netBase    = max(0, round($basePrice - $discountAmount, 2));
-        $feeData    = CommissionService::addServiceFee($netBase + $materialsTotal + $servicesTotal);
+        $netBase = max(0, round($basePrice - $discountAmount, 2));
+        $feeData = CommissionService::addServiceFee($netBase + $materialsTotal + $servicesTotal);
         $totalToPay = $feeData['total'];          // what camper pays (event + materials + platform fee)
-        $platformFeeAmt  = $feeData['fee_amount'];
+        $platformFeeAmt = $feeData['fee_amount'];
         $platformFeeRate = round($feeData['fee_rate'] * 100, 2);
 
         // ── Check balance upfront (wallet only; manual skips wallet) ────────────
@@ -662,12 +631,14 @@ public function updateManualParticipant(Request $request, $reservationId)
         $manualAmounts = [];
         if ($eventPaymentMethod === 'manual') {
             $requestedOption = $request->input('payment_option');
-            $computed        = ManualPaymentService::computeAmounts((int) $request->group_id, $totalToPay);
+            $computed = ManualPaymentService::computeAmounts((int) $request->group_id, $totalToPay);
             if ($requestedOption === 'full' && $computed['payment_option'] === 'deposit') {
                 $computed = ['payment_option' => 'full', 'amount_now' => $totalToPay, 'amount_later' => 0.0, 'deposit_pct' => null];
             } elseif ($requestedOption && $requestedOption !== $computed['payment_option']) {
                 $err = ManualPaymentService::validateOption($requestedOption, (int) $request->group_id, $totalToPay);
-                if ($err) { return response()->json(['success' => false, 'message' => $err], 422); }
+                if ($err) {
+                    return response()->json(['success' => false, 'message' => $err], 422);
+                }
             }
             $manualAmounts = $computed;
         }
@@ -695,28 +666,28 @@ public function updateManualParticipant(Request $request, $reservationId)
             }
 
             $reservation = Reservations_events::create([
-                'user_id'              => $user->id,
-                'group_id'             => $request->group_id,
-                'event_id'             => $request->event_id,
-                'name'                 => $resolvedName,
-                'email'                => $request->email  ?? $user->email,
-                'phone'                => $request->phone  ?? $user->phone_number ?? null,
-                'nbr_place'            => $request->nbr_place,
+                'user_id' => $user->id,
+                'group_id' => $request->group_id,
+                'event_id' => $request->event_id,
+                'name' => $resolvedName,
+                'email' => $request->email ?? $user->email,
+                'phone' => $request->phone ?? $user->phone_number ?? null,
+                'nbr_place' => $request->nbr_place,
                 // Manual payments stay hidden from the organizer until the admin
                 // confirms the transfer; only then do they enter the review queue.
-                'status'               => $eventPaymentMethod === 'manual' ? 'pending_payment' : 'en_attente_validation',
-                'created_by'           => $user->id,
-                'promo_code_id'        => $promoCodeId,
-                'discount_amount'      => $discountAmount,
-                'payment_method'       => $eventPaymentMethod,
-                'platform_fee_amount'  => $platformFeeAmt,
-                'platform_fee_rate'    => $platformFeeRate,
-                'group_skill_level'    => $request->input('group_skill_level'),
-                'trip_purpose'         => $request->input('trip_purpose'),
-                'payment_option'       => $eventPaymentMethod === 'manual' ? ($manualAmounts['payment_option'] ?? 'full') : null,
-                'amount_now'           => $eventPaymentMethod === 'manual' ? ($manualAmounts['amount_now'] ?? $totalToPay) : null,
-                'amount_later'         => $eventPaymentMethod === 'manual' ? ($manualAmounts['amount_later'] ?? 0) : null,
-                'balance_due_at'       => $balanceDueAt,
+                'status' => $eventPaymentMethod === 'manual' ? 'pending_payment' : 'en_attente_validation',
+                'created_by' => $user->id,
+                'promo_code_id' => $promoCodeId,
+                'discount_amount' => $discountAmount,
+                'payment_method' => $eventPaymentMethod,
+                'platform_fee_amount' => $platformFeeAmt,
+                'platform_fee_rate' => $platformFeeRate,
+                'group_skill_level' => $request->input('group_skill_level'),
+                'trip_purpose' => $request->input('trip_purpose'),
+                'payment_option' => $eventPaymentMethod === 'manual' ? ($manualAmounts['payment_option'] ?? 'full') : null,
+                'amount_now' => $eventPaymentMethod === 'manual' ? ($manualAmounts['amount_now'] ?? $totalToPay) : null,
+                'amount_later' => $eventPaymentMethod === 'manual' ? ($manualAmounts['amount_later'] ?? 0) : null,
+                'balance_due_at' => $balanceDueAt,
             ]);
 
             // ── Create material line items ────────────────────────────────────────
@@ -724,28 +695,28 @@ public function updateManualParticipant(Request $request, $reservationId)
                 $matFeeData = CommissionService::addServiceFee($item['montant_total']);
                 EventReservationMaterial::create([
                     'event_reservation_id' => $reservation->id,
-                    'materielle_id'        => $item['materielle']->id,
-                    'supplier_id'          => $item['materielle']->fournisseur_id,
-                    'quantite'             => $item['quantite'],
-                    'prix_unitaire'        => $item['prix_unitaire'],
-                    'montant_total'        => $item['montant_total'],
-                    'platform_fee_amount'  => $matFeeData['fee_amount'],
-                    'platform_fee_rate'    => round($matFeeData['fee_rate'] * 100, 2),
+                    'materielle_id' => $item['materielle']->id,
+                    'supplier_id' => $item['materielle']->fournisseur_id,
+                    'quantite' => $item['quantite'],
+                    'prix_unitaire' => $item['prix_unitaire'],
+                    'montant_total' => $item['montant_total'],
+                    'platform_fee_amount' => $matFeeData['fee_amount'],
+                    'platform_fee_rate' => round($matFeeData['fee_rate'] * 100, 2),
                     'supplier_net_revenue' => CommissionService::calculate('fournisseur', $item['montant_total'])['net_revenue'],
-                    'supplier_credited'    => false,
+                    'supplier_credited' => false,
                 ]);
             }
 
             // ── Create service line items ─────────────────────────────────────────
             foreach ($serviceItems as $item) {
                 EventReservationService::create([
-                    'event_reservation_id'  => $reservation->id,
-                    'event_service_id'      => $item['service']->id,
-                    'quantity'              => $item['quantity'],
-                    'notes'                 => $item['notes'],
-                    'price_snapshot'        => $item['price_snapshot'],
+                    'event_reservation_id' => $reservation->id,
+                    'event_service_id' => $item['service']->id,
+                    'quantity' => $item['quantity'],
+                    'notes' => $item['notes'],
+                    'price_snapshot' => $item['price_snapshot'],
                     'pricing_unit_snapshot' => $item['pricing_unit_snapshot'],
-                    'subtotal'              => $item['subtotal'],
+                    'subtotal' => $item['subtotal'],
                 ]);
             }
 
@@ -771,7 +742,8 @@ public function updateManualParticipant(Request $request, $reservationId)
             DB::commit();
         } catch (\Throwable $e) {
             DB::rollBack();
-            \Log::error('Event reservation creation failed: ' . $e->getMessage());
+            \Log::error('Event reservation creation failed: '.$e->getMessage());
+
             return response()->json(['success' => false, 'message' => 'Une erreur est survenue. Veuillez réessayer.'], 500);
         }
 
@@ -779,35 +751,35 @@ public function updateManualParticipant(Request $request, $reservationId)
             Mail::to($reservation->email ?? $user->email)
                 ->send(new EventReservationCreated($reservation, $event));
         } catch (\Exception $e) {
-            \Log::error('Failed to send event reservation confirmation: ' . $e->getMessage());
+            \Log::error('Failed to send event reservation confirmation: '.$e->getMessage());
         }
 
         $paymentResp = [
-            'method'            => $eventPaymentMethod,
-            'total_paid'        => $totalToPay,
-            'event_price'       => $netBase,
-            'materials_price'   => $materialsTotal,
-            'services_price'    => $servicesTotal,
-            'platform_fee'      => $platformFeeAmt,
-            'platform_fee_pct'  => $platformFeeRate,
+            'method' => $eventPaymentMethod,
+            'total_paid' => $totalToPay,
+            'event_price' => $netBase,
+            'materials_price' => $materialsTotal,
+            'services_price' => $servicesTotal,
+            'platform_fee' => $platformFeeAmt,
+            'platform_fee_pct' => $platformFeeRate,
         ];
         if ($eventPaymentMethod === 'manual') {
             $paymentResp['payment_info'] = [
-                'reference'    => $reservation->payment_reference,
-                'option'       => $reservation->payment_option,
-                'amount_now'   => $reservation->amount_now,
+                'reference' => $reservation->payment_reference,
+                'option' => $reservation->payment_option,
+                'amount_now' => $reservation->amount_now,
                 'amount_later' => $reservation->amount_later,
-                'flouci_link'  => ManualPaymentService::flouciLink(),
+                'flouci_link' => ManualPaymentService::flouciLink(),
             ];
         }
 
         return response()->json([
-            'success'     => true,
-            'message'     => $eventPaymentMethod === 'manual'
+            'success' => true,
+            'message' => $eventPaymentMethod === 'manual'
                 ? 'Réservation créée. Veuillez effectuer le paiement via le lien fourni.'
                 : 'Réservation confirmée et paiement effectué via wallet.',
             'reservation' => $reservation->load('materials.materielle', 'services.service'),
-            'payment'     => $paymentResp,
+            'payment' => $paymentResp,
         ], 201);
     }
 
@@ -822,53 +794,53 @@ public function updateManualParticipant(Request $request, $reservationId)
     }
 
     public function toutesMesReservations(Request $request)
-{
-    $user = Auth::user();
+    {
+        $user = Auth::user();
 
-    $query = Reservations_events::where('group_id', $user->id)
-        ->with(['event', 'user', 'payment']);
+        $query = Reservations_events::where('group_id', $user->id)
+            ->with(['event', 'user', 'payment']);
 
-    // 🔍 Filtres dynamiques
-    if ($request->filled('status')) {
-        $query->where('status', $request->status);
+        // 🔍 Filtres dynamiques
+        if ($request->filled('status')) {
+            $query->where('status', $request->status);
+        }
+
+        if ($request->filled('name')) {
+            $query->where('name', 'like', '%'.$request->name.'%');
+        }
+
+        if ($request->filled('email')) {
+            $query->where('email', 'like', '%'.$request->email.'%');
+        }
+
+        if ($request->filled('phone')) {
+            $query->where('phone', 'like', '%'.$request->phone.'%');
+        }
+
+        if ($request->filled('from')) {
+            $query->whereDate('created_at', '>=', $request->from);
+        }
+
+        if ($request->filled('to')) {
+            $query->whereDate('created_at', '<=', $request->to);
+        }
+
+        // 🔄 Récupération des données paginées
+        $reservations = $query->orderBy('created_at', 'desc')->paginate(10);
+
+        // ✅ Vérification si vide
+        if ($reservations->isEmpty()) {
+            return response()->json([
+                'message' => 'Aucune réservation trouvée.',
+            ], 200); // ou 204 si tu préfères
+        }
+
+        return response()->json($reservations);
     }
-
-    if ($request->filled('name')) {
-        $query->where('name', 'like', '%' . $request->name . '%');
-    }
-
-    if ($request->filled('email')) {
-        $query->where('email', 'like', '%' . $request->email . '%');
-    }
-
-    if ($request->filled('phone')) {
-        $query->where('phone', 'like', '%' . $request->phone . '%');
-    }
-
-    if ($request->filled('from')) {
-        $query->whereDate('created_at', '>=', $request->from);
-    }
-
-    if ($request->filled('to')) {
-        $query->whereDate('created_at', '<=', $request->to);
-    }
-
-    // 🔄 Récupération des données paginées
-    $reservations = $query->orderBy('created_at', 'desc')->paginate(10);
-
-    // ✅ Vérification si vide
-    if ($reservations->isEmpty()) {
-        return response()->json([
-            'message' => 'Aucune réservation trouvée.'
-        ], 200); // ou 204 si tu préfères
-    }
-
-    return response()->json($reservations);
-}
 
     public function reservationsParEvenement($event_id)
     {
-        $user  = Auth::user();
+        $user = Auth::user();
         $event = Events::findOrFail($event_id);
 
         $reservations = Reservations_events::where('group_id', $user->id)
@@ -885,10 +857,11 @@ public function updateManualParticipant(Request $request, $reservationId)
         $enriched = $reservations->map(function ($r) use ($user, $event) {
             $base = max(0, round(($r->nbr_place * (float) $event->price) - (float) ($r->discount_amount ?? 0), 2));
             $calc = CommissionService::calculateForUser('group', $base, $user->id);
-            $r->commission_rate   = round($calc['rate'] * 100, 2);   // e.g. 8.00 (%)
+            $r->commission_rate = round($calc['rate'] * 100, 2);   // e.g. 8.00 (%)
             $r->commission_amount = $calc['commission'];
-            $r->net_revenue       = $calc['net_revenue'];
-            $r->base_amount       = $base;
+            $r->net_revenue = $calc['net_revenue'];
+            $r->base_amount = $base;
+
             return $r;
         });
 
@@ -907,7 +880,7 @@ public function updateManualParticipant(Request $request, $reservationId)
         }
 
         $csvData = [];
-        $csvData[] = ["Nom", "Email", "Téléphone", "Événement", "Statut", "Places", "Date"];
+        $csvData[] = ['Nom', 'Email', 'Téléphone', 'Événement', 'Statut', 'Places', 'Date'];
 
         foreach ($reservations as $r) {
             $csvData[] = [
@@ -921,7 +894,7 @@ public function updateManualParticipant(Request $request, $reservationId)
             ];
         }
 
-        $filename = 'reservations_export_' . now()->timestamp . '.csv';
+        $filename = 'reservations_export_'.now()->timestamp.'.csv';
         $handle = fopen(storage_path("app/$filename"), 'w');
         foreach ($csvData as $row) {
             fputcsv($handle, $row);
@@ -943,16 +916,16 @@ public function updateManualParticipant(Request $request, $reservationId)
         $data = $request->json()->all();
 
         $validator = \Validator::make($data, [
-            'status' => 'required|in:confirmé,refusé,en_attente,annulé'
+            'status' => 'required|in:confirmé,refusé,en_attente,annulé',
         ]);
 
         if ($validator->fails()) {
             return response()->json(['errors' => $validator->errors(), 'message' => 'Validation échouée.'], 422);
         }
 
-        $newStatus     = $data['status'];
-        $event         = Events::findOrFail($reservation->event_id);
-        $netBase       = round(($reservation->nbr_place * $event->price) - ($reservation->discount_amount ?? 0), 2);
+        $newStatus = $data['status'];
+        $event = Events::findOrFail($reservation->event_id);
+        $netBase = round(($reservation->nbr_place * $event->price) - ($reservation->discount_amount ?? 0), 2);
         $servicesTotal = round(EventReservationService::where('event_reservation_id', $reservation->id)->sum('subtotal'), 2);
 
         // ── Wallet movements triggered by group decision ──────────────────────────
@@ -962,14 +935,14 @@ public function updateManualParticipant(Request $request, $reservationId)
                 // Release escrow and split revenue between organizer and suppliers
                 DB::beginTransaction();
                 try {
-                    $platformFeeAmt  = round((float) ($reservation->platform_fee_amount ?? 0), 2);
-                    $platformFeeRate = round((float) ($reservation->platform_fee_rate   ?? 0), 2);
+                    $platformFeeAmt = round((float) ($reservation->platform_fee_amount ?? 0), 2);
+                    $platformFeeRate = round((float) ($reservation->platform_fee_rate ?? 0), 2);
 
                     // Calculate material totals to split from total paid
-                    $materialItems   = $reservation->materials()->where('supplier_credited', false)->get();
-                    $materialsTotal  = $materialItems->sum('montant_total');
-                    $eventNetBase    = round($netBase - $materialsTotal, 2); // event-only base
-                    $totalPaid       = round($netBase + $platformFeeAmt, 2);
+                    $materialItems = $reservation->materials()->where('supplier_credited', false)->get();
+                    $materialsTotal = $materialItems->sum('montant_total');
+                    $eventNetBase = round($netBase - $materialsTotal, 2); // event-only base
+                    $totalPaid = round($netBase + $platformFeeAmt, 2);
 
                     // Release camper's escrowed funds
                     Balance::forUser($reservation->user_id)->releaseEscrow($totalPaid);
@@ -1036,7 +1009,8 @@ public function updateManualParticipant(Request $request, $reservationId)
                     DB::commit();
                 } catch (\Throwable $e) {
                     DB::rollBack();
-                    \Log::error('Event reservation approval wallet movement failed: ' . $e->getMessage());
+                    \Log::error('Event reservation approval wallet movement failed: '.$e->getMessage());
+
                     return response()->json(['success' => false, 'message' => 'Erreur lors du paiement.'], 500);
                 }
 
@@ -1044,7 +1018,7 @@ public function updateManualParticipant(Request $request, $reservationId)
                 // Refund escrowed funds — group rejected the reservation
                 DB::beginTransaction();
                 try {
-                    $feeData   = CommissionService::addServiceFee($netBase + $servicesTotal);
+                    $feeData = CommissionService::addServiceFee($netBase + $servicesTotal);
                     $totalPaid = round($feeData['total'], 2);
                     Balance::forUser($reservation->user_id)->refundEscrow($totalPaid);
                     WalletTransaction::logCredit(
@@ -1058,7 +1032,8 @@ public function updateManualParticipant(Request $request, $reservationId)
                     DB::commit();
                 } catch (\Throwable $e) {
                     DB::rollBack();
-                    \Log::error('Event reservation rejection wallet refund failed: ' . $e->getMessage());
+                    \Log::error('Event reservation rejection wallet refund failed: '.$e->getMessage());
+
                     return response()->json(['success' => false, 'message' => 'Erreur lors du remboursement.'], 500);
                 }
             }
@@ -1072,12 +1047,11 @@ public function updateManualParticipant(Request $request, $reservationId)
                 Mail::to($reservation->email)->send(new EventReservationStatusChanged($reservation, $event));
             }
         } catch (\Exception $e) {
-            \Log::error('Failed to send event status change email: ' . $e->getMessage());
+            \Log::error('Failed to send event status change email: '.$e->getMessage());
         }
 
         return response()->json(['message' => 'Statut mis à jour avec succès.']);
     }
-
 
     // Annulation avec remboursement
     // Annuler une réservation et déclencher un remboursement.
@@ -1090,8 +1064,8 @@ public function updateManualParticipant(Request $request, $reservationId)
             return response()->json(['message' => 'Non autorisé.'], 403);
         }
 
-        $event         = Events::findOrFail($reservation->event_id);
-        $netBase       = round(($reservation->nbr_place * $event->price) - ($reservation->discount_amount ?? 0), 2);
+        $event = Events::findOrFail($reservation->event_id);
+        $netBase = round(($reservation->nbr_place * $event->price) - ($reservation->discount_amount ?? 0), 2);
         $servicesTotal = round(EventReservationService::where('event_reservation_id', $reservation->id)->sum('subtotal'), 2);
 
         // ── Wallet refund when group cancels ─────────────────────────────────────
@@ -1102,7 +1076,7 @@ public function updateManualParticipant(Request $request, $reservationId)
                     // Money was collected at approval → full refund to camper + clawback from organizer + suppliers
                     // totalPaid = what camper originally paid = netBase + materialsTotal + servicesTotal + combined platform fee
                     $materialsBaseTotal = EventReservationMaterial::where('event_reservation_id', $reservation->id)->sum('montant_total');
-                    $feeData   = CommissionService::addServiceFee($netBase + $materialsBaseTotal + $servicesTotal);
+                    $feeData = CommissionService::addServiceFee($netBase + $materialsBaseTotal + $servicesTotal);
                     $totalPaid = round($feeData['total'], 2);
                     // Look up original credit to use exact stored net_amount for clawback
                     $origTx = WalletTransaction::where('user_id', $reservation->group_id)
@@ -1150,7 +1124,7 @@ public function updateManualParticipant(Request $request, $reservationId)
                 } elseif ($reservation->status === 'en_attente_validation') {
                     // Funds were escrowed — full refund = netBase + materialsTotal + servicesTotal + combined platform fee
                     $materialsTotal = EventReservationMaterial::where('event_reservation_id', $reservation->id)->sum('montant_total');
-                    $feeData   = CommissionService::addServiceFee($netBase + $materialsTotal + $servicesTotal);
+                    $feeData = CommissionService::addServiceFee($netBase + $materialsTotal + $servicesTotal);
                     $totalPaid = round($feeData['total'], 2);
                     Balance::forUser($reservation->user_id)->refundEscrow($totalPaid);
                     WalletTransaction::logCredit(
@@ -1166,7 +1140,8 @@ public function updateManualParticipant(Request $request, $reservationId)
                 DB::commit();
             } catch (\Throwable $e) {
                 DB::rollBack();
-                \Log::error('Group cancellation wallet refund failed: ' . $e->getMessage());
+                \Log::error('Group cancellation wallet refund failed: '.$e->getMessage());
+
                 return response()->json(['success' => false, 'message' => 'Erreur lors du remboursement.'], 500);
             }
         }
@@ -1180,7 +1155,7 @@ public function updateManualParticipant(Request $request, $reservationId)
                 Mail::to($reservation->email)->send(new EventReservationCanceledByGroup($reservation, $event));
             }
         } catch (\Exception $e) {
-            \Log::error('Failed to send group cancellation email to participant: ' . $e->getMessage());
+            \Log::error('Failed to send group cancellation email to participant: '.$e->getMessage());
         }
 
         return response()->json(['message' => 'Réservation annulée et remboursement lancé.']);
@@ -1188,45 +1163,44 @@ public function updateManualParticipant(Request $request, $reservationId)
 
     //  Modifier le nombre de places
     public function updatePlaces(Request $request, $id)
-{
-    $data = $request->json()->all();
+    {
+        $data = $request->json()->all();
 
-    $validator = \Validator::make($data, [
-        'nbr_place' => 'required|integer|min:1'
-    ]);
+        $validator = \Validator::make($data, [
+            'nbr_place' => 'required|integer|min:1',
+        ]);
 
-    if ($validator->fails()) {
-        return response()->json(['message' => 'Erreur de validation.', 'errors' => $validator->errors()], 422);
+        if ($validator->fails()) {
+            return response()->json(['message' => 'Erreur de validation.', 'errors' => $validator->errors()], 422);
+        }
+
+        $reservation = Reservations_events::findOrFail($id);
+
+        if ($reservation->group_id !== Auth::id()) {
+            return response()->json(['message' => 'Non autorisé.'], 403);
+        }
+
+        $event = Events::findOrFail($reservation->event_id);
+
+        $ancienne_place = $reservation->nbr_place;
+        $nouvelle_place = $data['nbr_place'];
+        $diff = $nouvelle_place - $ancienne_place;
+
+        // Vérifier si assez de places restantes si on augmente
+        if ($diff > 0 && $event->nbr_place_restante < $diff) {
+            return response()->json(['message' => 'Pas assez de places restantes.'], 400);
+        }
+
+        // Mettre à jour le champ `nbr_place_restante`
+        $event->nbr_place_restante -= $diff;
+        $event->save();
+
+        // Mettre à jour la réservation
+        $reservation->nbr_place = $nouvelle_place;
+        $reservation->save();
+
+        return response()->json(['message' => 'Nombre de places mis à jour.']);
     }
-
-    $reservation = Reservations_events::findOrFail($id);
-
-    if ($reservation->group_id !== Auth::id()) {
-        return response()->json(['message' => 'Non autorisé.'], 403);
-    }
-
-    $event = Events::findOrFail($reservation->event_id);
-
-    $ancienne_place = $reservation->nbr_place;
-    $nouvelle_place = $data['nbr_place'];
-    $diff = $nouvelle_place - $ancienne_place;
-
-    // Vérifier si assez de places restantes si on augmente
-    if ($diff > 0 && $event->nbr_place_restante < $diff) {
-        return response()->json(['message' => 'Pas assez de places restantes.'], 400);
-    }
-
-    // Mettre à jour le champ `nbr_place_restante`
-    $event->nbr_place_restante -= $diff;
-    $event->save();
-
-    // Mettre à jour la réservation
-    $reservation->nbr_place = $nouvelle_place;
-    $reservation->save();
-
-    return response()->json(['message' => 'Nombre de places mis à jour.']);
-}
-
 
     // Statistiques de participation
     public function reservationStats()
@@ -1246,79 +1220,75 @@ public function updateManualParticipant(Request $request, $reservationId)
         ]);
     }
 
-
     public function updateReservation(Request $request, $reservationId)
-{
-    $reservation = Reservations_events::findOrFail($reservationId);
+    {
+        $reservation = Reservations_events::findOrFail($reservationId);
 
-    // Vérifier que le groupe connecté est bien propriétaire de la réservation
-    if ($reservation->group_id !== Auth::id()) {
-        return response()->json(['message' => 'Non autorisé à modifier cette réservation.'], 403);
-    }
-
-    // Récupérer les données JSON brutes
-    $data = $request->json()->all();
-
-    if (empty($data)) {
-        return response()->json(['message' => 'Aucune donnée reçue pour la mise à jour.'], 400);
-    }
-
-    // Définir les règles de validation selon les champs modifiables
-    $rules = [
-        'status' => 'sometimes|in:confirmé,refusé,en_attente,annulé',
-        'nbr_place' => 'sometimes|integer|min:1',
-        'name' => 'sometimes|string',
-        'email' => 'sometimes|email',
-        'phone' => 'sometimes|string',
-    ];
-
-    $validator = \Validator::make($data, $rules);
-
-    if ($validator->fails()) {
-        return response()->json(['errors' => $validator->errors(), 'message' => 'Validation échouée.'], 422);
-    }
-
-    // Gestion spécifique pour nbr_place : vérifier la disponibilité des places restantes
-    if (isset($data['nbr_place'])) {
-        $event = Events::findOrFail($reservation->event_id);
-        $diff = $data['nbr_place'] - $reservation->nbr_place;
-
-        if ($diff > 0 && $event->nbr_place_restante < $diff) {
-            return response()->json(['message' => 'Pas assez de places disponibles.'], 400);
+        // Vérifier que le groupe connecté est bien propriétaire de la réservation
+        if ($reservation->group_id !== Auth::id()) {
+            return response()->json(['message' => 'Non autorisé à modifier cette réservation.'], 403);
         }
 
-        // Mettre à jour nbr_place_restante sur l'événement
-        $event->nbr_place_restante -= $diff;
-        $event->save();
+        // Récupérer les données JSON brutes
+        $data = $request->json()->all();
+
+        if (empty($data)) {
+            return response()->json(['message' => 'Aucune donnée reçue pour la mise à jour.'], 400);
+        }
+
+        // Définir les règles de validation selon les champs modifiables
+        $rules = [
+            'status' => 'sometimes|in:confirmé,refusé,en_attente,annulé',
+            'nbr_place' => 'sometimes|integer|min:1',
+            'name' => 'sometimes|string',
+            'email' => 'sometimes|email',
+            'phone' => 'sometimes|string',
+        ];
+
+        $validator = \Validator::make($data, $rules);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors(), 'message' => 'Validation échouée.'], 422);
+        }
+
+        // Gestion spécifique pour nbr_place : vérifier la disponibilité des places restantes
+        if (isset($data['nbr_place'])) {
+            $event = Events::findOrFail($reservation->event_id);
+            $diff = $data['nbr_place'] - $reservation->nbr_place;
+
+            if ($diff > 0 && $event->nbr_place_restante < $diff) {
+                return response()->json(['message' => 'Pas assez de places disponibles.'], 400);
+            }
+
+            // Mettre à jour nbr_place_restante sur l'événement
+            $event->nbr_place_restante -= $diff;
+            $event->save();
+        }
+
+        // Appliquer la mise à jour sur la réservation
+        $reservation->fill($data);
+        $reservation->save();
+
+        return response()->json([
+            'message' => 'Réservation mise à jour avec succès.',
+            'reservation' => $reservation->fresh(),
+        ]);
     }
 
-    // Appliquer la mise à jour sur la réservation
-    $reservation->fill($data);
-    $reservation->save();
+    // Afficher mes réservations passées
+    public function mesReservationsPassees(Request $request)
+    {
+        $user = Auth::user();
+        $today = now()->toDateString();
 
-    return response()->json([
-        'message' => 'Réservation mise à jour avec succès.',
-        'reservation' => $reservation->fresh(),
-    ]);
+        $query = Reservations_events::where('group_id', $user->id)
+            ->whereHas('event', function ($q) use ($today) {
+                $q->whereDate('date_sortie', '<', $today);
+            })
+            ->with(['event', 'user', 'payment']);
+
+        $reservations = $query->orderBy('created_at', 'desc')->paginate(10);
+
+        return response()->json($reservations);
+    }
 }
-
-// Afficher mes réservations passées
-public function mesReservationsPassees(Request $request)
-{
-    $user = Auth::user();
-    $today = now()->toDateString();
-
-    $query = Reservations_events::where('group_id', $user->id)
-        ->whereHas('event', function ($q) use ($today) {
-            $q->whereDate('date_sortie', '<', $today);
-        })
-        ->with(['event', 'user', 'payment']);
-
-    $reservations = $query->orderBy('created_at', 'desc')->paginate(10);
-
-    return response()->json($reservations);
-}
-
-
-
-};

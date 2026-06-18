@@ -3,28 +3,28 @@
 namespace App\Http\Controllers\Reservation;
 
 use App\Http\Controllers\Controller;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\Rule;
-use Illuminate\Support\Facades\Auth;
-use App\Models\Reservations_materielles;
-use App\Models\Materielles;
-use App\Models\User;
-use App\Models\PromoCode;
-use Illuminate\Support\Facades\Mail;
+use App\Http\Requests\Reservation\StoreMaterielleReservationRequest;
+use App\Http\Requests\Reservation\VerifyPinRequest;
 use App\Mail\NewReservationToFournisseur;
-use App\Mail\ReservationConfirmedToCamper;
-use App\Mail\ReservationCanceledToFournisseur;
-use App\Mail\ReservationRejectedToUser;
-use App\Mail\ReservationCanceledByFournisseurToCamper;
 use App\Mail\RentalReturnConfirmed;
+use App\Mail\ReservationCanceledByFournisseurToCamper;
+use App\Mail\ReservationCanceledToFournisseur;
+use App\Mail\ReservationConfirmedToCamper;
 use App\Mail\ReservationDisputedToCamper;
 use App\Mail\ReservationDisputedToFournisseur;
+use App\Mail\ReservationRejectedToUser;
 use App\Models\Balance;
+use App\Models\Materielles;
+use App\Models\PromoCode;
+use App\Models\Reservations_materielles;
+use App\Models\User;
 use App\Models\WalletTransaction;
 use App\Services\CommissionService;
 use App\Services\ManualPaymentService;
 use App\Services\PaymentReferenceService;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
 
 class ReservationMaterielleController extends Controller
 {
@@ -42,6 +42,7 @@ class ReservationMaterielleController extends Controller
         if ($reservations->isEmpty()) {
             return response()->json(['message' => 'No reservations found for this materielle.'], 404);
         }
+
         return response()->json(['message' => 'Reservations retrieved successfully.', 'reservations' => $reservations]);
     }
 
@@ -53,12 +54,13 @@ class ReservationMaterielleController extends Controller
         if ($reservations->isEmpty()) {
             return response()->json(['message' => 'No reservations found for this user.'], 404);
         }
+
         return response()->json(['message' => 'User reservations retrieved successfully.', 'reservations' => $reservations]);
     }
 
     public function show()
     {
-        $user         = Auth::user();
+        $user = Auth::user();
         $reservations = Reservations_materielles::with(['user', 'materielle'])
             ->where('fournisseur_id', $user->id)
             ->get();
@@ -71,9 +73,10 @@ class ReservationMaterielleController extends Controller
         $mapped = $reservations->map(function ($r) use ($receiverType, $user) {
             $base = max(0, round((float) $r->montant_total - (float) ($r->platform_fee_amount ?? 0), 2));
             $calc = CommissionService::calculateForUser($receiverType, $base, $user->id);
-            $r->commission_rate   = round($calc['rate'] * 100, 2);
+            $r->commission_rate = round($calc['rate'] * 100, 2);
             $r->commission_amount = $calc['commission'];
-            $r->net_revenue       = $calc['net_revenue'];
+            $r->net_revenue = $calc['net_revenue'];
+
             return $r;
         });
 
@@ -84,29 +87,9 @@ class ReservationMaterielleController extends Controller
     // CREATE
     // -------------------------------------------------------------------------
 
-    public function store(Request $request)
+    public function store(StoreMaterielleReservationRequest $request)
     {
-        $validated = $request->validate([
-            'materielle_id'     => 'required|exists:materielles,id',
-            'fournisseur_id'    => 'required|exists:users,id',
-            'type_reservation'  => 'required|in:location,achat',
-            'date_debut'        => 'required_if:type_reservation,location|nullable|date|after_or_equal:today',
-            'date_fin'          => [
-                Rule::requiredIf(fn () => $request->type_reservation === 'location' && !$request->filled('hours')),
-                'nullable', 'date', 'after_or_equal:date_debut',
-            ],
-            'hours'             => 'nullable|integer|min:1|max:24',
-            'quantite'          => 'required|integer|min:1',
-            // Kept for backward compatibility but no longer trusted — the
-            // total is recomputed server-side from the stored rates.
-            'montant_total'     => 'nullable|numeric|min:0',
-            'mode_livraison'    => 'required|in:pickup,delivery',
-            'adresse_livraison' => 'required_if:mode_livraison,delivery|nullable|string|max:500',
-            'frais_livraison'   => 'nullable|numeric|min:0',
-            'promo_code'        => 'nullable|string|max:50',
-            'payment_method'    => 'nullable|in:wallet,card,manual',
-            'payment_option'    => 'nullable|in:full,deposit',
-        ]);
+        $validated = $request->validated();
 
         // Prevent duplicate active reservations (rejected/cancelled ones are allowed to re-book)
         $activeStatuses = ['pending', 'confirmed', 'paid', 'retrieved'];
@@ -119,7 +102,7 @@ class ReservationMaterielleController extends Controller
         }
         if ($duplicateQuery->exists()) {
             return response()->json([
-                'status'  => 'error',
+                'status' => 'error',
                 'message' => 'You already have an active reservation for this equipment on the selected date.',
             ], 422);
         }
@@ -129,8 +112,8 @@ class ReservationMaterielleController extends Controller
         // Card payment not available in v1
         if ($paymentMethod === 'card') {
             return response()->json([
-                'status'      => 'error',
-                'message'     => 'Le paiement en ligne par carte sera bientôt disponible. Veuillez utiliser votre wallet.',
+                'status' => 'error',
+                'message' => 'Le paiement en ligne par carte sera bientôt disponible. Veuillez utiliser votre wallet.',
                 'coming_soon' => true,
             ], 422);
         }
@@ -138,21 +121,21 @@ class ReservationMaterielleController extends Controller
         // Manual payment gate
         if ($paymentMethod === 'manual' && !ManualPaymentService::isEnabled()) {
             return response()->json([
-                'status'  => 'error',
+                'status' => 'error',
                 'message' => 'Le paiement manuel n\'est pas disponible pour le moment.',
             ], 422);
         }
 
-        $user     = Auth::user();
+        $user = Auth::user();
         $isRental = $validated['type_reservation'] === 'location';
 
         if ($isRental) {
             $user->load('profile');
             if (!$user->hasCin()) {
                 return response()->json([
-                    'status'  => 'error',
+                    'status' => 'error',
                     'message' => 'Your national ID (CIN) is required to make a rental reservation.',
-                    'action'  => 'upload_cin',
+                    'action' => 'upload_cin',
                 ], 422);
             }
         }
@@ -161,7 +144,7 @@ class ReservationMaterielleController extends Controller
         $fournisseur = User::where('id', $validated['fournisseur_id'])
             ->whereIn('role_id', [1, 4])  // 1 = camper, 4 = supplier
             ->first();
-            
+
         if (!$fournisseur) {
             return response()->json(['status' => 'error', 'message' => 'Invalid provider. Equipment owner must be a registered user.'], 422);
         }
@@ -205,12 +188,12 @@ class ReservationMaterielleController extends Controller
         }
 
         // Apply promo code if provided
-        $promoCodeId    = null;
+        $promoCodeId = null;
         $discountAmount = 0;
         $serviceFeeRate = CommissionService::serviceFeeRate();
         // Base + delivery, then platform service fee on top — mirrors the client display.
         $montantBeforeFee = round($computedBase + $deliveryFee, 2);
-        $montantTotal     = round($montantBeforeFee * (1 + $serviceFeeRate), 2);
+        $montantTotal = round($montantBeforeFee * (1 + $serviceFeeRate), 2);
         if (!empty($validated['promo_code'])) {
             $promo = PromoCode::where('code', strtoupper(trim($validated['promo_code'])))->first();
             if (!$promo) {
@@ -221,13 +204,13 @@ class ReservationMaterielleController extends Controller
                 return response()->json(['status' => 'error', 'message' => $check['reason']], 422);
             }
             $discountAmount = $promo->calculateDiscount($montantTotal);
-            $montantTotal   = max(0, round($montantTotal - $discountAmount, 2));
-            $promoCodeId    = $promo->id;
+            $montantTotal = max(0, round($montantTotal - $discountAmount, 2));
+            $promoCodeId = $promo->id;
         }
 
         // ── Wallet balance check (escrow deduction) ──────────────────────────────
         // Reverse-calculate base from totalWithFee: base = total / (1 + feeRate)
-        $platformFeeAmt  = round($montantTotal * $serviceFeeRate / (1 + $serviceFeeRate), 2);
+        $platformFeeAmt = round($montantTotal * $serviceFeeRate / (1 + $serviceFeeRate), 2);
         $platformFeeRate = round($serviceFeeRate * 100, 2);
 
         // Manual payments skip the wallet — the bank transfer is verified externally by admin
@@ -235,7 +218,7 @@ class ReservationMaterielleController extends Controller
             $camperBalance = Balance::forUser($user->id);
             if ($camperBalance->solde_disponible < $montantTotal) {
                 return response()->json([
-                    'status'  => 'error',
+                    'status' => 'error',
                     'message' => "Solde wallet insuffisant. Disponible : {$camperBalance->solde_disponible} TND, requis : {$montantTotal} TND.",
                 ], 422);
             }
@@ -245,7 +228,7 @@ class ReservationMaterielleController extends Controller
         $manualAmounts = [];
         if ($paymentMethod === 'manual') {
             $requestedOption = $validated['payment_option'] ?? null;
-            $computed        = ManualPaymentService::computeAmounts((int) $validated['fournisseur_id'], $montantTotal);
+            $computed = ManualPaymentService::computeAmounts((int) $validated['fournisseur_id'], $montantTotal);
             if ($requestedOption && $requestedOption !== $computed['payment_option']) {
                 $err = ManualPaymentService::validateOption($requestedOption, (int) $validated['fournisseur_id'], $montantTotal);
                 if ($err) {
@@ -278,38 +261,38 @@ class ReservationMaterielleController extends Controller
             if ($paymentMethod === 'manual' && ($manualAmounts['payment_option'] ?? 'full') === 'deposit') {
                 // 7 days before start (or +14d when no start date), but never in the past —
                 // a near-term booking still gets a 48h window to pay the balance.
-                $startDate    = !empty($validated['date_debut']) ? \Carbon\Carbon::parse($validated['date_debut']) : now()->addDays(14);
-                $due          = $startDate->subDays(7);
+                $startDate = !empty($validated['date_debut']) ? \Carbon\Carbon::parse($validated['date_debut']) : now()->addDays(14);
+                $due = $startDate->subDays(7);
                 $balanceDueAt = $due->isPast() ? now()->addDays(2)->toDateString() : $due->toDateString();
             }
 
             $reservation = Reservations_materielles::create([
-                'materielle_id'      => $validated['materielle_id'],
-                'user_id'            => $user->id,
-                'fournisseur_id'     => $validated['fournisseur_id'],
-                'type_reservation'   => $validated['type_reservation'],
-                'date_debut'         => $validated['date_debut'] ?? null,
-                'date_fin'           => $validated['date_fin'] ?? null,
-                'hours'              => $isRental && $materielle->rental_unit === 'hour'
+                'materielle_id' => $validated['materielle_id'],
+                'user_id' => $user->id,
+                'fournisseur_id' => $validated['fournisseur_id'],
+                'type_reservation' => $validated['type_reservation'],
+                'date_debut' => $validated['date_debut'] ?? null,
+                'date_fin' => $validated['date_fin'] ?? null,
+                'hours' => $isRental && $materielle->rental_unit === 'hour'
                     ? (int) ($validated['hours'] ?? 1) : null,
-                'quantite'           => $validated['quantite'],
-                'montant_total'      => $montantTotal,
-                'mode_livraison'     => $validated['mode_livraison'],
-                'adresse_livraison'  => $validated['adresse_livraison'] ?? null,
-                'frais_livraison'    => $validated['frais_livraison'] ?? 0,
-                'cin_camper'         => $isRental ? $user->profile->cin_path : null,
+                'quantite' => $validated['quantite'],
+                'montant_total' => $montantTotal,
+                'mode_livraison' => $validated['mode_livraison'],
+                'adresse_livraison' => $validated['adresse_livraison'] ?? null,
+                'frais_livraison' => $validated['frais_livraison'] ?? 0,
+                'cin_camper' => $isRental ? $user->profile->cin_path : null,
                 // Manual payments stay hidden from the supplier until the admin confirms
                 // the transfer; only then does the reservation enter the review queue.
-                'status'             => $paymentMethod === 'manual' ? 'pending_payment' : 'pending',
-                'promo_code_id'      => $promoCodeId,
-                'discount_amount'    => $discountAmount,
-                'payment_method'     => $paymentMethod,
-                'platform_fee_amount'=> $montantTotal > 0 ? $platformFeeAmt  : null,
-                'platform_fee_rate'  => $montantTotal > 0 ? $platformFeeRate : null,
-                'payment_option'     => $paymentMethod === 'manual' ? ($manualAmounts['payment_option'] ?? 'full') : null,
-                'amount_now'         => $paymentMethod === 'manual' ? ($manualAmounts['amount_now'] ?? $montantTotal) : null,
-                'amount_later'       => $paymentMethod === 'manual' ? ($manualAmounts['amount_later'] ?? 0) : null,
-                'balance_due_at'     => $balanceDueAt,
+                'status' => $paymentMethod === 'manual' ? 'pending_payment' : 'pending',
+                'promo_code_id' => $promoCodeId,
+                'discount_amount' => $discountAmount,
+                'payment_method' => $paymentMethod,
+                'platform_fee_amount' => $montantTotal > 0 ? $platformFeeAmt : null,
+                'platform_fee_rate' => $montantTotal > 0 ? $platformFeeRate : null,
+                'payment_option' => $paymentMethod === 'manual' ? ($manualAmounts['payment_option'] ?? 'full') : null,
+                'amount_now' => $paymentMethod === 'manual' ? ($manualAmounts['amount_now'] ?? $montantTotal) : null,
+                'amount_later' => $paymentMethod === 'manual' ? ($manualAmounts['amount_later'] ?? 0) : null,
+                'balance_due_at' => $balanceDueAt,
             ]);
 
             // Set the payment reference now that we have the ID
@@ -349,26 +332,27 @@ class ReservationMaterielleController extends Controller
             ];
 
             $response = [
-                'status'      => 'success',
-                'message'     => 'Reservation submitted successfully.',
+                'status' => 'success',
+                'message' => 'Reservation submitted successfully.',
                 'reservation' => $reservation,
-                'policies'    => $policies,
+                'policies' => $policies,
             ];
 
             if ($paymentMethod === 'manual') {
                 $response['payment_info'] = [
-                    'reference'      => $reservation->payment_reference,
-                    'option'         => $reservation->payment_option,
-                    'amount_now'     => $reservation->amount_now,
-                    'amount_later'   => $reservation->amount_later,
+                    'reference' => $reservation->payment_reference,
+                    'option' => $reservation->payment_option,
+                    'amount_now' => $reservation->amount_now,
+                    'amount_later' => $reservation->amount_later,
                     'balance_due_at' => $reservation->balance_due_at,
-                    'flouci_link'    => ManualPaymentService::flouciLink(),
+                    'flouci_link' => ManualPaymentService::flouciLink(),
                 ];
             }
 
             return response()->json($response, 201);
         } catch (\Throwable $e) {
             DB::rollBack();
+
             return response()->json(['status' => 'error', 'message' => 'An unexpected error occurred. Please try again.'], 500);
         }
     }
@@ -380,28 +364,34 @@ class ReservationMaterielleController extends Controller
     {
         \Log::info('Confirm attempt', [
             'reservation_id' => $id,
-            'auth_user_id'   => Auth::id(),
+            'auth_user_id' => Auth::id(),
         ]);
 
         $reservation = Reservations_materielles::with(['materielle', 'user'])->find($id);
-        
+
         \Log::info('Reservation found', [
-            'found'          => !!$reservation,
+            'found' => (bool) $reservation,
             'fournisseur_id' => $reservation?->fournisseur_id,
-            'status'         => $reservation?->status,
-            'auth_matches'   => $reservation?->fournisseur_id === Auth::id(),
+            'status' => $reservation?->status,
+            'auth_matches' => $reservation?->fournisseur_id === Auth::id(),
         ]);
 
-        if (!$reservation) return response()->json(['message' => 'Reservation not found.'], 404);
-        if ($reservation->fournisseur_id !== Auth::id()) return response()->json(['message' => 'Unauthorized.'], 403);
-        if ($reservation->status !== 'pending') return response()->json(['message' => 'Only pending reservations can be confirmed.'], 400);
+        if (!$reservation) {
+            return response()->json(['message' => 'Reservation not found.'], 404);
+        }
+        if ($reservation->fournisseur_id !== Auth::id()) {
+            return response()->json(['message' => 'Unauthorized.'], 403);
+        }
+        if ($reservation->status !== 'pending') {
+            return response()->json(['message' => 'Only pending reservations can be confirmed.'], 400);
+        }
 
         $materielle = $reservation->materielle;
-        
+
         \Log::info('Materielle check', [
-            'materielle_found' => !!$materielle,
-            'quantite_dispo'   => $materielle?->quantite_dispo,
-            'quantite_needed'  => $reservation->quantite,
+            'materielle_found' => (bool) $materielle,
+            'quantite_dispo' => $materielle?->quantite_dispo,
+            'quantite_needed' => $reservation->quantite,
         ]);
 
         if ($materielle->quantite_dispo < $reservation->quantite) {
@@ -411,7 +401,7 @@ class ReservationMaterielleController extends Controller
         DB::beginTransaction();
         try {
             $materielle->decrement('quantite_dispo', $reservation->quantite);
-            $reservation->status       = 'confirmed';
+            $reservation->status = 'confirmed';
             $reservation->confirmed_at = now();
             $reservation->save();
             $rawPin = $reservation->generatePin();
@@ -419,12 +409,12 @@ class ReservationMaterielleController extends Controller
             // Release escrow and credit supplier (funds were locked at reservation creation)
             if ($reservation->montant_total > 0 && $reservation->payment_method === 'wallet') {
                 $reservation->load('fournisseur');
-                $receiverType    = ($reservation->fournisseur && $reservation->fournisseur->role_id === 4)
+                $receiverType = ($reservation->fournisseur && $reservation->fournisseur->role_id === 4)
                     ? 'supplier' : 'camper';
-                $platformFeeAmt  = (float) ($reservation->platform_fee_amount ?? 0);
-                $gross           = (float) $reservation->montant_total;
-                $base            = max(0, round($gross - $platformFeeAmt, 2));
-                $calc            = CommissionService::calculateForUser($receiverType, $base, $reservation->fournisseur_id);
+                $platformFeeAmt = (float) ($reservation->platform_fee_amount ?? 0);
+                $gross = (float) $reservation->montant_total;
+                $base = max(0, round($gross - $platformFeeAmt, 2));
+                $calc = CommissionService::calculateForUser($receiverType, $base, $reservation->fournisseur_id);
 
                 // Release camper's escrowed funds (debit already happened at store())
                 Balance::forUser($reservation->user_id)->releaseEscrow($gross);
@@ -464,6 +454,7 @@ class ReservationMaterielleController extends Controller
         } catch (\Throwable $e) {
             DB::rollBack();
             \Log::error('Confirm failed', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+
             return response()->json(['message' => 'An unexpected error occurred. Please try again.'], 500);
         }
 
@@ -471,29 +462,36 @@ class ReservationMaterielleController extends Controller
         try {
             \Log::info('Reservation confirmed, sending PIN email', [
                 'reservation_id' => $reservation->id,
-                'camper_email'   => $reservation->user->email,
+                'camper_email' => $reservation->user->email,
             ]);
             Mail::to($reservation->user->email)->send(new ReservationConfirmedToCamper($reservation, $rawPin));
         } catch (\Throwable $mailErr) {
             \Log::error('PIN email failed — reservation confirmed but camper not notified', [
                 'reservation_id' => $reservation->id,
-                'camper_email'   => $reservation->user->email,
-                'error'          => $mailErr->getMessage(),
+                'camper_email' => $reservation->user->email,
+                'error' => $mailErr->getMessage(),
             ]);
             // Don't return 500 — the reservation IS confirmed. Admin can generate an emergency PIN if needed.
         }
 
         return response()->json([
-            'message'     => 'Reservation confirmed. PIN has been sent to the camper by email.',
+            'message' => 'Reservation confirmed. PIN has been sent to the camper by email.',
             'reservation' => $reservation,
         ]);
     }
+
     public function reject(int $id)
     {
         $reservation = Reservations_materielles::find($id);
-        if (!$reservation) return response()->json(['message' => 'Reservation not found.'], 404);
-        if ($reservation->fournisseur_id !== Auth::id()) return response()->json(['message' => 'Unauthorized.'], 403);
-        if ($reservation->status !== 'pending') return response()->json(['message' => 'Only pending reservations can be rejected.'], 400);
+        if (!$reservation) {
+            return response()->json(['message' => 'Reservation not found.'], 404);
+        }
+        if ($reservation->fournisseur_id !== Auth::id()) {
+            return response()->json(['message' => 'Unauthorized.'], 403);
+        }
+        if ($reservation->status !== 'pending') {
+            return response()->json(['message' => 'Only pending reservations can be rejected.'], 400);
+        }
 
         $reservation->update(['status' => 'rejected']);
 
@@ -509,7 +507,7 @@ class ReservationMaterielleController extends Controller
                     $reservation->fournisseur_id
                 );
             } catch (\Throwable $e) {
-                \Log::error('Materiel reject wallet refund failed: ' . $e->getMessage());
+                \Log::error('Materiel reject wallet refund failed: '.$e->getMessage());
             }
         }
 
@@ -521,12 +519,15 @@ class ReservationMaterielleController extends Controller
         return response()->json(['message' => 'Reservation rejected.', 'reservation' => $reservation]);
     }
 
-    public function verifyPin(Request $request, int $id)
+    public function verifyPin(VerifyPinRequest $request, int $id)
     {
-        $request->validate(['pin' => 'required|string|size:6']);
         $reservation = Reservations_materielles::find($id);
-        if (!$reservation) return response()->json(['message' => 'Reservation not found.'], 404);
-        if ($reservation->fournisseur_id !== Auth::id()) return response()->json(['message' => 'Unauthorized.'], 403);
+        if (!$reservation) {
+            return response()->json(['message' => 'Reservation not found.'], 404);
+        }
+        if ($reservation->fournisseur_id !== Auth::id()) {
+            return response()->json(['message' => 'Unauthorized.'], 403);
+        }
 
         // Allow PIN verification for confirmed or paid reservations (no payment system yet)
         if (!in_array($reservation->status, ['confirmed', 'paid'])) {
@@ -540,8 +541,8 @@ class ReservationMaterielleController extends Controller
         // Supplier was already credited at confirmation — PIN only confirms physical handoff
 
         return response()->json([
-            'message'          => 'PIN verified. Equipment handoff confirmed.',
-            'reservation'      => $reservation->fresh(),
+            'message' => 'PIN verified. Equipment handoff confirmed.',
+            'reservation' => $reservation->fresh(),
             'ready_for_payout' => $reservation->isReadyForPayout(),
         ]);
     }
@@ -549,14 +550,22 @@ class ReservationMaterielleController extends Controller
     public function markReturned(int $id)
     {
         $reservation = Reservations_materielles::find($id);
-        if (!$reservation) return response()->json(['message' => 'Reservation not found.'], 404);
-        if ($reservation->fournisseur_id !== Auth::id()) return response()->json(['message' => 'Unauthorized.'], 403);
-        if ($reservation->type_reservation !== 'location') return response()->json(['message' => 'This action is only for rentals.'], 400);
-        if ($reservation->status !== 'retrieved') return response()->json(['message' => 'Equipment must be retrieved before marking as returned.'], 400);
+        if (!$reservation) {
+            return response()->json(['message' => 'Reservation not found.'], 404);
+        }
+        if ($reservation->fournisseur_id !== Auth::id()) {
+            return response()->json(['message' => 'Unauthorized.'], 403);
+        }
+        if ($reservation->type_reservation !== 'location') {
+            return response()->json(['message' => 'This action is only for rentals.'], 400);
+        }
+        if ($reservation->status !== 'retrieved') {
+            return response()->json(['message' => 'Equipment must be retrieved before marking as returned.'], 400);
+        }
 
         DB::beginTransaction();
         try {
-            $reservation->status      = 'returned';
+            $reservation->status = 'returned';
             $reservation->returned_at = now();
             $reservation->save();
             $reservation->materielle->increment('quantite_dispo', $reservation->quantite);
@@ -572,16 +581,17 @@ class ReservationMaterielleController extends Controller
                     Mail::to($reservation->user->email)->send(new RentalReturnConfirmed($reservation));
                 }
             } catch (\Exception $e) {
-                \Log::error('Failed to send return confirmation email: ' . $e->getMessage());
+                \Log::error('Failed to send return confirmation email: '.$e->getMessage());
             }
 
             return response()->json([
-                'message'          => 'Return confirmed.',
-                'reservation'      => $reservation,
+                'message' => 'Return confirmed.',
+                'reservation' => $reservation,
                 'ready_for_payout' => true,
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
+
             return response()->json(['message' => 'An unexpected error occurred. Please try again.'], 500);
         }
     }
@@ -589,8 +599,12 @@ class ReservationMaterielleController extends Controller
     public function cancelByFournisseur(int $id)
     {
         $reservation = Reservations_materielles::with('materielle')->find($id);
-        if (!$reservation) return response()->json(['message' => 'Reservation not found.'], 404);
-        if ($reservation->fournisseur_id !== Auth::id()) return response()->json(['message' => 'Unauthorized.'], 403);
+        if (!$reservation) {
+            return response()->json(['message' => 'Reservation not found.'], 404);
+        }
+        if ($reservation->fournisseur_id !== Auth::id()) {
+            return response()->json(['message' => 'Unauthorized.'], 403);
+        }
         if (!in_array($reservation->status, ['pending', 'confirmed'])) {
             return response()->json(['message' => 'This reservation can no longer be canceled.'], 400);
         }
@@ -617,7 +631,7 @@ class ReservationMaterielleController extends Controller
                         ->where('reference_id', $reservation->id)
                         ->first();
                     $base = max(0, round($gross - (float) ($reservation->platform_fee_amount ?? 0), 2));
-                    $fournisseur  = Auth::user();
+                    $fournisseur = Auth::user();
                     $receiverType = $fournisseur->role_id === 4 ? 'supplier' : 'camper';
                     $netToClawback = $origTx
                         ? (float) $origTx->net_amount
@@ -659,9 +673,11 @@ class ReservationMaterielleController extends Controller
                 Mail::to($reservation->user->email)
                     ->send(new ReservationCanceledByFournisseurToCamper($reservation));
             }
+
             return response()->json(['message' => 'Reservation canceled.', 'reservation' => $reservation]);
         } catch (\Exception $e) {
             DB::rollBack();
+
             return response()->json(['message' => 'An unexpected error occurred. Please try again.'], 500);
         }
     }
@@ -673,8 +689,12 @@ class ReservationMaterielleController extends Controller
     public function destroy(int $id)
     {
         $reservation = Reservations_materielles::with('materielle')->find($id);
-        if (!$reservation) return response()->json(['message' => 'Reservation not found.'], 404);
-        if ($reservation->user_id !== Auth::id()) return response()->json(['message' => 'Unauthorized.'], 403);
+        if (!$reservation) {
+            return response()->json(['message' => 'Reservation not found.'], 404);
+        }
+        if ($reservation->user_id !== Auth::id()) {
+            return response()->json(['message' => 'Unauthorized.'], 403);
+        }
 
         $allowedStatuses = ['pending', 'confirmed'];
         if (!in_array($reservation->status, $allowedStatuses)) {
@@ -700,9 +720,9 @@ class ReservationMaterielleController extends Controller
                     $startDate = $reservation->date_debut
                         ? \Carbon\Carbon::parse($reservation->date_debut)
                         : now();
-                    $feeCalc   = \App\Services\CancellationPolicyService::preview('materiel', $startDate, $gross, null, \Carbon\Carbon::parse($reservation->created_at));
+                    $feeCalc = \App\Services\CancellationPolicyService::preview('materiel', $startDate, $gross, null, \Carbon\Carbon::parse($reservation->created_at));
                     $refundAmt = $feeCalc ? $feeCalc['refund_amount'] : $gross;
-                    $feeDesc   = $feeCalc ? $feeCalc['tier_label']    : 'Full refund';
+                    $feeDesc = $feeCalc ? $feeCalc['tier_label'] : 'Full refund';
 
                     // Claw back from supplier exactly what they received (use stored net_amount)
                     $origTx = \App\Models\WalletTransaction::where('user_id', $reservation->fournisseur_id)
@@ -728,7 +748,7 @@ class ReservationMaterielleController extends Controller
 
                     // Platform cancellation fee charged to camper (reduces refund)
                     $platformCancFee = \App\Models\PlatformCancellationFee::feeAmount('camper', $gross);
-                    $actualRefund    = max(0, round($refundAmt - $platformCancFee, 2));
+                    $actualRefund = max(0, round($refundAmt - $platformCancFee, 2));
 
                     // Refund camper minus cancellation fee and platform fee
                     Balance::forUser($reservation->user_id)->crediter($actualRefund);
@@ -785,6 +805,7 @@ class ReservationMaterielleController extends Controller
             return response()->json(['message' => 'Reservation canceled successfully.', 'reservation' => $reservation]);
         } catch (\Exception $e) {
             DB::rollBack();
+
             return response()->json(['message' => 'An unexpected error occurred. Please try again.'], 500);
         }
     }
@@ -801,7 +822,9 @@ class ReservationMaterielleController extends Controller
             ->whereNull('returned_at')
             ->get();
 
-        if ($overdue->isEmpty()) return response()->json(['message' => 'No expired reservations to process.']);
+        if ($overdue->isEmpty()) {
+            return response()->json(['message' => 'No expired reservations to process.']);
+        }
 
         DB::beginTransaction();
         try {
@@ -821,13 +844,14 @@ class ReservationMaterielleController extends Controller
                         Mail::to($reservation->fournisseur->email)->send(new ReservationDisputedToFournisseur($reservation));
                     }
                 } catch (\Exception $e) {
-                    \Log::error('Failed to send dispute notification for reservation ' . $reservation->id . ': ' . $e->getMessage());
+                    \Log::error('Failed to send dispute notification for reservation '.$reservation->id.': '.$e->getMessage());
                 }
             }
 
-            return response()->json(['message' => count($overdue) . ' expired reservation(s) marked as disputed.']);
+            return response()->json(['message' => count($overdue).' expired reservation(s) marked as disputed.']);
         } catch (\Exception $e) {
             DB::rollBack();
+
             return response()->json(['message' => 'An unexpected error occurred. Please try again.'], 500);
         }
     }
