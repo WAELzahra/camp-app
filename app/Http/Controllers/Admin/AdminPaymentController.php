@@ -20,11 +20,12 @@ use Illuminate\Support\Facades\DB;
 
 class AdminPaymentController extends Controller
 {
-    private const ADMIN_ACTION_PASSWORD = '50734671';
-
     private function checkPassword(Request $request): bool
     {
-        return $request->password === self::ADMIN_ACTION_PASSWORD;
+        $expected = (string) config('admin.action_password');
+
+        // Reject if no admin password is configured, rather than allowing empty matches.
+        return $expected !== '' && hash_equals($expected, (string) $request->password);
     }
 
     /* ══════════════════════════════════════════════════════════════

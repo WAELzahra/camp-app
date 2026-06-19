@@ -163,7 +163,8 @@ class AdminSettingsController extends Controller
     {
         $request->validated();
 
-        if ($request->password !== '50734671') {
+        $expected = (string) config('admin.action_password');
+        if ($expected === '' || !hash_equals($expected, (string) $request->password)) {
             return response()->json(['message' => 'Mot de passe incorrect.'], 403);
         }
 
@@ -251,7 +252,8 @@ class AdminSettingsController extends Controller
         $request->validated();
 
         // Verify admin password (same pattern used in AdminPaymentController)
-        if ($request->password !== '50734671') {
+        $expected = (string) config('admin.action_password');
+        if ($expected === '' || !hash_equals($expected, (string) $request->password)) {
             return response()->json(['message' => 'Mot de passe incorrect.'], 403);
         }
 
