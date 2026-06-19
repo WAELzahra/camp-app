@@ -86,10 +86,14 @@ controllers. So we create them while refactoring those controllers (Phase 3), no
 For each controller: create `App\Http\Requests\...Request`, move `rules()` + `messages()` +
 `authorize()`, replace inline `validate()`/`Validator::make()`, use `$request->validated()`.
 
-> **Progress (2026-06-18):** Tier A ✅ done. Tier B in progress — done: Event, Annonce,
-> Boutique, Center, Materielle (+AdminMaterielle). Suite green (76) after every batch.
-> Convention established + helper `scripts/convert_validate.php` swaps `validate([...])`
-> → `validated()`. Rules:
+> **✅ COMPLETE (2026-06-19):** Tiers A, B, C all done across 16 commits — ~140 Form
+> Request classes. Every batch kept the suite green (76 passing). The only inline
+> `$request->validate()` left is `ProfileController::reorderPhotos` (its rule depends on
+> a runtime-computed album id, so it stays). `Validator::make()` calls that return custom
+> `{success,errors}` shapes or validate computed data were intentionally left in place
+> (12 controllers) to preserve the exact response contract the frontend relies on.
+>
+> Conventions used. Rules:
 > - `authorize()` returns `true` (route middleware/policies still own auth; per-record
 >   checks stay in controllers) — keeps the 422 contract identical for the frontend.
 > - **Leave** `Validator::make()` calls that validate computed/json data OR return a custom
@@ -200,7 +204,7 @@ Target: no controller method > ~50 lines; business logic lives in services/actio
 |---|---|---|
 | 0 Foundations | ✅ done | `a9404d8` |
 | 1 Queues & async | ✅ core done (job-extraction → Phase 3) | this commit |
-| 2 Form Requests | [ ] | |
+| 2 Form Requests | ✅ done | `9a44644`…`3ae064b` |
 | 3 Service layer | [ ] | |
 | 4 DI & contracts | [ ] | |
 | 5 De-duplication | [ ] | |

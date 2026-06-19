@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Reservation;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Reservation\CancellationPolicyInfoRequest;
+use App\Http\Requests\Reservation\CancellationPreviewRequest;
 use App\Models\Events;
 use App\Models\PlatformCancellationFee;
 use App\Models\Reservations_centre;
@@ -10,7 +12,6 @@ use App\Models\Reservations_events;
 use App\Models\Reservations_materielles;
 use App\Services\CancellationPolicyService;
 use Carbon\Carbon;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 class CancellationPreviewController extends Controller
@@ -21,27 +22,24 @@ class CancellationPreviewController extends Controller
      *
      * Query params: type (centre|event|materiel), reservation_id
      */
-    public function preview(Request $request)
+    public function preview(CancellationPreviewRequest $request)
     {
-        $validated = $request->validate([
-            'type'           => 'required|in:centre,event,materiel',
-            'reservation_id' => 'required|integer|min:1',
-        ]);
+        $validated = $request->validated();
 
         $user = Auth::user();
         $type = $validated['type'];
-        $rid  = (int) $validated['reservation_id'];
+        $rid = (int) $validated['reservation_id'];
 
         [$startDate, $totalPaid, $centreId, $createdAt] = match ($type) {
-            'centre'   => $this->resolveCentre($rid, $user->id),
-            'event'    => $this->resolveEvent($rid, $user->id),
+            'centre' => $this->resolveCentre($rid, $user->id),
+            'event' => $this->resolveEvent($rid, $user->id),
             'materiel' => $this->resolveMateriel($rid, $user->id),
         };
 
         // Platform cancellation fee for campers
-        $platformCancFeeRecord  = PlatformCancellationFee::where('actor_type', 'camper')->first();
-        $platformCancFeePct     = ($platformCancFeeRecord?->is_active) ? (float) $platformCancFeeRecord->fee_percentage : 0.0;
-        $platformCancFeeAmount  = round($totalPaid * $platformCancFeePct / 100, 2);
+        $platformCancFeeRecord = PlatformCancellationFee::where('actor_type', 'camper')->first();
+        $platformCancFeePct = ($platformCancFeeRecord?->is_active) ? (float) $platformCancFeeRecord->fee_percentage : 0.0;
+        $platformCancFeeAmount = round($totalPaid * $platformCancFeePct / 100, 2);
 
         $result = CancellationPolicyService::preview($type, $startDate, $totalPaid, $centreId, $createdAt);
 
@@ -50,20 +48,20 @@ class CancellationPreviewController extends Controller
 
         $base = [
             'platform_cancellation_fee_percentage' => $platformCancFeePct,
-            'platform_cancellation_fee_amount'     => $platformCancFeeAmount,
-            'actual_refund'                        => $actualRefund,
+            'platform_cancellation_fee_amount' => $platformCancFeeAmount,
+            'actual_refund' => $actualRefund,
         ];
 
         if (!$result) {
             return response()->json(array_merge([
-                'has_policy'           => false,
-                'fee_percentage'       => 0,
-                'fee_amount'           => 0,
-                'refund_amount'        => $totalPaid,
-                'tier_label'           => 'Full refund',
-                'total_paid'           => $totalPaid,
+                'has_policy' => false,
+                'fee_percentage' => 0,
+                'fee_amount' => 0,
+                'refund_amount' => $totalPaid,
+                'tier_label' => 'Full refund',
+                'total_paid' => $totalPaid,
                 'grace_period_applied' => false,
-                'grace_period_hours'   => null,
+                'grace_period_hours' => null,
             ], $base));
         }
 
@@ -78,12 +76,9 @@ class CancellationPreviewController extends Controller
      * GET /api/cancellation-policy/info
      * Returns the applicable policy tiers for a type + optional centre, before a reservation is created.
      */
-    public function policyInfo(Request $request)
+    public function policyInfo(CancellationPolicyInfoRequest $request)
     {
-        $validated = $request->validate([
-            'type'      => 'required|in:centre,event,materiel',
-            'centre_id' => 'nullable|integer|min:1',
-        ]);
+        $validated = $request->validated();
 
         $policy = CancellationPolicyService::getPolicy(
             $validated['type'],
@@ -94,21 +89,21 @@ class CancellationPreviewController extends Controller
 
         if (!$policy) {
             return response()->json([
-                'has_policy'                           => false,
-                'tiers'                                => [],
+                'has_policy' => false,
+                'tiers' => [],
                 'platform_cancellation_fee_percentage' => ($platformFee?->is_active) ? (float) $platformFee->fee_percentage : 0.0,
             ]);
         }
 
         return response()->json([
-            'has_policy'                           => true,
-            'policy_name'                          => $policy->name,
-            'grace_period_hours'                   => $policy->grace_period_hours,
+            'has_policy' => true,
+            'policy_name' => $policy->name,
+            'grace_period_hours' => $policy->grace_period_hours,
             'platform_cancellation_fee_percentage' => ($platformFee?->is_active) ? (float) $platformFee->fee_percentage : 0.0,
-            'tiers'                                => $policy->tiers->map(fn ($t) => [
-                'hours_before'   => $t->hours_before,
+            'tiers' => $policy->tiers->map(fn ($t) => [
+                'hours_before' => $t->hours_before,
                 'fee_percentage' => (float) $t->fee_percentage,
-                'label'          => $t->label,
+                'label' => $t->label,
             ])->values(),
         ]);
     }
@@ -116,6 +111,7 @@ class CancellationPreviewController extends Controller
     private function resolveCentre(int $id, int $userId): array
     {
         $r = Reservations_centre::where('id', $id)->where('user_id', $userId)->firstOrFail();
+
         return [
             Carbon::parse($r->date_debut),
             (float) $r->total_price, // total_price already includes platform fee
@@ -126,12 +122,13 @@ class CancellationPreviewController extends Controller
 
     private function resolveEvent(int $id, int $userId): array
     {
-        $r     = Reservations_events::where('id', $id)->where('user_id', $userId)->firstOrFail();
+        $r = Reservations_events::where('id', $id)->where('user_id', $userId)->firstOrFail();
         $event = Events::findOrFail($r->event_id);
         // gross = what the camper actually paid: base - discount + services + platform fee
-        $netBase       = round($r->nbr_place * $event->price - ($r->discount_amount ?? 0), 2);
+        $netBase = round($r->nbr_place * $event->price - ($r->discount_amount ?? 0), 2);
         $servicesTotal = round(\App\Models\EventReservationService::where('event_reservation_id', $r->id)->sum('subtotal'), 2);
-        $gross         = round($netBase + $servicesTotal + (float) ($r->platform_fee_amount ?? 0), 2);
+        $gross = round($netBase + $servicesTotal + (float) ($r->platform_fee_amount ?? 0), 2);
+
         return [
             Carbon::parse($event->start_date),
             $gross,
@@ -144,6 +141,7 @@ class CancellationPreviewController extends Controller
     {
         $r = Reservations_materielles::where('id', $id)->where('user_id', $userId)->firstOrFail();
         $startDate = $r->date_debut ? Carbon::parse($r->date_debut) : now();
+
         return [
             $startDate,
             (float) $r->montant_total, // montant_total already includes platform fee
