@@ -3,13 +3,11 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use Illuminate\Http\Request;
+use App\Http\Requests\Admin\RejectFeedbackRequest;
 use App\Models\Feedback;
-use App\Models\User;
-use App\Models\Camping_Zones;
-use App\Models\Events;
-use Illuminate\Support\Facades\Validator;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Validator;
 
 class AdminFeedbackController extends Controller
 {
@@ -23,7 +21,7 @@ class AdminFeedbackController extends Controller
                 'user',
                 'zone',
                 'event',
-                'userTarget'
+                'userTarget',
             ]);
 
             // Filtre par statut
@@ -65,25 +63,25 @@ class AdminFeedbackController extends Controller
             // Recherche
             if ($request->filled('search')) {
                 $search = $request->search;
-                $query->where(function($q) use ($search) {
+                $query->where(function ($q) use ($search) {
                     $q->where('contenu', 'LIKE', "%{$search}%")
-                      ->orWhereHas('user', function($u) use ($search) {
-                          $u->where('first_name', 'LIKE', "%{$search}%")
-                            ->orWhere('last_name', 'LIKE', "%{$search}%")
-                            ->orWhere('email', 'LIKE', "%{$search}%");
-                      })
-                      ->orWhereHas('userTarget', function($u) use ($search) {
-                          $u->where('first_name', 'LIKE', "%{$search}%")
-                            ->orWhere('last_name', 'LIKE', "%{$search}%")
-                            ->orWhere('email', 'LIKE', "%{$search}%");
-                      })
-                      ->orWhereHas('zone', function($z) use ($search) {
-                          $z->where('nom', 'LIKE', "%{$search}%");
-                      })
-                      ->orWhereHas('event', function($e) use ($search) {
-                          $e->where('title', 'LIKE', "%{$search}%")
-                            ->orWhere('nom', 'LIKE', "%{$search}%");
-                      });
+                        ->orWhereHas('user', function ($u) use ($search) {
+                            $u->where('first_name', 'LIKE', "%{$search}%")
+                                ->orWhere('last_name', 'LIKE', "%{$search}%")
+                                ->orWhere('email', 'LIKE', "%{$search}%");
+                        })
+                        ->orWhereHas('userTarget', function ($u) use ($search) {
+                            $u->where('first_name', 'LIKE', "%{$search}%")
+                                ->orWhere('last_name', 'LIKE', "%{$search}%")
+                                ->orWhere('email', 'LIKE', "%{$search}%");
+                        })
+                        ->orWhereHas('zone', function ($z) use ($search) {
+                            $z->where('nom', 'LIKE', "%{$search}%");
+                        })
+                        ->orWhereHas('event', function ($e) use ($search) {
+                            $e->where('title', 'LIKE', "%{$search}%")
+                                ->orWhere('nom', 'LIKE', "%{$search}%");
+                        });
                 });
             }
 
@@ -125,15 +123,16 @@ class AdminFeedbackController extends Controller
             return response()->json([
                 'success' => true,
                 'data' => $feedbacks,
-                'stats' => $stats
+                'stats' => $stats,
             ]);
 
         } catch (\Exception $e) {
-            Log::error('Erreur feedbacks index: ' . $e->getMessage());
+            Log::error('Erreur feedbacks index: '.$e->getMessage());
+
             return response()->json([
                 'success' => false,
                 'message' => 'Erreur lors de la récupération des feedbacks',
-                'error' => 'server_error'
+                'error' => 'server_error',
             ], 500);
         }
     }
@@ -179,7 +178,7 @@ class AdminFeedbackController extends Controller
     {
         try {
             $query = Feedback::with(['user', 'zone', 'event', 'userTarget']);
-            
+
             switch ($type) {
                 case 'guide':
                     $query->guides();
@@ -207,22 +206,22 @@ class AdminFeedbackController extends Controller
 
             if ($request->filled('search')) {
                 $search = $request->search;
-                $query->where(function($q) use ($search) {
+                $query->where(function ($q) use ($search) {
                     $q->where('contenu', 'LIKE', "%{$search}%")
-                      ->orWhereHas('user', function($u) use ($search) {
-                          $u->where('first_name', 'LIKE', "%{$search}%")
-                            ->orWhere('last_name', 'LIKE', "%{$search}%");
-                      })
-                      ->orWhereHas('userTarget', function($u) use ($search) {
-                          $u->where('first_name', 'LIKE', "%{$search}%")
-                            ->orWhere('last_name', 'LIKE', "%{$search}%");
-                      });
+                        ->orWhereHas('user', function ($u) use ($search) {
+                            $u->where('first_name', 'LIKE', "%{$search}%")
+                                ->orWhere('last_name', 'LIKE', "%{$search}%");
+                        })
+                        ->orWhereHas('userTarget', function ($u) use ($search) {
+                            $u->where('first_name', 'LIKE', "%{$search}%")
+                                ->orWhere('last_name', 'LIKE', "%{$search}%");
+                        });
                 });
             }
 
             $perPage = $request->get('per_page', 20);
             $feedbacks = $query->latest()->paginate($perPage);
-            
+
             $transformedFeedbacks = $feedbacks->getCollection()->map(function ($feedback) {
                 return $this->transformFeedback($feedback);
             });
@@ -231,14 +230,15 @@ class AdminFeedbackController extends Controller
 
             return response()->json([
                 'success' => true,
-                'data' => $feedbacks
+                'data' => $feedbacks,
             ]);
 
         } catch (\Exception $e) {
-            Log::error('Erreur getByType: ' . $e->getMessage());
+            Log::error('Erreur getByType: '.$e->getMessage());
+
             return response()->json([
                 'success' => false,
-                'message' => 'Erreur lors de la récupération'
+                'message' => 'Erreur lors de la récupération',
             ], 500);
         }
     }
@@ -250,15 +250,15 @@ class AdminFeedbackController extends Controller
     {
         try {
             $feedback = Feedback::with(['user', 'zone', 'event', 'userTarget'])->findOrFail($id);
-            
+
             return response()->json([
                 'success' => true,
-                'data' => $this->transformFeedback($feedback)
+                'data' => $this->transformFeedback($feedback),
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Feedback non trouvé'
+                'message' => 'Feedback non trouvé',
             ], 404);
         }
     }
@@ -269,26 +269,28 @@ class AdminFeedbackController extends Controller
     public function update(Request $request, $id)
     {
         try {
-            Log::info('Tentative de mise à jour feedback ID: ' . $id);
+            Log::info('Tentative de mise à jour feedback ID: '.$id);
             Log::info('Données reçues: ', $request->all());
 
             // Vérifier que le modèle existe
             if (!class_exists('App\\Models\\Feedback')) {
                 Log::error('Le modèle Feedback n\'existe pas');
+
                 return response()->json([
                     'success' => false,
-                    'message' => 'Erreur de configuration du serveur'
+                    'message' => 'Erreur de configuration du serveur',
                 ], 500);
             }
 
             // Chercher le feedback
             $feedback = Feedback::find($id);
-            
+
             if (!$feedback) {
-                Log::warning('Feedback non trouvé avec ID: ' . $id);
+                Log::warning('Feedback non trouvé avec ID: '.$id);
+
                 return response()->json([
                     'success' => false,
-                    'message' => 'Feedback non trouvé'
+                    'message' => 'Feedback non trouvé',
                 ], 404);
             }
 
@@ -299,15 +301,16 @@ class AdminFeedbackController extends Controller
                 'contenu' => 'sometimes|string|min:3',
                 'response' => 'nullable|string',
                 'note' => 'sometimes|integer|min:1|max:5',
-                'status' => 'sometimes|in:pending,approved,rejected'
+                'status' => 'sometimes|in:pending,approved,rejected',
             ]);
 
             if ($validator->fails()) {
                 Log::warning('Validation échouée:', $validator->errors()->toArray());
+
                 return response()->json([
                     'success' => false,
                     'message' => 'Données invalides',
-                    'errors' => $validator->errors()
+                    'errors' => $validator->errors(),
                 ], 422);
             }
 
@@ -324,90 +327,87 @@ class AdminFeedbackController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Feedback mis à jour avec succès',
-                'data' => $this->transformFeedback($feedback)
+                'data' => $this->transformFeedback($feedback),
             ]);
 
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            Log::error('ModelNotFoundException: ' . $e->getMessage());
+            Log::error('ModelNotFoundException: '.$e->getMessage());
+
             return response()->json([
                 'success' => false,
-                'message' => 'Feedback non trouvé'
+                'message' => 'Feedback non trouvé',
             ], 404);
-            
+
         } catch (\Illuminate\Validation\ValidationException $e) {
-            Log::error('ValidationException: ' . $e->getMessage());
+            Log::error('ValidationException: '.$e->getMessage());
+
             return response()->json([
                 'success' => false,
                 'message' => 'Erreur de validation',
-                'errors' => $e->errors()
+                'errors' => $e->errors(),
             ], 422);
-            
+
         } catch (\Exception $e) {
-            Log::error('Erreur update feedback: ' . $e->getMessage());
-            Log::error('Fichier: ' . $e->getFile() . ' Ligne: ' . $e->getLine());
-            Log::error('Trace: ' . $e->getTraceAsString());
-            
+            Log::error('Erreur update feedback: '.$e->getMessage());
+            Log::error('Fichier: '.$e->getFile().' Ligne: '.$e->getLine());
+            Log::error('Trace: '.$e->getTraceAsString());
+
             return response()->json([
                 'success' => false,
                 'message' => 'An unexpected error occurred. Please try again.',
                 'file' => $e->getFile(),
-                'line' => $e->getLine()
+                'line' => $e->getLine(),
             ], 500);
         }
     }
 
-
-
-    
     /**
      * Approuve un feedback
      */
-   public function approve($id)
-{
-    try {
-        $feedback = Feedback::findOrFail($id);
-        
-        // Un feedback approuvé peut être rejeté plus tard
-        // Un feedback rejeté peut être approuvé plus tard
-        $feedback->approve();
+    public function approve($id)
+    {
+        try {
+            $feedback = Feedback::findOrFail($id);
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Feedback approuvé avec succès'
-        ]);
-    } catch (\Exception $e) {
-        return response()->json([
-            'success' => false,
-            'message' => 'Erreur lors de l\'approbation'
-        ], 500);
+            // Un feedback approuvé peut être rejeté plus tard
+            // Un feedback rejeté peut être approuvé plus tard
+            $feedback->approve();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Feedback approuvé avec succès',
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur lors de l\'approbation',
+            ], 500);
+        }
     }
-}
 
-/**
- * Rejette un feedback
- */
-public function reject(Request $request, $id)
-{
-    try {
-        $feedback = Feedback::findOrFail($id);
-        
-        $validated = $request->validate([
-            'reason' => 'required|string|max:500'
-        ]);
+    /**
+     * Rejette un feedback
+     */
+    public function reject(RejectFeedbackRequest $request, $id)
+    {
+        try {
+            $feedback = Feedback::findOrFail($id);
 
-        $feedback->reject($validated['reason']);
+            $validated = $request->validated();
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Feedback rejeté avec succès'
-        ]);
-    } catch (\Exception $e) {
-        return response()->json([
-            'success' => false,
-            'message' => 'Erreur lors du rejet'
-        ], 500);
+            $feedback->reject($validated['reason']);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Feedback rejeté avec succès',
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur lors du rejet',
+            ], 500);
+        }
     }
-}
 
     /**
      * Supprime un feedback
@@ -420,12 +420,12 @@ public function reject(Request $request, $id)
 
             return response()->json([
                 'success' => true,
-                'message' => 'Feedback supprimé avec succès'
+                'message' => 'Feedback supprimé avec succès',
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Erreur lors de la suppression'
+                'message' => 'Erreur lors de la suppression',
             ], 500);
         }
     }
@@ -438,12 +438,12 @@ public function reject(Request $request, $id)
         try {
             return response()->json([
                 'success' => true,
-                'data' => Feedback::getStats()
+                'data' => Feedback::getStats(),
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Erreur lors de la récupération des statistiques'
+                'message' => 'Erreur lors de la récupération des statistiques',
             ], 500);
         }
     }
@@ -463,7 +463,7 @@ public function reject(Request $request, $id)
 
             $perPage = $request->get('per_page', 20);
             $feedbacks = $query->latest()->paginate($perPage);
-            
+
             $transformedFeedbacks = $feedbacks->getCollection()->map(function ($feedback) {
                 return $this->transformFeedback($feedback);
             });
@@ -472,12 +472,12 @@ public function reject(Request $request, $id)
 
             return response()->json([
                 'success' => true,
-                'data' => $feedbacks
+                'data' => $feedbacks,
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Erreur lors de la récupération'
+                'message' => 'Erreur lors de la récupération',
             ], 500);
         }
     }

@@ -3,24 +3,23 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Models\User;
-use App\Models\Profile;
-use App\Models\ProfileGuide;
-use App\Models\ProfileCentre;
-use App\Models\ProfileGroupe;
-use App\Models\ProfileFournisseur;
-use App\Models\Feedbacks;
-use App\Models\Role;
-use App\Models\CentreClaim;
-use App\Services\CentreClaimApprovalService;
-use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Mail;
+use App\Http\Requests\Admin\ModerateFeedbackRequest;
+use App\Http\Requests\Admin\UpdateUserRequest;
+use App\Http\Requests\Admin\UploadUserDocumentRequest;
+use App\Http\Requests\Admin\UploadUserPhotosRequest;
 use App\Mail\AccountStatusChanged;
 use App\Mail\PasswordResetEmail;
+use App\Models\CentreClaim;
+use App\Models\Feedbacks;
+use App\Models\Profile;
+use App\Models\Role;
+use App\Models\User;
+use App\Services\CentreClaimApprovalService;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -42,7 +41,7 @@ class AdminUserController extends Controller
                 'profile.profileGuide',
                 'profile.profileCentre',
                 'profile.profileGroupe',
-                'profile.profileFournisseur'
+                'profile.profileFournisseur',
             ])->where('id', '!=', auth()->id());
 
             // Filtre par rôle
@@ -79,12 +78,12 @@ class AdminUserController extends Controller
             if ($search) {
                 $query->where(function ($q) use ($search) {
                     $q->where('first_name', 'LIKE', "%{$search}%")
-                      ->orWhere('last_name', 'LIKE', "%{$search}%")
-                      ->orWhere('email', 'LIKE', "%{$search}%")
-                      ->orWhere('phone_number', 'LIKE', "%{$search}%")
-                      ->orWhereHas('role', function ($roleQuery) use ($search) {
-                          $roleQuery->where('name', 'LIKE', "%{$search}%");
-                      });
+                        ->orWhere('last_name', 'LIKE', "%{$search}%")
+                        ->orWhere('email', 'LIKE', "%{$search}%")
+                        ->orWhere('phone_number', 'LIKE', "%{$search}%")
+                        ->orWhereHas('role', function ($roleQuery) use ($search) {
+                            $roleQuery->where('name', 'LIKE', "%{$search}%");
+                        });
                 });
             }
 
@@ -98,14 +97,15 @@ class AdminUserController extends Controller
             return response()->json([
                 'success' => true,
                 'data' => $users,
-                'message' => 'Utilisateurs récupérés avec succès'
+                'message' => 'Utilisateurs récupérés avec succès',
             ]);
 
         } catch (\Exception $e) {
-            Log::error('Erreur index: ' . $e->getMessage());
+            Log::error('Erreur index: '.$e->getMessage());
+
             return response()->json([
                 'success' => false,
-                'message' => 'Erreur lors de la récupération des utilisateurs'
+                'message' => 'Erreur lors de la récupération des utilisateurs',
             ], 500);
         }
     }
@@ -118,7 +118,7 @@ class AdminUserController extends Controller
         try {
             $user = User::with([
                 'role',
-                'profile' => function($q) {
+                'profile' => function ($q) {
                     $q->with([
                         'profileGuide',
                         'profileCentre',
@@ -137,35 +137,35 @@ class AdminUserController extends Controller
                 if ($user->profile->profileCentre) {
                     $pc = $user->profile->profileCentre;
                     $profileExtra['profile_centre'] = [
-                        'name'                      => $pc->name,
-                        'capacite'                  => $pc->capacite,
-                        'price_per_night'           => $pc->price_per_night,
-                        'category'                  => $pc->category,
-                        'disponibilite'             => (bool) $pc->disponibilite,
-                        'has_legal_document'        => (bool) $pc->legal_document,
-                        'legal_document_url'        => $pc->legal_document ? storage_url($pc->legal_document) : null,
-                        'document_legal_type'       => $pc->document_legal_type,
+                        'name' => $pc->name,
+                        'capacite' => $pc->capacite,
+                        'price_per_night' => $pc->price_per_night,
+                        'category' => $pc->category,
+                        'disponibilite' => (bool) $pc->disponibilite,
+                        'has_legal_document' => (bool) $pc->legal_document,
+                        'legal_document_url' => $pc->legal_document ? storage_url($pc->legal_document) : null,
+                        'document_legal_type' => $pc->document_legal_type,
                         'document_legal_expiration' => $pc->document_legal_expiration
                             ? $pc->document_legal_expiration->format('Y-m-d') : null,
-                        'contact_email'             => $pc->contact_email,
-                        'contact_phone'             => $pc->contact_phone,
-                        'manager_name'              => $pc->manager_name,
-                        'established_date'          => $pc->established_date
+                        'contact_email' => $pc->contact_email,
+                        'contact_phone' => $pc->contact_phone,
+                        'manager_name' => $pc->manager_name,
+                        'established_date' => $pc->established_date
                             ? $pc->established_date->format('Y-m-d') : null,
-                        'latitude'                  => $pc->latitude,
-                        'longitude'                 => $pc->longitude,
+                        'latitude' => $pc->latitude,
+                        'longitude' => $pc->longitude,
                     ];
                 }
 
                 if ($user->profile->profileGuide) {
                     $pg = $user->profile->profileGuide;
                     $profileExtra['profile_guide'] = [
-                        'experience'            => $pg->experience,
-                        'tarif'                 => $pg->tarif,
-                        'zone_travail'          => $pg->zone_travail,
-                        'has_certificat'        => (bool) $pg->certificat_path,
-                        'certificat_url'        => $pg->certificat_path ? storage_url($pg->certificat_path) : null,
-                        'certificat_type'       => $pg->certificat_type,
+                        'experience' => $pg->experience,
+                        'tarif' => $pg->tarif,
+                        'zone_travail' => $pg->zone_travail,
+                        'has_certificat' => (bool) $pg->certificat_path,
+                        'certificat_url' => $pg->certificat_path ? storage_url($pg->certificat_path) : null,
+                        'certificat_type' => $pg->certificat_type,
                         'certificat_expiration' => $pg->certificat_expiration
                             ? $pg->certificat_expiration->format('Y-m-d') : null,
                     ];
@@ -174,7 +174,7 @@ class AdminUserController extends Controller
                 if ($user->profile->profileGroupe) {
                     $pg = $user->profile->profileGroupe;
                     $profileExtra['profile_groupe'] = [
-                        'nom_groupe'  => $pg->nom_groupe,
+                        'nom_groupe' => $pg->nom_groupe,
                         'has_patente' => (bool) $pg->patente_path,
                         'patente_url' => $pg->patente_path ? storage_url($pg->patente_path) : null,
                     ];
@@ -183,7 +183,7 @@ class AdminUserController extends Controller
                 if ($user->profile->profileFournisseur) {
                     $pf = $user->profile->profileFournisseur;
                     $profileExtra['profile_fournisseur'] = [
-                        'intervale_prix'   => $pf->intervale_prix,
+                        'intervale_prix' => $pf->intervale_prix,
                         'product_category' => $pf->product_category,
                     ];
                 }
@@ -193,289 +193,270 @@ class AdminUserController extends Controller
 
             return response()->json([
                 'success' => true,
-                'data'    => $userData,
+                'data' => $userData,
             ]);
 
         } catch (\Exception $e) {
-            Log::error('Erreur show: ' . $e->getMessage());
+            Log::error('Erreur show: '.$e->getMessage());
+
             return response()->json([
                 'success' => false,
-                'message' => 'Erreur lors du chargement du profil'
+                'message' => 'Erreur lors du chargement du profil',
             ], 500);
         }
     }
 
-          public function update(Request $request, $id)
-{
-    try {
-        $user = User::with(['profile', 'role'])->findOrFail($id);
+    public function update(UpdateUserRequest $request, $id)
+    {
+        try {
+            $user = User::with(['profile', 'role'])->findOrFail($id);
 
-        // Validation
-        $validated = $request->validate([
-            // users table
-            'first_name'         => 'sometimes|string|max:255',
-            'last_name'          => 'sometimes|string|max:255',
-            'email'              => ['sometimes', 'email', Rule::unique('users')->ignore($user->id)],
-            'phone_number'       => 'sometimes|string|max:20|nullable',
-            'ville'              => 'sometimes|string|nullable',
-            'birthdate'          => 'sometimes|date|nullable',
-            'gender'             => 'sometimes|string|in:male,female,other|nullable',
-            'languages'          => 'sometimes|string|nullable',
-            'avatar'             => 'sometimes|string|nullable',
-            'cover_image'        => 'sometimes|string|nullable',
-            'role_id'            => 'sometimes|exists:roles,id',
-            'is_active'          => 'sometimes|boolean',
-            'first_login'        => 'sometimes|boolean',
-            'nombre_signalement' => 'sometimes|integer',
+            // Validation
+            $validated = $request->validated();
 
-            // profiles table
-            'bio'        => 'sometimes|string|nullable',
-            'city'       => 'sometimes|string|nullable',
-            'address'    => 'sometimes|string|nullable',
-            'cin_path'   => 'sometimes|string|nullable',
-            'activities' => 'sometimes|string|nullable',
-            'is_public'  => 'sometimes|boolean',
+            // Mise à jour de l'utilisateur
+            $this->updateUserData($user, $validated);
 
-            // profile_guides
-            'experience'            => 'sometimes|integer|nullable',
-            'tarif'                 => 'sometimes|numeric|nullable',
-            'zone_travail'          => 'sometimes|string|nullable',
-            'certificat_path'       => 'sometimes|string|nullable',
-            'certificat_type'       => 'sometimes|string|nullable',
-            'certificat_expiration' => 'sometimes|date|nullable',
+            // Mise à jour du profil
+            if ($user->profile) {
+                $this->updateProfileData($user->profile, $validated);
+                $this->updateSpecificProfile($user, $validated);
+            }
 
-            // profile_centres
-            'centre_name'              => 'sometimes|string|nullable',
-            'capacity'                 => 'sometimes|integer|nullable',
-            'price_per_night'          => 'sometimes|numeric|nullable',
-            'category'                 => 'sometimes|string|nullable',
-            'disponibilite'            => 'sometimes|boolean',
-            'legal_document'           => 'sometimes|string|nullable',
-            'document_legal_type'      => 'sometimes|string|nullable',
-            'document_legal_expiration'=> 'sometimes|date|nullable',
-            'contact_email'            => 'sometimes|email|nullable',
-            'contact_phone'            => 'sometimes|string|nullable',
-            'manager_name'             => 'sometimes|string|nullable',
-            'established_date'         => 'sometimes|date|nullable',
-            'latitude'                 => 'sometimes|numeric|nullable',
-            'longitude'                => 'sometimes|numeric|nullable',
+            return response()->json([
+                'success' => true,
+                'message' => 'Utilisateur mis à jour avec succès',
+                'data' => $this->formatUserForFrontend($user),
+            ]);
 
-            // profile_groupes
-            'nom_groupe'  => 'sometimes|string|nullable',
-            'patente_path'=> 'sometimes|string|nullable',
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur de validation',
+                'errors' => $e->errors(),
+            ], 422);
+        } catch (\Exception $e) {
+            Log::error('Erreur update: '.$e->getMessage());
 
-            // profile_fournisseurs
-            'intervale_prix'   => 'sometimes|string|nullable',
-            'product_category' => 'sometimes|string|nullable',
-        ]);
-
-        // Mise à jour de l'utilisateur
-        $this->updateUserData($user, $validated);
-
-        // Mise à jour du profil
-        if ($user->profile) {
-            $this->updateProfileData($user->profile, $validated);
-            $this->updateSpecificProfile($user, $validated);
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur lors de la mise à jour',
+            ], 500);
         }
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Utilisateur mis à jour avec succès',
-            'data' => $this->formatUserForFrontend($user)
-        ]);
-
-    } catch (\Illuminate\Validation\ValidationException $e) {
-        return response()->json([
-            'success' => false,
-            'message' => 'Erreur de validation',
-            'errors' => $e->errors()
-        ], 422);
-    } catch (\Exception $e) {
-        Log::error('Erreur update: ' . $e->getMessage());
-        return response()->json([
-            'success' => false,
-            'message' => 'Erreur lors de la mise à jour'
-        ], 500);
     }
-}
 
     /**
      * Mettre à jour les données utilisateur
      */
     private function updateUserData($user, $data)
-{
-    $userData = [];
-    $fields = [
-        'first_name', 'last_name', 'email', 'phone_number', 
-        // 'adresse' a été retiré - il est dans les profils spécifiques
-        'ville', 'birthdate' => 'date_naissance',
-        'gender' => 'sexe', 'languages' => 'langue', 'avatar',
-        'is_active', 'role_id', 'first_login', 'nombre_signalement'
-    ];
+    {
+        $userData = [];
+        $fields = [
+            'first_name', 'last_name', 'email', 'phone_number',
+            // 'adresse' a été retiré - il est dans les profils spécifiques
+            'ville', 'birthdate' => 'date_naissance',
+            'gender' => 'sexe', 'languages' => 'langue', 'avatar',
+            'is_active', 'role_id', 'first_login', 'nombre_signalement',
+        ];
 
-    foreach ($fields as $key => $field) {
-        $inputKey = is_numeric($key) ? $field : $key;
-        $dbField = is_numeric($key) ? $field : $field;
-        
-        if (isset($data[$inputKey])) {
-            $userData[$dbField] = $data[$inputKey];
+        foreach ($fields as $key => $field) {
+            $inputKey = is_numeric($key) ? $field : $key;
+            $dbField = is_numeric($key) ? $field : $field;
+
+            if (isset($data[$inputKey])) {
+                $userData[$dbField] = $data[$inputKey];
+            }
+        }
+
+        if (!empty($userData)) {
+            $user->update($userData);
         }
     }
-
-    if (!empty($userData)) {
-        $user->update($userData);
-    }
-}
 
     /**
      * Mettre à jour les données du profil (table profiles)
      */
     private function updateProfileData($profile, $data)
-{
-    $map = [
-        'bio'        => 'bio',
-        'cover_image'=> 'cover_image',
-        'city'       => 'city',
-        'address'    => 'address',
-        'cin_path'   => 'cin_path',
-        'activities' => 'activities',
-        'is_public'  => 'is_public',
-    ];
+    {
+        $map = [
+            'bio' => 'bio',
+            'cover_image' => 'cover_image',
+            'city' => 'city',
+            'address' => 'address',
+            'cin_path' => 'cin_path',
+            'activities' => 'activities',
+            'is_public' => 'is_public',
+        ];
 
-    $profileData = [];
-    foreach ($map as $input => $column) {
-        if (array_key_exists($input, $data)) {
-            $profileData[$column] = $data[$input];
+        $profileData = [];
+        foreach ($map as $input => $column) {
+            if (array_key_exists($input, $data)) {
+                $profileData[$column] = $data[$input];
+            }
+        }
+
+        if (!empty($profileData)) {
+            $profile->update($profileData);
         }
     }
-
-    if (!empty($profileData)) {
-        $profile->update($profileData);
-    }
-}
 
     /**
      * Mettre à jour le profil spécifique
      */
-  private function updateSpecificProfile($user, $data)
-{
-    $roleName = $user->role ? strtolower($user->role->name) : null;
+    private function updateSpecificProfile($user, $data)
+    {
+        $roleName = $user->role ? strtolower($user->role->name) : null;
 
-    switch ($roleName) {
-        // ── profile_guides ────────────────────────────────────────────────────
-        case 'guide':
-            if ($user->profile && $user->profile->profileGuide) {
-                $guideMap = [
-                    'experience'            => 'experience',
-                    'tarif'                 => 'tarif',
-                    'zone_travail'          => 'zone_travail',
-                    'certificat_path'       => 'certificat_path',
-                    'certificat_type'       => 'certificat_type',
-                    'certificat_expiration' => 'certificat_expiration',
-                ];
-                $guideData = [];
-                foreach ($guideMap as $input => $col) {
-                    if (array_key_exists($input, $data)) $guideData[$col] = $data[$input];
+        switch ($roleName) {
+            // ── profile_guides ────────────────────────────────────────────────────
+            case 'guide':
+                if ($user->profile && $user->profile->profileGuide) {
+                    $guideMap = [
+                        'experience' => 'experience',
+                        'tarif' => 'tarif',
+                        'zone_travail' => 'zone_travail',
+                        'certificat_path' => 'certificat_path',
+                        'certificat_type' => 'certificat_type',
+                        'certificat_expiration' => 'certificat_expiration',
+                    ];
+                    $guideData = [];
+                    foreach ($guideMap as $input => $col) {
+                        if (array_key_exists($input, $data)) {
+                            $guideData[$col] = $data[$input];
+                        }
+                    }
+                    if (!empty($guideData)) {
+                        $user->profile->profileGuide->update($guideData);
+                    }
                 }
-                if (!empty($guideData)) {
-                    $user->profile->profileGuide->update($guideData);
-                }
-            }
-            break;
+                break;
 
-        // ── profile_centres ───────────────────────────────────────────────────
-        case 'centre':
-        case 'center':
-            if ($user->profile) {
-                // Create the profile_centre row if it doesn't exist yet
-                if (!$user->profile->profileCentre) {
-                    $user->profile->profileCentre()->create([]);
-                    $user->profile->load('profileCentre');
+                // ── profile_centres ───────────────────────────────────────────────────
+            case 'centre':
+            case 'center':
+                if ($user->profile) {
+                    // Create the profile_centre row if it doesn't exist yet
+                    if (!$user->profile->profileCentre) {
+                        $user->profile->profileCentre()->create([]);
+                        $user->profile->load('profileCentre');
+                    }
+                    $centreData = [];
+                    // name arrives as 'centre_name' to avoid collision with user first_name
+                    if (array_key_exists('centre_name', $data)) {
+                        $centreData['name'] = $data['centre_name'];
+                    }
+                    if (array_key_exists('capacity', $data)) {
+                        $centreData['capacite'] = $data['capacity'];
+                    }
+                    if (array_key_exists('price_per_night', $data)) {
+                        $centreData['price_per_night'] = $data['price_per_night'];
+                    }
+                    if (array_key_exists('category', $data)) {
+                        $centreData['category'] = $data['category'];
+                    }
+                    if (array_key_exists('disponibilite', $data)) {
+                        $centreData['disponibilite'] = (bool) $data['disponibilite'];
+                    }
+                    if (array_key_exists('legal_document', $data)) {
+                        $centreData['legal_document'] = $data['legal_document'];
+                    }
+                    if (array_key_exists('document_legal_type', $data)) {
+                        $centreData['document_legal_type'] = $data['document_legal_type'];
+                    }
+                    if (array_key_exists('document_legal_expiration', $data)) {
+                        $centreData['document_legal_expiration'] = $data['document_legal_expiration'];
+                    }
+                    if (array_key_exists('contact_email', $data)) {
+                        $centreData['contact_email'] = $data['contact_email'];
+                    }
+                    if (array_key_exists('contact_phone', $data)) {
+                        $centreData['contact_phone'] = $data['contact_phone'];
+                    }
+                    if (array_key_exists('manager_name', $data)) {
+                        $centreData['manager_name'] = $data['manager_name'];
+                    }
+                    if (array_key_exists('established_date', $data)) {
+                        $centreData['established_date'] = $data['established_date'];
+                    }
+                    if (array_key_exists('latitude', $data)) {
+                        $centreData['latitude'] = $data['latitude'];
+                    }
+                    if (array_key_exists('longitude', $data)) {
+                        $centreData['longitude'] = $data['longitude'];
+                    }
+                    if (!empty($centreData)) {
+                        $user->profile->profileCentre->update($centreData);
+                    }
                 }
-                $centreData = [];
-                // name arrives as 'centre_name' to avoid collision with user first_name
-                if (array_key_exists('centre_name', $data))               $centreData['name']                     = $data['centre_name'];
-                if (array_key_exists('capacity', $data))                  $centreData['capacite']                 = $data['capacity'];
-                if (array_key_exists('price_per_night', $data))           $centreData['price_per_night']          = $data['price_per_night'];
-                if (array_key_exists('category', $data))                  $centreData['category']                 = $data['category'];
-                if (array_key_exists('disponibilite', $data))             $centreData['disponibilite']            = (bool) $data['disponibilite'];
-                if (array_key_exists('legal_document', $data))            $centreData['legal_document']           = $data['legal_document'];
-                if (array_key_exists('document_legal_type', $data))       $centreData['document_legal_type']      = $data['document_legal_type'];
-                if (array_key_exists('document_legal_expiration', $data)) $centreData['document_legal_expiration']= $data['document_legal_expiration'];
-                if (array_key_exists('contact_email', $data))             $centreData['contact_email']            = $data['contact_email'];
-                if (array_key_exists('contact_phone', $data))             $centreData['contact_phone']            = $data['contact_phone'];
-                if (array_key_exists('manager_name', $data))              $centreData['manager_name']             = $data['manager_name'];
-                if (array_key_exists('established_date', $data))          $centreData['established_date']         = $data['established_date'];
-                if (array_key_exists('latitude', $data))                  $centreData['latitude']                 = $data['latitude'];
-                if (array_key_exists('longitude', $data))                 $centreData['longitude']                = $data['longitude'];
-                if (!empty($centreData)) {
-                    $user->profile->profileCentre->update($centreData);
-                }
-            }
-            break;
+                break;
 
-        // ── profile_groupes ───────────────────────────────────────────────────
-        case 'organizer':
-        case 'groupe': // backward compat
-        case 'group':
-            if ($user->profile) {
-                if (!$user->profile->profileGroupe) {
-                    $user->profile->profileGroupe()->create([]);
-                    $user->profile->load('profileGroupe');
+                // ── profile_groupes ───────────────────────────────────────────────────
+            case 'organizer':
+            case 'groupe': // backward compat
+            case 'group':
+                if ($user->profile) {
+                    if (!$user->profile->profileGroupe) {
+                        $user->profile->profileGroupe()->create([]);
+                        $user->profile->load('profileGroupe');
+                    }
+                    $groupeData = [];
+                    if (array_key_exists('nom_groupe', $data)) {
+                        $groupeData['nom_groupe'] = $data['nom_groupe'];
+                    }
+                    if (array_key_exists('patente_path', $data)) {
+                        $groupeData['patente_path'] = $data['patente_path'];
+                    }
+                    if (!empty($groupeData)) {
+                        $user->profile->profileGroupe->update($groupeData);
+                    }
                 }
-                $groupeData = [];
-                if (array_key_exists('nom_groupe',   $data)) $groupeData['nom_groupe']   = $data['nom_groupe'];
-                if (array_key_exists('patente_path', $data)) $groupeData['patente_path'] = $data['patente_path'];
-                if (!empty($groupeData)) {
-                    $user->profile->profileGroupe->update($groupeData);
-                }
-            }
-            break;
+                break;
 
-        // ── profile_fournisseurs ──────────────────────────────────────────────
-        case 'fournisseur':
-        case 'supplier':
-            if ($user->profile) {
-                if (!$user->profile->profileFournisseur) {
-                    $user->profile->profileFournisseur()->create([]);
-                    $user->profile->load('profileFournisseur');
+                // ── profile_fournisseurs ──────────────────────────────────────────────
+            case 'fournisseur':
+            case 'supplier':
+                if ($user->profile) {
+                    if (!$user->profile->profileFournisseur) {
+                        $user->profile->profileFournisseur()->create([]);
+                        $user->profile->load('profileFournisseur');
+                    }
+                    $fournisseurData = [];
+                    if (array_key_exists('intervale_prix', $data)) {
+                        $fournisseurData['intervale_prix'] = $data['intervale_prix'];
+                    }
+                    if (array_key_exists('product_category', $data)) {
+                        $fournisseurData['product_category'] = $data['product_category'];
+                    }
+                    if (!empty($fournisseurData)) {
+                        $user->profile->profileFournisseur->update($fournisseurData);
+                    }
                 }
-                $fournisseurData = [];
-                if (array_key_exists('intervale_prix',   $data)) $fournisseurData['intervale_prix']   = $data['intervale_prix'];
-                if (array_key_exists('product_category', $data)) $fournisseurData['product_category'] = $data['product_category'];
-                if (!empty($fournisseurData)) {
-                    $user->profile->profileFournisseur->update($fournisseurData);
-                }
-            }
-            break;
-            
-        default:
-            // Camper ou autres rôles sans profil spécifique
-            // L'adresse n'est pas stockée pour ces rôles
-            break;
+                break;
+
+            default:
+                // Camper ou autres rôles sans profil spécifique
+                // L'adresse n'est pas stockée pour ces rôles
+                break;
+        }
     }
-}
 
     /**
      * Upload de document
      */
-    public function uploadDocument(Request $request, $id)
+    public function uploadDocument(UploadUserDocumentRequest $request, $id)
     {
         try {
             $user = User::with(['profile'])->findOrFail($id);
-            
-            $request->validate([
-                'document_type' => 'required|string|in:cin,certificat,legal,patente,cin_responsable,cin_commercant,registre',
-                'document' => 'required|file|mimes:pdf,jpg,jpeg,png|max:5120', // 5MB max
-            ]);
+
+            $request->validated();
 
             $file = $request->file('document');
             $documentType = $request->document_type;
-            
+
             // Générer un nom unique
-            $filename = time() . '_' . $file->getClientOriginalName();
-            $path = $file->storeAs('documents/' . $documentType . '/' . $user->id, $filename, 'public');
-            
+            $filename = time().'_'.$file->getClientOriginalName();
+            $path = $file->storeAs('documents/'.$documentType.'/'.$user->id, $filename, 'public');
+
             // Mettre à jour le champ correspondant
             $this->updateDocumentField($user, $documentType, $path, $file->getClientOriginalName());
 
@@ -486,15 +467,16 @@ class AdminUserController extends Controller
                     'path' => $path,
                     'url' => storage_url($path),
                     'filename' => $file->getClientOriginalName(),
-                    'type' => $documentType
-                ]
+                    'type' => $documentType,
+                ],
             ]);
 
         } catch (\Exception $e) {
-            Log::error('Erreur upload: ' . $e->getMessage());
+            Log::error('Erreur upload: '.$e->getMessage());
+
             return response()->json([
                 'success' => false,
-                'message' => 'Erreur lors de l\'upload du document'
+                'message' => 'Erreur lors de l\'upload du document',
             ], 500);
         }
     }
@@ -507,21 +489,22 @@ class AdminUserController extends Controller
         try {
             $user = User::findOrFail($id);
             $documentPath = $this->getDocumentPath($user, $documentType);
-            
+
             if (!$documentPath || !Storage::disk('public')->exists($documentPath)) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Document non trouvé'
+                    'message' => 'Document non trouvé',
                 ], 404);
             }
 
             return Storage::disk('public')->download($documentPath);
 
         } catch (\Exception $e) {
-            Log::error('Erreur download: ' . $e->getMessage());
+            Log::error('Erreur download: '.$e->getMessage());
+
             return response()->json([
                 'success' => false,
-                'message' => 'Erreur lors du téléchargement'
+                'message' => 'Erreur lors du téléchargement',
             ], 500);
         }
     }
@@ -534,21 +517,22 @@ class AdminUserController extends Controller
         try {
             $user = User::findOrFail($id);
             $documentPath = $this->getDocumentPath($user, $documentType);
-            
+
             if (!$documentPath || !Storage::disk('public')->exists($documentPath)) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Document non trouvé'
+                    'message' => 'Document non trouvé',
                 ], 404);
             }
 
-            return response()->file(storage_path('app/public/' . $documentPath));
+            return response()->file(storage_path('app/public/'.$documentPath));
 
         } catch (\Exception $e) {
-            Log::error('Erreur view: ' . $e->getMessage());
+            Log::error('Erreur view: '.$e->getMessage());
+
             return response()->json([
                 'success' => false,
-                'message' => 'Erreur lors de l\'affichage du document'
+                'message' => 'Erreur lors de l\'affichage du document',
             ], 500);
         }
     }
@@ -560,26 +544,27 @@ class AdminUserController extends Controller
     {
         try {
             $user = User::findOrFail($id);
-            
+
             $documentPath = $this->getDocumentPath($user, $documentType);
-            
+
             if ($documentPath && Storage::disk('public')->exists($documentPath)) {
                 Storage::disk('public')->delete($documentPath);
             }
-            
+
             // Mettre à jour la base de données
             $this->deleteDocumentField($user, $documentType);
 
             return response()->json([
                 'success' => true,
-                'message' => 'Document supprimé avec succès'
+                'message' => 'Document supprimé avec succès',
             ]);
 
         } catch (\Exception $e) {
-            Log::error('Erreur delete document: ' . $e->getMessage());
+            Log::error('Erreur delete document: '.$e->getMessage());
+
             return response()->json([
                 'success' => false,
-                'message' => 'Erreur lors de la suppression'
+                'message' => 'Erreur lors de la suppression',
             ], 500);
         }
     }
@@ -597,7 +582,7 @@ class AdminUserController extends Controller
         // Validate only when a custom password is provided
         if ($request->filled('new_password')) {
             $validator = \Illuminate\Support\Facades\Validator::make($request->all(), [
-                'new_password'              => 'required|string|min:8|confirmed',
+                'new_password' => 'required|string|min:8|confirmed',
                 'new_password_confirmation' => 'required|string',
             ]);
 
@@ -605,7 +590,7 @@ class AdminUserController extends Controller
                 return response()->json([
                     'success' => false,
                     'message' => $validator->errors()->first(),
-                    'errors'  => $validator->errors(),
+                    'errors' => $validator->errors(),
                 ], 422);
             }
         }
@@ -631,13 +616,13 @@ class AdminUserController extends Controller
 
             // Notify the user unless explicitly disabled
             $notifyUser = $request->input('notify_user', true);
-            $emailSent  = false;
+            $emailSent = false;
             if ($notifyUser) {
                 try {
                     Mail::to($user->email)->send(new PasswordResetEmail($user, $newPassword));
                     $emailSent = true;
                 } catch (\Exception $e) {
-                    Log::error('Password reset email error: ' . $e->getMessage());
+                    Log::error('Password reset email error: '.$e->getMessage());
                 }
             }
 
@@ -645,15 +630,16 @@ class AdminUserController extends Controller
                 'success' => true,
                 'message' => 'Password reset successfully.',
                 'data' => [
-                    'email'              => $user->email,
+                    'email' => $user->email,
                     'temporary_password' => $newPassword,
-                    'email_sent'         => $emailSent,
-                    'custom_password'    => $request->filled('new_password'),
+                    'email_sent' => $emailSent,
+                    'custom_password' => $request->filled('new_password'),
                 ],
             ]);
 
         } catch (\Exception $e) {
-            Log::error('Admin reset password error: ' . $e->getMessage());
+            Log::error('Admin reset password error: '.$e->getMessage());
+
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to reset password.',
@@ -672,7 +658,7 @@ class AdminUserController extends Controller
             if (auth()->id() == $user->id) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Vous ne pouvez pas modifier votre propre compte'
+                    'message' => 'Vous ne pouvez pas modifier votre propre compte',
                 ], 403);
             }
 
@@ -690,9 +676,9 @@ class AdminUserController extends Controller
 
                 if ($pendingClaim) {
                     try {
-                        (new CentreClaimApprovalService())->approve($pendingClaim, Auth::id());
+                        (new CentreClaimApprovalService)->approve($pendingClaim, Auth::id());
                     } catch (\Exception $e) {
-                        Log::error('Auto-approve claim failed: ' . $e->getMessage());
+                        Log::error('Auto-approve claim failed: '.$e->getMessage());
                     }
                 }
             }
@@ -701,20 +687,21 @@ class AdminUserController extends Controller
             try {
                 Mail::to($user->email)->send(new AccountStatusChanged($user, $user->is_active));
             } catch (\Exception $e) {
-                Log::error('Erreur envoi email: ' . $e->getMessage());
+                Log::error('Erreur envoi email: '.$e->getMessage());
             }
 
             return response()->json([
                 'success' => true,
                 'message' => 'Statut mis à jour avec succès',
-                'is_active' => $user->is_active
+                'is_active' => $user->is_active,
             ]);
 
         } catch (\Exception $e) {
-            Log::error('Erreur toggle: ' . $e->getMessage());
+            Log::error('Erreur toggle: '.$e->getMessage());
+
             return response()->json([
                 'success' => false,
-                'message' => 'Erreur lors de la modification'
+                'message' => 'Erreur lors de la modification',
             ], 500);
         }
     }
@@ -730,7 +717,7 @@ class AdminUserController extends Controller
             if (auth()->id() == $user->id) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Vous ne pouvez pas supprimer votre propre compte'
+                    'message' => 'Vous ne pouvez pas supprimer votre propre compte',
                 ], 403);
             }
 
@@ -750,14 +737,15 @@ class AdminUserController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'Utilisateur supprimé avec succès'
+                'message' => 'Utilisateur supprimé avec succès',
             ]);
 
         } catch (\Exception $e) {
-            Log::error('Erreur destroy: ' . $e->getMessage());
+            Log::error('Erreur destroy: '.$e->getMessage());
+
             return response()->json([
                 'success' => false,
-                'message' => 'Erreur lors de la suppression'
+                'message' => 'Erreur lors de la suppression',
             ], 500);
         }
     }
@@ -765,13 +753,10 @@ class AdminUserController extends Controller
     /**
      * Modérer un feedback
      */
-    public function moderate(Request $request, $id)
+    public function moderate(ModerateFeedbackRequest $request, $id)
     {
         try {
-            $request->validate([
-                'status' => 'required|in:approved,rejected',
-                'response' => 'nullable|string|max:1000',
-            ]);
+            $request->validated();
 
             $feedback = Feedbacks::findOrFail($id);
             $feedback->status = $request->status;
@@ -781,14 +766,15 @@ class AdminUserController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Feedback modéré avec succès',
-                'data' => $feedback
+                'data' => $feedback,
             ]);
 
         } catch (\Exception $e) {
-            Log::error('Erreur moderate: ' . $e->getMessage());
+            Log::error('Erreur moderate: '.$e->getMessage());
+
             return response()->json([
                 'success' => false,
-                'message' => 'Erreur lors de la modération'
+                'message' => 'Erreur lors de la modération',
             ], 500);
         }
     }
@@ -814,14 +800,15 @@ class AdminUserController extends Controller
 
             return response()->json([
                 'success' => true,
-                'data' => $stats
+                'data' => $stats,
             ]);
 
         } catch (\Exception $e) {
-            Log::error('Erreur stats: ' . $e->getMessage());
+            Log::error('Erreur stats: '.$e->getMessage());
+
             return response()->json([
                 'success' => false,
-                'message' => 'Erreur lors de la récupération des statistiques'
+                'message' => 'Erreur lors de la récupération des statistiques',
             ], 500);
         }
     }
@@ -836,18 +823,18 @@ class AdminUserController extends Controller
         $profileData = null;
         if ($user->profile) {
             $profileData = [
-                'bio'         => $user->profile->bio,
+                'bio' => $user->profile->bio,
                 'cover_image' => $user->profile->cover_image,
-                'type'        => $user->profile->type,
-                'activities'  => $user->profile->activities,
-                'has_cin'     => (bool) $user->profile->cin_path,
-                'cin_url'     => $user->profile->cin_path ? storage_url($user->profile->cin_path) : null,
+                'type' => $user->profile->type,
+                'activities' => $user->profile->activities,
+                'has_cin' => (bool) $user->profile->cin_path,
+                'cin_url' => $user->profile->cin_path ? storage_url($user->profile->cin_path) : null,
             ];
         }
 
         return [
             'id' => $user->id,
-            'name' => $user->first_name . ' ' . $user->last_name,
+            'name' => $user->first_name.' '.$user->last_name,
             'first_name' => $user->first_name,
             'last_name' => $user->last_name,
             'email' => $user->email,
@@ -891,17 +878,17 @@ class AdminUserController extends Controller
             // CIN
             $documents['cin'] = [
                 'has_cin' => (bool) $user->profile->cin_path,
-                'url'     => $user->profile->cin_path ? storage_url($user->profile->cin_path) : null,
+                'url' => $user->profile->cin_path ? storage_url($user->profile->cin_path) : null,
             ];
 
             // Documents guide
             if ($user->profile->profileGuide) {
                 $guide = $user->profile->profileGuide;
                 $documents['guide'] = [
-                    'has_certificat'        => (bool) $guide->certificat_path,
-                    'certificat_type'       => $guide->certificat_type,
+                    'has_certificat' => (bool) $guide->certificat_path,
+                    'certificat_type' => $guide->certificat_type,
                     'certificat_expiration' => $guide->certificat_expiration,
-                    'certificat_url'        => $guide->certificat_path ? storage_url($guide->certificat_path) : null,
+                    'certificat_url' => $guide->certificat_path ? storage_url($guide->certificat_path) : null,
                 ];
             }
 
@@ -909,10 +896,10 @@ class AdminUserController extends Controller
             if ($user->profile->profileCentre) {
                 $centre = $user->profile->profileCentre;
                 $documents['centre'] = [
-                    'has_legal_document'        => (bool) $centre->legal_document,
-                    'document_legal_type'       => $centre->document_legal_type,
+                    'has_legal_document' => (bool) $centre->legal_document,
+                    'document_legal_type' => $centre->document_legal_type,
                     'document_legal_expiration' => $centre->document_legal_expiration,
-                    'document_legal_url'        => $centre->legal_document ? storage_url($centre->legal_document) : null,
+                    'document_legal_url' => $centre->legal_document ? storage_url($centre->legal_document) : null,
                 ];
             }
 
@@ -929,19 +916,16 @@ class AdminUserController extends Controller
             if ($user->profile->profileFournisseur) {
                 $fournisseur = $user->profile->profileFournisseur;
                 $documents['fournisseur'] = [
-                    'has_cin_commercant'     => (bool) $fournisseur->cin_commercant_path,
-                    'cin_commercant_url'     => $fournisseur->cin_commercant_path ? storage_url($fournisseur->cin_commercant_path) : null,
-                    'has_registre_commerce'  => (bool) $fournisseur->registre_commerce_path,
-                    'registre_commerce_url'  => $fournisseur->registre_commerce_path ? storage_url($fournisseur->registre_commerce_path) : null,
+                    'has_cin_commercant' => (bool) $fournisseur->cin_commercant_path,
+                    'cin_commercant_url' => $fournisseur->cin_commercant_path ? storage_url($fournisseur->cin_commercant_path) : null,
+                    'has_registre_commerce' => (bool) $fournisseur->registre_commerce_path,
+                    'registre_commerce_url' => $fournisseur->registre_commerce_path ? storage_url($fournisseur->registre_commerce_path) : null,
                 ];
             }
         }
 
         return $documents;
     }
-
-    
-
 
     /**
      * Mettre à jour le champ de document
@@ -1126,20 +1110,16 @@ class AdminUserController extends Controller
         }
     }
 
-    
     /**
      * Uploader des photos pour l'album d'un utilisateur
      */
-public function uploadPhotos(Request $request, $id)
+    public function uploadPhotos(UploadUserPhotosRequest $request, $id)
     {
         try {
             $user = User::findOrFail($id);
-            
+
             // Validation
-            $request->validate([
-                'photos' => 'required|array',
-                'photos.*' => 'required|image|mimes:jpeg,png,jpg,gif,webp|max:5120',
-            ]);
+            $request->validated();
 
             // Créer ou récupérer l'album de l'utilisateur
             $album = $user->albums()->firstOrCreate(
@@ -1161,37 +1141,38 @@ public function uploadPhotos(Request $request, $id)
 
             foreach ($request->file('photos') as $photo) {
                 // Générer un nom unique
-                $filename = time() . '_' . uniqid() . '.' . $photo->getClientOriginalExtension();
-                $storageDir = $campingCentreId ? 'centre_photos/' . $campingCentreId : 'albums/' . $user->id;
+                $filename = time().'_'.uniqid().'.'.$photo->getClientOriginalExtension();
+                $storageDir = $campingCentreId ? 'centre_photos/'.$campingCentreId : 'albums/'.$user->id;
                 $path = $photo->storeAs($storageDir, $filename, 'public');
 
                 // Créer la photo
                 $photoModel = $album->photos()->create([
-                    'path_to_img'       => $path,
-                    'user_id'           => $user->id,
+                    'path_to_img' => $path,
+                    'user_id' => $user->id,
                     'camping_centre_id' => $campingCentreId,
-                    'order'             => $album->photos()->count() + 1,
+                    'order' => $album->photos()->count() + 1,
                 ]);
 
                 $uploadedPhotos[] = [
                     'id' => $photoModel->id,
                     'url' => storage_url($path),
                     'path' => $path,
-                    'name' => $photo->getClientOriginalName()
+                    'name' => $photo->getClientOriginalName(),
                 ];
             }
 
             return response()->json([
                 'success' => true,
-                'message' => count($uploadedPhotos) . ' photo(s) uploadée(s)',
-                'data' => $uploadedPhotos
+                'message' => count($uploadedPhotos).' photo(s) uploadée(s)',
+                'data' => $uploadedPhotos,
             ]);
 
         } catch (\Exception $e) {
-            \Log::error('Erreur upload: ' . $e->getMessage());
+            \Log::error('Erreur upload: '.$e->getMessage());
+
             return response()->json([
                 'success' => false,
-                'message' => 'An unexpected error occurred. Please try again.'
+                'message' => 'An unexpected error occurred. Please try again.',
             ], 500);
         }
     }
@@ -1211,12 +1192,12 @@ public function uploadPhotos(Request $request, $id)
                 foreach ($album->photos as $photo) {
                     $seenIds[] = $photo->id;
                     $photos[] = [
-                        'id'         => $photo->id,
-                        'url'        => storage_url($photo->path_to_img),
-                        'path'       => $photo->path_to_img,
-                        'is_cover'   => (bool) $photo->is_cover,
-                        'album_id'   => $album->id,
-                        'order'      => $photo->order,
+                        'id' => $photo->id,
+                        'url' => storage_url($photo->path_to_img),
+                        'path' => $photo->path_to_img,
+                        'is_cover' => (bool) $photo->is_cover,
+                        'album_id' => $album->id,
+                        'order' => $photo->order,
                         'created_at' => $photo->created_at,
                     ];
                 }
@@ -1232,14 +1213,14 @@ public function uploadPhotos(Request $request, $id)
                         ->get()
                         ->each(function ($photo) use (&$photos, &$seenIds) {
                             if (!in_array($photo->id, $seenIds)) {
-                                $seenIds[]  = $photo->id;
-                                $photos[]   = [
-                                    'id'         => $photo->id,
-                                    'url'        => storage_url($photo->path_to_img),
-                                    'path'       => $photo->path_to_img,
-                                    'is_cover'   => (bool) $photo->is_cover,
-                                    'album_id'   => null,
-                                    'order'      => $photo->order,
+                                $seenIds[] = $photo->id;
+                                $photos[] = [
+                                    'id' => $photo->id,
+                                    'url' => storage_url($photo->path_to_img),
+                                    'path' => $photo->path_to_img,
+                                    'is_cover' => (bool) $photo->is_cover,
+                                    'album_id' => null,
+                                    'order' => $photo->order,
                                     'created_at' => $photo->created_at,
                                 ];
                             }
@@ -1253,13 +1234,15 @@ public function uploadPhotos(Request $request, $id)
             ]);
 
         } catch (\Exception $e) {
-            Log::error('Erreur get photos: ' . $e->getMessage());
+            Log::error('Erreur get photos: '.$e->getMessage());
+
             return response()->json([
                 'success' => false,
-                'message' => 'Erreur lors de la récupération des photos'
+                'message' => 'Erreur lors de la récupération des photos',
             ], 500);
         }
     }
+
     /**
      * Supprimer une photo
      */
@@ -1267,9 +1250,9 @@ public function uploadPhotos(Request $request, $id)
     {
         try {
             $user = User::findOrFail($id);
-            
+
             $photo = \App\Models\Photo::where('id', $photoId)
-                ->whereHas('album', function($q) use ($user) {
+                ->whereHas('album', function ($q) use ($user) {
                     $q->where('user_id', $user->id);
                 })->firstOrFail();
 
@@ -1283,20 +1266,20 @@ public function uploadPhotos(Request $request, $id)
 
             return response()->json([
                 'success' => true,
-                'message' => 'Photo supprimée avec succès'
+                'message' => 'Photo supprimée avec succès',
             ]);
 
         } catch (\Exception $e) {
-            Log::error('Erreur delete photo: ' . $e->getMessage());
+            Log::error('Erreur delete photo: '.$e->getMessage());
+
             return response()->json([
                 'success' => false,
-                'message' => 'Erreur lors de la suppression de la photo'
+                'message' => 'Erreur lors de la suppression de la photo',
             ], 500);
         }
     }
 
     // Modifiez votre méthode update pour inclure la gestion des photos
-
 
     /**
      * Synchroniser les photos de l'album
@@ -1307,28 +1290,29 @@ public function uploadPhotos(Request $request, $id)
             // Récupérer ou créer l'album principal
             $album = $user->albums()->firstOrCreate([
                 'user_id' => $user->id,
-                'titre' => 'Album principal'
+                'titre' => 'Album principal',
             ]);
 
             // Récupérer les photos existantes
             $existingPhotos = $album->photos()->pluck('path_to_img')->toArray();
-            
+
             // URLs qui sont des chemins de stockage (pas des URLs complètes)
-            $validPaths = array_filter($photoUrls, function($url) {
+            $validPaths = array_filter($photoUrls, function ($url) {
                 return !filter_var($url, FILTER_VALIDATE_URL) || strpos($url, '/storage/') !== false;
             });
 
             // Extraire les chemins relatifs
-            $newPaths = array_map(function($url) {
+            $newPaths = array_map(function ($url) {
                 if (strpos($url, '/storage/') !== false) {
                     return str_replace('/storage/', '', $url);
                 }
+
                 return $url;
             }, $validPaths);
 
             // Photos à supprimer (existantes mais plus dans la liste)
             $toDelete = array_diff($existingPhotos, $newPaths);
-            
+
             foreach ($toDelete as $path) {
                 $photo = $album->photos()->where('path_to_img', $path)->first();
                 if ($photo) {
@@ -1341,7 +1325,7 @@ public function uploadPhotos(Request $request, $id)
 
             // Photos à ajouter (nouvelles)
             $toAdd = array_diff($newPaths, $existingPhotos);
-            
+
             foreach ($toAdd as $index => $path) {
                 // Vérifier si c'est une URL ou un chemin
                 if (filter_var($path, FILTER_VALIDATE_URL) && strpos($path, '/storage/') === false) {
@@ -1352,13 +1336,12 @@ public function uploadPhotos(Request $request, $id)
                 $album->photos()->create([
                     'path_to_img' => $path,
                     'user_id' => $user->id,
-                    'order' => $album->photos()->count() + 1
+                    'order' => $album->photos()->count() + 1,
                 ]);
             }
 
         } catch (\Exception $e) {
-            Log::error('Erreur sync album photos: ' . $e->getMessage());
+            Log::error('Erreur sync album photos: '.$e->getMessage());
         }
     }
-
 }
