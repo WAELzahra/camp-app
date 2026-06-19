@@ -1,27 +1,30 @@
 <?php
+
 // app/Http/Controllers/Admin/AdminNotificationController.php
 
 namespace App\Http\Controllers\Admin;
 
+use App\Events\NewNotificationCreated;
 use App\Http\Controllers\Controller;
-use App\Models\User;
+use App\Http\Requests\Admin\SendNotificationRequest;
+use App\Http\Requests\Admin\StoreNotificationTemplateRequest;
+use App\Http\Requests\Admin\UpdateNotificationTemplateRequest;
 use App\Models\Notification;
-use App\Models\NotificationTemplate;
 use App\Models\NotificationLog;
 use App\Models\NotificationPreference;
-use App\Events\NewNotificationCreated;
+use App\Models\NotificationTemplate;
+use App\Models\User;
+use App\Notifications\CustomNotification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Validator;
-use App\Notifications\CustomNotification;
 
 class AdminNotificationController extends Controller
 {
     /**
      * Send notification to users (admin only)
      */
-    public function send(Request $request)
+    public function send(SendNotificationRequest $request)
     {
         $admin = Auth::user();
 
@@ -29,26 +32,11 @@ class AdminNotificationController extends Controller
         if ($admin->role_id !== 6) {
             return response()->json([
                 'success' => false,
-                'message' => 'Unauthorized. Admin access required.'
+                'message' => 'Unauthorized. Admin access required.',
             ], 403);
         }
 
-        $request->validate([
-            'title' => 'required|string|max:255',
-            'content' => 'required|string',
-            'type' => 'required|in:system_alert,welcome_message,payment_confirmation,status_update,support_ticket,event_invitation,event_reminder,reservation_confirmed,reservation_cancelled,account_verified,password_changed,profile_updated,promotion,maintenance,security_alert',
-            'priority' => 'required|in:low,medium,high,critical',
-            'recipients' => 'required|in:all,users,groups,centers,suppliers,guides,admins,custom',
-            'user_ids' => 'required_if:recipients,custom|array',
-            'user_ids.*' => 'exists:users,id',
-            'channels' => 'nullable|array',
-            'channels.*' => 'in:in_app,email,push,sms',
-            'scheduled_at' => 'nullable|date|after:now',
-            'expires_at' => 'nullable|date|after:scheduled_at',
-            'action_url' => 'nullable|url',
-            'action_text' => 'nullable|string|max:50',
-            'image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:5120',
-        ]);
+        $request->validated();
 
         DB::beginTransaction();
         try {
@@ -58,7 +46,7 @@ class AdminNotificationController extends Controller
             if ($users->isEmpty()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'No recipients found'
+                    'message' => 'No recipients found',
                 ], 400);
             }
 
@@ -108,16 +96,16 @@ class AdminNotificationController extends Controller
                         $latest = $user->notifications()->latest()->first();
                         if ($latest) {
                             event(new NewNotificationCreated(
-                                userId:         $user->id,
+                                userId: $user->id,
                                 notificationId: $latest->id,
-                                title:          $data['title'],
-                                content:        $data['content'],
-                                type:           $data['type']        ?? 'system_alert',
-                                priority:       $data['priority']    ?? 'low',
-                                actionUrl:      $data['action_url']  ?? null,
-                                actionText:     $data['action_text'] ?? null,
-                                senderId:       $data['sender_id']   ?? null,
-                                createdAt:      $latest->created_at->toISOString(),
+                                title: $data['title'],
+                                content: $data['content'],
+                                type: $data['type'] ?? 'system_alert',
+                                priority: $data['priority'] ?? 'low',
+                                actionUrl: $data['action_url'] ?? null,
+                                actionText: $data['action_text'] ?? null,
+                                senderId: $data['sender_id'] ?? null,
+                                createdAt: $latest->created_at->toISOString(),
                             ));
                         }
                     }
@@ -139,7 +127,7 @@ class AdminNotificationController extends Controller
 
                 } catch (\Exception $e) {
                     $failedCount++;
-                    
+
                     NotificationLog::create([
                         'user_id' => $user->id,
                         'channel' => 'in_app',
@@ -153,20 +141,21 @@ class AdminNotificationController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => "Notification sent to {$sentCount} users" . ($failedCount ? " ({$failedCount} failed)" : ""),
+                'message' => "Notification sent to {$sentCount} users".($failedCount ? " ({$failedCount} failed)" : ''),
                 'data' => [
                     'sent' => $sentCount,
                     'failed' => $failedCount,
                     'total_recipients' => $users->count(),
-                ]
+                ],
             ]);
 
         } catch (\Exception $e) {
             DB::rollBack();
+
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to send notification',
-                'error' => 'server_error'
+                'error' => 'server_error',
             ], 500);
         }
     }
@@ -180,14 +169,14 @@ class AdminNotificationController extends Controller
 
         return response()->json([
             'success' => true,
-            'data' => $templates
+            'data' => $templates,
         ]);
     }
 
     /**
      * Create notification template
      */
-    public function createTemplate(Request $request)
+    public function createTemplate(StoreNotificationTemplateRequest $request)
     {
         $admin = Auth::user();
 
@@ -195,29 +184,21 @@ class AdminNotificationController extends Controller
             return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
         }
 
-        $request->validate([
-            'key' => 'required|string|unique:notification_templates,key',
-            'name' => 'required|string|max:255',
-            'subject' => 'nullable|string|max:255',
-            'content' => 'required|string',
-            'variables' => 'nullable|array',
-            'channels' => 'nullable|array',
-            'priority' => 'required|in:low,medium,high,critical',
-        ]);
+        $request->validated();
 
         $template = NotificationTemplate::create($request->all());
 
         return response()->json([
             'success' => true,
             'message' => 'Template created',
-            'data' => $template
+            'data' => $template,
         ], 201);
     }
 
     /**
      * Update notification template
      */
-    public function updateTemplate(Request $request, $id)
+    public function updateTemplate(UpdateNotificationTemplateRequest $request, $id)
     {
         $admin = Auth::user();
 
@@ -227,22 +208,14 @@ class AdminNotificationController extends Controller
 
         $template = NotificationTemplate::findOrFail($id);
 
-        $request->validate([
-            'key' => 'sometimes|string|unique:notification_templates,key,' . $id,
-            'name' => 'sometimes|string|max:255',
-            'subject' => 'nullable|string|max:255',
-            'content' => 'sometimes|string',
-            'variables' => 'nullable|array',
-            'channels' => 'nullable|array',
-            'priority' => 'sometimes|in:low,medium,high,critical',
-        ]);
+        $request->validated();
 
         $template->update($request->all());
 
         return response()->json([
             'success' => true,
             'message' => 'Template updated',
-            'data' => $template
+            'data' => $template,
         ]);
     }
 
@@ -262,7 +235,7 @@ class AdminNotificationController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'Template deleted'
+            'message' => 'Template deleted',
         ]);
     }
 
@@ -283,7 +256,7 @@ class AdminNotificationController extends Controller
 
         return response()->json([
             'success' => true,
-            'data' => $logs
+            'data' => $logs,
         ]);
     }
 
@@ -316,7 +289,7 @@ class AdminNotificationController extends Controller
 
         return response()->json([
             'success' => true,
-            'data' => $stats
+            'data' => $stats,
         ]);
     }
 

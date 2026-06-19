@@ -3,6 +3,9 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\UpdateCommissionsRequest;
+use App\Http\Requests\Admin\UpdatePaymentSettingsRequest;
+use App\Http\Requests\Admin\UpdateSettingsRequest;
 use App\Models\PlatformSetting;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -26,16 +29,16 @@ class AdminSettingsController extends Controller
     ];
 
     private const PAYMENT_DEFAULTS = [
-        'payment_link_flouci'       => '',
-        'manual_payment_enabled'    => false,
-        'deposit_min_percentage'    => 20,
-        'deposit_max_percentage'    => 80,
-        'deposit_min_total'         => 150,
-        'bank_transfer_enabled'     => false,
-        'bank_account_holder'       => '',
-        'bank_account_bank_name'    => '',
-        'bank_account_rib'          => '',
-        'bank_account_iban'         => '',
+        'payment_link_flouci' => '',
+        'manual_payment_enabled' => false,
+        'deposit_min_percentage' => 20,
+        'deposit_max_percentage' => 80,
+        'deposit_min_total' => 150,
+        'bank_transfer_enabled' => false,
+        'bank_account_holder' => '',
+        'bank_account_bank_name' => '',
+        'bank_account_rib' => '',
+        'bank_account_iban' => '',
         'bank_account_instructions' => '',
     ];
 
@@ -76,19 +79,19 @@ class AdminSettingsController extends Controller
 
     /** Default values when a key is missing from the DB */
     private const COMMISSION_DEFAULTS = [
-        'commission_camper'          => 2,
-        'commission_center'          => 8,
-        'commission_group'           => 5,
-        'commission_supplier'        => 10,
-        'commission_guide'           => 7,
-        'service_fee_camper'         => 3,
-        'withdrawal_fee_percentage'  => 2,
-        'withdrawal_min_amount'      => 20,
+        'commission_camper' => 2,
+        'commission_center' => 8,
+        'commission_group' => 5,
+        'commission_supplier' => 10,
+        'commission_guide' => 7,
+        'service_fee_camper' => 3,
+        'withdrawal_fee_percentage' => 2,
+        'withdrawal_min_amount' => 20,
         'withdrawal_processing_days' => 3,
-        'withdrawal_allowed_days'    => [1, 4],
-        'withdrawal_enabled'         => true,
-        'gateway_konnect_enabled'    => true,
-        'gateway_flouci_enabled'     => false,
+        'withdrawal_allowed_days' => [1, 4],
+        'withdrawal_enabled' => true,
+        'gateway_konnect_enabled' => true,
+        'gateway_flouci_enabled' => false,
     ];
 
     /**
@@ -97,15 +100,15 @@ class AdminSettingsController extends Controller
      */
     public function index(): JsonResponse
     {
-        $settings = PlatformSetting::all()->map(fn($s) => [
-            'id'          => $s->id,
-            'key'         => $s->key,
-            'value'       => $this->castValue($s),
-            'raw_value'   => $s->value,
-            'label'       => $s->label,
+        $settings = PlatformSetting::all()->map(fn ($s) => [
+            'id' => $s->id,
+            'key' => $s->key,
+            'value' => $this->castValue($s),
+            'raw_value' => $s->value,
+            'label' => $s->label,
             'description' => $s->description,
-            'type'        => $s->type,
-            'group'       => $s->group,
+            'type' => $s->type,
+            'group' => $s->group,
         ])->groupBy('group');
 
         return response()->json(['data' => $settings]);
@@ -148,6 +151,7 @@ class AdminSettingsController extends Controller
             $raw = PlatformSetting::get($key);
             $data[$key] = $raw ?? self::PAYMENT_DEFAULTS[$key] ?? null;
         }
+
         return response()->json(['data' => $data]);
     }
 
@@ -155,22 +159,9 @@ class AdminSettingsController extends Controller
      * PUT /admin/settings/payment
      * Update payment settings with admin password verification.
      */
-    public function updatePaymentSettings(Request $request): JsonResponse
+    public function updatePaymentSettings(UpdatePaymentSettingsRequest $request): JsonResponse
     {
-        $request->validate([
-            'password'               => 'required|string',
-            'payment_link_flouci'    => 'sometimes|nullable|string|max:2000',
-            'manual_payment_enabled' => 'sometimes|boolean',
-            'deposit_min_percentage' => 'sometimes|integer|min:1|max:99',
-            'deposit_max_percentage' => 'sometimes|integer|min:1|max:99',
-            'deposit_min_total'      => 'sometimes|integer|min:0',
-            'bank_transfer_enabled'     => 'sometimes|boolean',
-            'bank_account_holder'       => 'sometimes|nullable|string|max:255',
-            'bank_account_bank_name'    => 'sometimes|nullable|string|max:255',
-            'bank_account_rib'          => 'sometimes|nullable|string|max:60',
-            'bank_account_iban'         => 'sometimes|nullable|string|max:60',
-            'bank_account_instructions' => 'sometimes|nullable|string|max:1000',
-        ]);
+        $request->validated();
 
         if ($request->password !== '50734671') {
             return response()->json(['message' => 'Mot de passe incorrect.'], 403);
@@ -179,21 +170,23 @@ class AdminSettingsController extends Controller
         // Validate percentage order when both are present
         $minPct = $request->input('deposit_min_percentage');
         $maxPct = $request->input('deposit_max_percentage');
-        if ($minPct !== null && $maxPct !== null && (int)$minPct >= (int)$maxPct) {
+        if ($minPct !== null && $maxPct !== null && (int) $minPct >= (int) $maxPct) {
             return response()->json(['message' => 'Le pourcentage minimum doit être inférieur au maximum.'], 422);
         }
 
         foreach (self::PAYMENT_KEYS as $key) {
-            if (!$request->has($key)) continue;
+            if (!$request->has($key)) {
+                continue;
+            }
 
-            $value   = $request->input($key);
+            $value = $request->input($key);
             $setting = PlatformSetting::where('key', $key)->first();
 
             if (!$setting) {
                 $setting = PlatformSetting::create([
-                    'key'   => $key,
+                    'key' => $key,
                     'label' => ucwords(str_replace('_', ' ', $key)),
-                    'type'  => $this->inferPaymentType($key),
+                    'type' => $this->inferPaymentType($key),
                     'group' => 'payment',
                     'value' => null,
                 ]);
@@ -209,16 +202,15 @@ class AdminSettingsController extends Controller
      * PUT /admin/settings
      * Bulk update settings. Body: { settings: { key: value } }
      */
-    public function update(Request $request): JsonResponse
+    public function update(UpdateSettingsRequest $request): JsonResponse
     {
-        $updates = $request->validate([
-            'settings'   => 'required|array',
-            'settings.*' => 'nullable',
-        ]);
+        $updates = $request->validated();
 
         foreach ($updates['settings'] as $key => $value) {
             $setting = PlatformSetting::where('key', $key)->first();
-            if (!$setting) continue;
+            if (!$setting) {
+                continue;
+            }
 
             if ($setting->type === 'json' && is_array($value)) {
                 $encoded = json_encode(array_values(array_map('intval', $value)));
@@ -254,25 +246,9 @@ class AdminSettingsController extends Controller
      * PUT /admin/settings/commissions
      * Update commission/fee/gateway settings with admin password verification.
      */
-    public function updateCommissions(Request $request): JsonResponse
+    public function updateCommissions(UpdateCommissionsRequest $request): JsonResponse
     {
-        $request->validate([
-            'password'                   => 'required|string',
-            'commission_camper'          => 'sometimes|numeric|min:0|max:50',
-            'commission_center'          => 'sometimes|numeric|min:0|max:50',
-            'commission_group'           => 'sometimes|numeric|min:0|max:50',
-            'commission_supplier'        => 'sometimes|numeric|min:0|max:50',
-            'commission_guide'           => 'sometimes|numeric|min:0|max:50',
-            'service_fee_camper'         => 'sometimes|numeric|min:0|max:50',
-            'withdrawal_fee_percentage'  => 'sometimes|numeric|min:0|max:50',
-            'withdrawal_min_amount'      => 'sometimes|numeric|min:0',
-            'withdrawal_processing_days' => 'sometimes|integer|min:1|max:30',
-            'withdrawal_allowed_days'    => 'sometimes|array',
-            'withdrawal_allowed_days.*'  => 'integer|min:1|max:7',
-            'withdrawal_enabled'         => 'sometimes|boolean',
-            'gateway_konnect_enabled'    => 'sometimes|boolean',
-            'gateway_flouci_enabled'     => 'sometimes|boolean',
-        ]);
+        $request->validated();
 
         // Verify admin password (same pattern used in AdminPaymentController)
         if ($request->password !== '50734671') {
@@ -280,20 +256,22 @@ class AdminSettingsController extends Controller
         }
 
         foreach (self::COMMISSION_KEYS as $key) {
-            if (!$request->has($key)) continue;
+            if (!$request->has($key)) {
+                continue;
+            }
 
-            $value   = $request->input($key);
+            $value = $request->input($key);
             $setting = PlatformSetting::where('key', $key)->first();
 
             if (!$setting) {
                 // Auto-create the row with sensible metadata
                 $setting = PlatformSetting::create([
-                    'key'         => $key,
-                    'label'       => ucwords(str_replace('_', ' ', $key)),
+                    'key' => $key,
+                    'label' => ucwords(str_replace('_', ' ', $key)),
                     'description' => null,
-                    'type'        => $this->inferType($key),
-                    'group'       => $this->inferGroup($key),
-                    'value'       => null,
+                    'type' => $this->inferType($key),
+                    'group' => $this->inferGroup($key),
+                    'value' => null,
                 ]);
             }
 
@@ -310,44 +288,63 @@ class AdminSettingsController extends Controller
         return match ($s->type) {
             'boolean' => filter_var($s->value, FILTER_VALIDATE_BOOLEAN),
             'integer' => (int) $s->value,
-            'float'   => (float) $s->value,
-            'json'    => json_decode($s->value, true),
-            default   => $s->value,
+            'float' => (float) $s->value,
+            'json' => json_decode($s->value, true),
+            default => $s->value,
         };
     }
 
     private function encodeValue(string $type, mixed $value): string
     {
         return match ($type) {
-            'json'    => is_array($value)
+            'json' => is_array($value)
                             ? json_encode(array_values(array_map('intval', $value)))
                             : (string) $value,
             'boolean' => $value ? '1' : '0',
-            'float'   => (string) (float) $value,
-            default   => (string) $value,
+            'float' => (string) (float) $value,
+            default => (string) $value,
         };
     }
 
     private function inferType(string $key): string
     {
-        if (str_ends_with($key, '_enabled'))       return 'boolean';
-        if ($key === 'withdrawal_allowed_days')     return 'json';
-        if ($key === 'withdrawal_min_amount')       return 'float';
+        if (str_ends_with($key, '_enabled')) {
+            return 'boolean';
+        }
+        if ($key === 'withdrawal_allowed_days') {
+            return 'json';
+        }
+        if ($key === 'withdrawal_min_amount') {
+            return 'float';
+        }
+
         return 'integer';
     }
 
     private function inferGroup(string $key): string
     {
-        if (str_starts_with($key, 'commission_') || $key === 'service_fee_camper') return 'commissions';
-        if (str_starts_with($key, 'withdrawal_'))  return 'withdrawal';
-        if (str_starts_with($key, 'gateway_'))     return 'gateway';
+        if (str_starts_with($key, 'commission_') || $key === 'service_fee_camper') {
+            return 'commissions';
+        }
+        if (str_starts_with($key, 'withdrawal_')) {
+            return 'withdrawal';
+        }
+        if (str_starts_with($key, 'gateway_')) {
+            return 'gateway';
+        }
+
         return 'general';
     }
 
     private function inferPaymentType(string $key): string
     {
-        if (str_ends_with($key, '_enabled'))                          return 'boolean';
-        if (in_array($key, ['deposit_min_percentage', 'deposit_max_percentage', 'deposit_min_total'])) return 'integer';
+        if (str_ends_with($key, '_enabled')) {
+            return 'boolean';
+        }
+        if (in_array($key, ['deposit_min_percentage', 'deposit_max_percentage', 'deposit_min_total'])) {
+            return 'integer';
+        }
+
         return 'string';
     }
 }

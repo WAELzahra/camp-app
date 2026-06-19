@@ -1,31 +1,29 @@
 <?php
+
 // app/Http/Controllers/Message/MessageController.php
 
 namespace App\Http\Controllers\Message;
 
-use App\Http\Controllers\Controller;
-use App\Models\Message;
-use App\Models\MessageReaction;
-use App\Models\MessageAttachment;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
 use App\Events\MessageReactionUpdated;
 use App\Events\MessageUpdated;
+use App\Http\Controllers\Controller;
+use App\Http\Requests\Message\ReactMessageRequest;
+use App\Http\Requests\Message\UpdateMessageRequest;
+use App\Models\Message;
+use App\Models\MessageReaction;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 
 class MessageController extends Controller
 {
     /**
      * Edit a message
      */
-    public function update(Request $request, $messageId)
+    public function update(UpdateMessageRequest $request, $messageId)
     {
         $user = Auth::user();
 
-        $request->validate([
-            'content' => 'required|string|max:5000',
-        ]);
+        $request->validated();
 
         $message = Message::where('id', $messageId)
             ->where('sender_id', $user->id)
@@ -34,7 +32,7 @@ class MessageController extends Controller
         if (!$message) {
             return response()->json([
                 'success' => false,
-                'message' => 'Message not found or you cannot edit it'
+                'message' => 'Message not found or you cannot edit it',
             ], 404);
         }
 
@@ -42,7 +40,7 @@ class MessageController extends Controller
         if ($message->created_at->diffInMinutes(now()) > 60) {
             return response()->json([
                 'success' => false,
-                'message' => 'Messages can only be edited within 1 hour of sending'
+                'message' => 'Messages can only be edited within 1 hour of sending',
             ], 403);
         }
 
@@ -58,7 +56,7 @@ class MessageController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Message updated',
-            'data' => $message
+            'data' => $message,
         ]);
     }
 
@@ -76,7 +74,7 @@ class MessageController extends Controller
         if (!$message) {
             return response()->json([
                 'success' => false,
-                'message' => 'Message not found or you cannot delete it'
+                'message' => 'Message not found or you cannot delete it',
             ], 404);
         }
 
@@ -84,7 +82,7 @@ class MessageController extends Controller
         if ($message->created_at->diffInHours(now()) > 24) {
             return response()->json([
                 'success' => false,
-                'message' => 'Messages can only be deleted within 24 hours of sending'
+                'message' => 'Messages can only be deleted within 24 hours of sending',
             ], 403);
         }
 
@@ -95,9 +93,10 @@ class MessageController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'Message deleted'
+            'message' => 'Message deleted',
         ]);
     }
+
     /**
      * Mark a conversation's messages as read
      */
@@ -107,9 +106,9 @@ class MessageController extends Controller
 
         // Get unread messages for this user in the conversation
         $messages = Message::where('conversation_id', $conversationId)
-            ->whereHas('statuses', function($q) use ($user) {
+            ->whereHas('statuses', function ($q) use ($user) {
                 $q->where('user_id', $user->id)
-                ->whereNull('read_at');
+                    ->whereNull('read_at');
             })
             ->get();
 
@@ -126,16 +125,15 @@ class MessageController extends Controller
             'message' => 'Messages marked as read',
         ]);
     }
+
     /**
      * React to a message
      */
-    public function react(Request $request, $messageId)
+    public function react(ReactMessageRequest $request, $messageId)
     {
         $user = Auth::user();
 
-        $request->validate([
-            'reaction' => 'required|string|max:50|in:👍,❤️,😂,😮,😢,😡,🎉,👏,🔥,✅,⭐',
-        ]);
+        $request->validated();
 
         $message = Message::findOrFail($messageId);
 
@@ -148,7 +146,7 @@ class MessageController extends Controller
         if (!$isParticipant) {
             return response()->json([
                 'success' => false,
-                'message' => 'You do not have access to this message'
+                'message' => 'You do not have access to this message',
             ], 403);
         }
 
@@ -186,8 +184,8 @@ class MessageController extends Controller
             'success' => true,
             'message' => $action === 'added' ? 'Reaction added' : 'Reaction removed',
             'data' => [
-                'reactions_grouped' => $reactionsGrouped
-            ]
+                'reactions_grouped' => $reactionsGrouped,
+            ],
         ]);
     }
 
@@ -199,7 +197,7 @@ class MessageController extends Controller
         $user = Auth::user();
 
         $message = Message::with(['sender:id,first_name,last_name,avatar', 'attachments', 'reactions.user:id,first_name,last_name'])
-            ->with(['replyTo' => function($q) {
+            ->with(['replyTo' => function ($q) {
                 $q->with('sender:id,first_name,last_name');
             }])
             ->findOrFail($messageId);
@@ -213,7 +211,7 @@ class MessageController extends Controller
         if (!$isParticipant) {
             return response()->json([
                 'success' => false,
-                'message' => 'Access denied'
+                'message' => 'Access denied',
             ], 403);
         }
 
@@ -222,7 +220,7 @@ class MessageController extends Controller
 
         return response()->json([
             'success' => true,
-            'data' => $message
+            'data' => $message,
         ]);
     }
 
@@ -244,7 +242,7 @@ class MessageController extends Controller
         if (!$isParticipant) {
             return response()->json([
                 'success' => false,
-                'message' => 'Access denied'
+                'message' => 'Access denied',
             ], 403);
         }
 
@@ -252,7 +250,7 @@ class MessageController extends Controller
             ->with('user:id,first_name,last_name,avatar')
             ->whereNotNull('read_at')
             ->get()
-            ->map(function($status) {
+            ->map(function ($status) {
                 return [
                     'user' => $status->user,
                     'read_at' => $status->read_at,
@@ -264,7 +262,7 @@ class MessageController extends Controller
             ->whereNotNull('delivered_at')
             ->whereNull('read_at')
             ->get()
-            ->map(function($status) {
+            ->map(function ($status) {
                 return [
                     'user' => $status->user,
                     'delivered_at' => $status->delivered_at,
@@ -277,7 +275,7 @@ class MessageController extends Controller
                 'read_by' => $readBy,
                 'delivered_to' => $deliveredTo,
                 'total_participants' => $message->conversation->participants()->count(),
-            ]
+            ],
         ]);
     }
 
@@ -291,15 +289,16 @@ class MessageController extends Controller
             if (!isset($grouped[$reaction->reaction])) {
                 $grouped[$reaction->reaction] = [
                     'count' => 0,
-                    'users' => []
+                    'users' => [],
                 ];
             }
             $grouped[$reaction->reaction]['count']++;
             $grouped[$reaction->reaction]['users'][] = [
                 'id' => $reaction->user->id,
-                'name' => $reaction->user->first_name . ' ' . $reaction->user->last_name,
+                'name' => $reaction->user->first_name.' '.$reaction->user->last_name,
             ];
         }
+
         return $grouped;
     }
 }

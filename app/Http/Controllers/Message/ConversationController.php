@@ -1,20 +1,24 @@
 <?php
+
 // app/Http/Controllers/Message/ConversationController.php
 
 namespace App\Http\Controllers\Message;
 
+use App\Events\MessageSent;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Message\BlockUserRequest;
+use App\Http\Requests\Message\SendMessageRequest;
+use App\Http\Requests\Message\StartConversationRequest;
+use App\Http\Requests\Message\StartGroupConversationRequest;
+use App\Http\Requests\Message\UnblockUserRequest;
 use App\Models\Conversation;
-use App\Models\MessageStatus;
 use App\Models\ConversationParticipant;
 use App\Models\Message;
+use App\Models\MessageStatus;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use App\Events\MessageSent;
-use App\Events\MessageRead;
-use App\Events\ConversationUpdated;
 use Illuminate\Support\Facades\Log;
 
 class ConversationController extends Controller
@@ -26,22 +30,22 @@ class ConversationController extends Controller
     {
         try {
             $user = Auth::user();
-            
+
             if (!$user) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Unauthenticated'
+                    'message' => 'Unauthenticated',
                 ], 401);
             }
 
             // Build the query
-            $query = Conversation::whereHas('participants', function($q) use ($user) {
-                    $q->where('user_id', $user->id)
-                      ->whereNull('left_at');
-                })
-                ->with(['participants' => function($q) {
+            $query = Conversation::whereHas('participants', function ($q) use ($user) {
+                $q->where('user_id', $user->id)
+                    ->whereNull('left_at');
+            })
+                ->with(['participants' => function ($q) {
                     $q->with('user:id,uuid,first_name,last_name,avatar')
-                      ->whereNull('left_at');
+                        ->whereNull('left_at');
                 }])
                 ->with('latestMessage');
 
@@ -58,7 +62,7 @@ class ConversationController extends Controller
             // Add unread counts and load sender for latest message
             foreach ($conversations as $conversation) {
                 $conversation->unread_count = $this->getUnreadCountForUser($conversation, $user->id);
-                
+
                 // Load sender for latest message if it exists
                 if ($conversation->latestMessage) {
                     $conversation->latestMessage->load('sender:id,uuid,first_name,last_name,avatar');
@@ -73,20 +77,21 @@ class ConversationController extends Controller
                 'per_page' => $conversations->perPage(),
                 'total' => $conversations->total(),
             ]);
-            
+
         } catch (\Exception $e) {
-            Log::error('Conversation index error: ' . $e->getMessage(), [
+            Log::error('Conversation index error: '.$e->getMessage(), [
                 'line' => $e->getLine(),
                 'file' => $e->getFile(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
-            
+
             return response()->json([
                 'success' => false,
-                'message' => 'Error loading conversations: ' . $e->getMessage()
+                'message' => 'Error loading conversations: '.$e->getMessage(),
             ], 500);
         }
     }
+
     /**
      * Helper method to get unread count
      */
@@ -96,7 +101,7 @@ class ConversationController extends Controller
             $participant = $conversation->participants()
                 ->where('user_id', $userId)
                 ->first();
-            
+
             if (!$participant || !$participant->last_read_at) {
                 return $conversation->messages()->count();
             }
@@ -106,23 +111,22 @@ class ConversationController extends Controller
                 ->where('sender_id', '!=', $userId)
                 ->count();
         } catch (\Exception $e) {
-            Log::error('Error getting unread count: ' . $e->getMessage());
+            Log::error('Error getting unread count: '.$e->getMessage());
+
             return 0;
         }
     }
+
     /**
      * Start a new conversation or get existing one
      */
-    public function start(Request $request)
+    public function start(StartConversationRequest $request)
     {
         $user = Auth::user();
-        $request->validate([
-            'user_id'         => 'required',
-            'initial_message' => 'nullable|string|max:5000',
-        ]);
+        $request->validated();
 
         // Resolve numeric id or UUID to a target user
-        $rawId      = $request->user_id;
+        $rawId = $request->user_id;
         $targetUser = is_numeric($rawId)
             ? \App\Models\User::find((int) $rawId)
             : \App\Models\User::where('uuid', $rawId)->first();
@@ -138,10 +142,10 @@ class ConversationController extends Controller
 
         // Check if conversation already exists
         $existing = Conversation::where('type', 'direct')
-            ->whereHas('participants', function($q) use ($user) {
+            ->whereHas('participants', function ($q) use ($user) {
                 $q->where('user_id', $user->id);
             })
-            ->whereHas('participants', function($q) use ($targetId) {
+            ->whereHas('participants', function ($q) use ($targetId) {
                 $q->where('user_id', $targetId);
             })
             ->first();
@@ -152,14 +156,14 @@ class ConversationController extends Controller
             if ($participant && $participant->left_at) {
                 $participant->update([
                     'left_at' => null,
-                    'joined_at' => now()
+                    'joined_at' => now(),
                 ]);
             }
 
             return response()->json([
                 'success' => true,
                 'message' => 'Conversation already exists',
-                'data' => $existing->load('participants.user')
+                'data' => $existing->load('participants.user'),
             ]);
         }
 
@@ -185,7 +189,7 @@ class ConversationController extends Controller
                     'user_id' => $targetId,
                     'role' => 'member',
                     'joined_at' => now(),
-                ]
+                ],
             ]);
 
             // Send initial message if provided
@@ -221,15 +225,16 @@ class ConversationController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Conversation started',
-                'data' => $conversation
+                'data' => $conversation,
             ], 201);
 
         } catch (\Exception $e) {
             DB::rollBack();
+
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to start conversation',
-                'error' => 'server_error'
+                'error' => 'server_error',
             ], 500);
         }
     }
@@ -253,14 +258,14 @@ class ConversationController extends Controller
             if (!$participant) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'You are not a participant in this conversation'
+                    'message' => 'You are not a participant in this conversation',
                 ], 403);
             }
 
             $messages = Message::where('conversation_id', $conversationId)
                 ->with(['sender:id,uuid,first_name,last_name,avatar'])
                 ->with(['attachments'])
-                ->with(['reactions' => function($q) {
+                ->with(['reactions' => function ($q) {
                     $q->with('user:id,uuid,first_name,last_name');
                 }])
                 ->orderBy('created_at', 'desc')
@@ -269,7 +274,7 @@ class ConversationController extends Controller
             // Transform reactions
             foreach ($messages as $message) {
                 $message->reactions_grouped = $this->groupReactions($message->reactions);
-                
+
                 // Get read status
                 $message->read_by = MessageStatus::where('message_id', $message->id)
                     ->whereNotNull('read_at')
@@ -280,10 +285,10 @@ class ConversationController extends Controller
             // Mark messages as delivered for this user
             Message::where('conversation_id', $conversationId)
                 ->where('sender_id', '!=', $user->id)
-                ->whereDoesntHave('statuses', function($q) use ($user) {
+                ->whereDoesntHave('statuses', function ($q) use ($user) {
                     $q->where('user_id', $user->id);
                 })
-                ->chunk(50, function($messages) use ($user) {
+                ->chunk(50, function ($messages) use ($user) {
                     foreach ($messages as $message) {
                         $message->statuses()->updateOrCreate(
                             ['user_id' => $user->id],
@@ -294,14 +299,15 @@ class ConversationController extends Controller
 
             return response()->json([
                 'success' => true,
-                'data' => $messages
+                'data' => $messages,
             ]);
 
         } catch (\Exception $e) {
-            Log::error('Error getting messages: ' . $e->getMessage());
+            Log::error('Error getting messages: '.$e->getMessage());
+
             return response()->json([
                 'success' => false,
-                'message' => 'Error loading messages'
+                'message' => 'Error loading messages',
             ], 500);
         }
     }
@@ -309,17 +315,12 @@ class ConversationController extends Controller
     /**
      * Send a message in a conversation
      */
-    public function sendMessage(Request $request, $conversationId)
+    public function sendMessage(SendMessageRequest $request, $conversationId)
     {
         try {
             $user = Auth::user();
 
-            $request->validate([
-                'content' => 'required_without:attachments|string|max:5000',
-                'reply_to_id' => 'nullable|exists:messages,id',
-                'attachments' => 'nullable|array',
-                'attachments.*' => 'file|mimes:jpeg,png,jpg,gif,pdf,doc,docx|max:5120',
-            ]);
+            $request->validated();
 
             $conversation = Conversation::findOrFail($conversationId);
 
@@ -332,7 +333,7 @@ class ConversationController extends Controller
             if (!$participant) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'You are not a participant in this conversation'
+                    'message' => 'You are not a participant in this conversation',
                 ], 403);
             }
 
@@ -357,8 +358,8 @@ class ConversationController extends Controller
             // Handle attachments
             if ($request->hasFile('attachments')) {
                 foreach ($request->file('attachments') as $file) {
-                    $path = $file->store('message-attachments/' . $conversationId, 'public');
-                    
+                    $path = $file->store('message-attachments/'.$conversationId, 'public');
+
                     $message->attachments()->create([
                         'file_name' => $file->getClientOriginalName(),
                         'file_path' => $path,
@@ -377,7 +378,7 @@ class ConversationController extends Controller
             $conversation->participants()
                 ->where('user_id', '!=', $user->id)
                 ->whereNull('left_at')
-                ->each(function($participant) use ($message) {
+                ->each(function ($participant) use ($message) {
                     $message->statuses()->create([
                         'user_id' => $participant->user_id,
                         'delivered_at' => null,
@@ -398,24 +399,24 @@ class ConversationController extends Controller
             try {
                 broadcast(new MessageSent(Auth::user(), $message))->toOthers();
             } catch (\Exception $e) {
-                Log::error('Broadcast error: ' . $e->getMessage());
+                Log::error('Broadcast error: '.$e->getMessage());
             }
 
             return response()->json([
                 'success' => true,
-                'data' => $message
+                'data' => $message,
             ]);
 
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('Send message error: ' . $e->getMessage());
+            Log::error('Send message error: '.$e->getMessage());
+
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to send message: ' . $e->getMessage()
+                'message' => 'Failed to send message: '.$e->getMessage(),
             ], 500);
         }
     }
-
 
     /**
      * Mark messages as read
@@ -436,7 +437,7 @@ class ConversationController extends Controller
             if (!$participant) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'You are not a participant in this conversation'
+                    'message' => 'You are not a participant in this conversation',
                 ], 403);
             }
 
@@ -455,11 +456,11 @@ class ConversationController extends Controller
                         MessageStatus::updateOrCreate(
                             [
                                 'message_id' => $message->id,
-                                'user_id'    => $user->id,
+                                'user_id' => $user->id,
                             ],
                             [
                                 'delivered_at' => $now,
-                                'read_at'      => $now,
+                                'read_at' => $now,
                             ]
                         );
                     }
@@ -471,10 +472,11 @@ class ConversationController extends Controller
             ]);
 
         } catch (\Exception $e) {
-            Log::error('Mark as read error: ' . $e->getMessage());
+            Log::error('Mark as read error: '.$e->getMessage());
+
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to mark as read'
+                'message' => 'Failed to mark as read',
             ], 500);
         }
     }
@@ -487,23 +489,23 @@ class ConversationController extends Controller
         $user = Auth::user();
 
         $conversation = Conversation::findOrFail($conversationId);
-        
+
         $participant = $conversation->getParticipant($user->id);
         if (!$participant) {
             return response()->json([
                 'success' => false,
-                'message' => 'Conversation not found'
+                'message' => 'Conversation not found',
             ], 404);
         }
 
         $newStatus = $participant->status === 'archived' ? 'active' : 'archived';
-        
+
         $participant->update(['status' => $newStatus]);
 
         return response()->json([
             'success' => true,
             'message' => $newStatus === 'archived' ? 'Conversation archived' : 'Conversation restored',
-            'data' => ['status' => $newStatus]
+            'data' => ['status' => $newStatus],
         ]);
     }
 
@@ -521,39 +523,37 @@ class ConversationController extends Controller
         if (!$participant) {
             return response()->json([
                 'success' => false,
-                'message' => 'Conversation not found'
+                'message' => 'Conversation not found',
             ], 404);
         }
 
         // Soft delete by setting left_at
         $participant->update([
             'left_at' => now(),
-            'status' => 'archived'
+            'status' => 'archived',
         ]);
 
         return response()->json([
             'success' => true,
-            'message' => 'Conversation deleted'
+            'message' => 'Conversation deleted',
         ]);
     }
 
     /**
      * Block user
      */
-    public function blockUser(Request $request)
+    public function blockUser(BlockUserRequest $request)
     {
         $user = Auth::user();
 
-        $request->validate([
-            'user_id' => 'required|exists:users,id|different:user_id',
-        ]);
+        $request->validated();
 
         // Find or create conversation
         $conversation = Conversation::where('type', 'direct')
-            ->whereHas('participants', function($q) use ($user, $request) {
+            ->whereHas('participants', function ($q) use ($user) {
                 $q->where('user_id', $user->id);
             })
-            ->whereHas('participants', function($q) use ($request) {
+            ->whereHas('participants', function ($q) use ($request) {
                 $q->where('user_id', $request->user_id);
             })
             ->first();
@@ -567,27 +567,25 @@ class ConversationController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'User blocked'
+            'message' => 'User blocked',
         ]);
     }
 
     /**
      * Unblock user
      */
-    public function unblockUser(Request $request)
+    public function unblockUser(UnblockUserRequest $request)
     {
         $user = Auth::user();
 
-        $request->validate([
-            'user_id' => 'required|exists:users,id',
-        ]);
+        $request->validated();
 
         $conversation = Conversation::where('type', 'direct')
             ->where('blocked_by', $user->id)
-            ->whereHas('participants', function($q) use ($user, $request) {
+            ->whereHas('participants', function ($q) use ($user) {
                 $q->where('user_id', $user->id);
             })
-            ->whereHas('participants', function($q) use ($request) {
+            ->whereHas('participants', function ($q) use ($request) {
                 $q->where('user_id', $request->user_id);
             })
             ->first();
@@ -601,7 +599,7 @@ class ConversationController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'User unblocked'
+            'message' => 'User unblocked',
         ]);
     }
 
@@ -615,15 +613,16 @@ class ConversationController extends Controller
             if (!isset($grouped[$reaction->reaction])) {
                 $grouped[$reaction->reaction] = [
                     'count' => 0,
-                    'users' => []
+                    'users' => [],
                 ];
             }
             $grouped[$reaction->reaction]['count']++;
             $grouped[$reaction->reaction]['users'][] = [
                 'id' => $reaction->user->id,
-                'name' => $reaction->user->first_name . ' ' . $reaction->user->last_name,
+                'name' => $reaction->user->first_name.' '.$reaction->user->last_name,
             ];
         }
+
         return $grouped;
     }
 
@@ -633,17 +632,17 @@ class ConversationController extends Controller
     public function getGroupConversations(Request $request, $groupId)
     {
         $user = Auth::user();
-        
+
         // Verify the group exists and user has access
         $group = User::where('id', $groupId)
             ->where('role_id', 2)
             ->firstOrFail();
-        
+
         $conversations = Conversation::where('group_id', $groupId)
-            ->orWhereHas('participants', function($q) use ($groupId) {
+            ->orWhereHas('participants', function ($q) use ($groupId) {
                 $q->where('user_id', $groupId);
             })
-            ->with(['participants' => function($q) {
+            ->with(['participants' => function ($q) {
                 $q->with('user:id,uuid,first_name,last_name,avatar,last_seen_at');
             }])
             ->with('latestMessage.sender')
@@ -652,21 +651,18 @@ class ConversationController extends Controller
 
         return response()->json([
             'success' => true,
-            'data' => $conversations
+            'data' => $conversations,
         ]);
     }
 
     /**
      * Start a conversation with a group (for users messaging a group)
      */
-    public function startWithGroup(Request $request)
+    public function startWithGroup(StartGroupConversationRequest $request)
     {
         $user = Auth::user();
 
-        $request->validate([
-            'group_id' => 'required|exists:users,id',
-            'initial_message' => 'nullable|string|max:5000',
-        ]);
+        $request->validated();
 
         // Verify the target is actually a group user
         $group = User::where('id', $request->group_id)
@@ -676,7 +672,7 @@ class ConversationController extends Controller
         // Check if conversation already exists between this user and group
         $existing = Conversation::where('type', 'direct')
             ->where('group_id', $request->group_id)
-            ->whereHas('participants', function($q) use ($user) {
+            ->whereHas('participants', function ($q) use ($user) {
                 $q->where('user_id', $user->id);
             })
             ->first();
@@ -685,7 +681,7 @@ class ConversationController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Conversation already exists',
-                'data' => $existing->load('participants.user')
+                'data' => $existing->load('participants.user'),
             ]);
         }
 
@@ -712,7 +708,7 @@ class ConversationController extends Controller
                     'user_id' => $request->group_id,
                     'role' => 'member',
                     'joined_at' => now(),
-                ]
+                ],
             ]);
 
             // Send initial message if provided
@@ -735,7 +731,7 @@ class ConversationController extends Controller
                         'user_id' => $request->group_id,
                         'delivered_at' => null,
                         'read_at' => null,
-                    ]
+                    ],
                 ]);
             }
 
@@ -746,15 +742,16 @@ class ConversationController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Conversation started with group',
-                'data' => $conversation
+                'data' => $conversation,
             ], 201);
 
         } catch (\Exception $e) {
             DB::rollBack();
+
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to start conversation',
-                'error' => 'server_error'
+                'error' => 'server_error',
             ], 500);
         }
     }
@@ -765,20 +762,20 @@ class ConversationController extends Controller
     public function getMyGroupConversations()
     {
         $user = Auth::user();
-        
+
         // Only group users can access this
         if ($user->role_id !== 2) {
             return response()->json([
                 'success' => false,
-                'message' => 'Only group users can access this'
+                'message' => 'Only group users can access this',
             ], 403);
         }
 
         $conversations = Conversation::where('group_id', $user->id)
-            ->orWhereHas('participants', function($q) use ($user) {
+            ->orWhereHas('participants', function ($q) use ($user) {
                 $q->where('user_id', $user->id);
             })
-            ->with(['participants' => function($q) {
+            ->with(['participants' => function ($q) {
                 $q->with('user:id,uuid,first_name,last_name,avatar');
             }])
             ->with('latestMessage.sender')
@@ -792,10 +789,7 @@ class ConversationController extends Controller
 
         return response()->json([
             'success' => true,
-            'data' => $conversations
+            'data' => $conversations,
         ]);
     }
-
-
-
 }
