@@ -3,14 +3,14 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
-use App\Services\EmailVerificationService;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Validator;
 use App\Models\User;
+use App\Services\EmailVerificationService;
 use Illuminate\Auth\Events\Verified;
 use Illuminate\Foundation\Auth\EmailVerificationRequest;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Validator;
 
 class VerifyEmailController extends Controller
 {
@@ -32,28 +32,29 @@ class VerifyEmailController extends Controller
         try {
             $validator = Validator::make($request->all(), [
                 'user_uuid' => 'required_without:user_id|string|exists:users,uuid',
-                'user_id'   => 'required_without:user_uuid|integer|exists:users,id',
-                'email'     => 'required|email',
-                'method'    => 'sometimes|in:both,code,link',
+                'user_id' => 'required_without:user_uuid|integer|exists:users,id',
+                'email' => 'required|email',
+                'method' => 'sometimes|in:both,code,link',
             ]);
 
             if ($validator->fails()) {
                 Log::warning('Send verification validation failed:', ['errors' => $validator->errors()->toArray()]);
+
                 return response()->json([
                     'success' => false,
                     'message' => 'Invalid request data',
-                    'errors' => $validator->errors()
+                    'errors' => $validator->errors(),
                 ], 422);
             }
 
             $user = $request->input('user_uuid')
                 ? User::where('uuid', $request->input('user_uuid'))->first()
                 : User::find($request->input('user_id'));
-            
+
             if (!$user) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'User not found'
+                    'message' => 'User not found',
                 ], 404);
             }
 
@@ -61,7 +62,7 @@ class VerifyEmailController extends Controller
             if ($user->email !== $request->input('email')) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Email does not match user record'
+                    'message' => 'Email does not match user record',
                 ], 400);
             }
 
@@ -69,7 +70,7 @@ class VerifyEmailController extends Controller
             if ($user->hasVerifiedEmail()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Email already verified'
+                    'message' => 'Email already verified',
                 ], 400);
             }
 
@@ -90,13 +91,13 @@ class VerifyEmailController extends Controller
                     'id' => $verification->id,
                     'method' => $verification->method,
                     'expires_at' => $verification->expires_at->format('Y-m-d H:i:s'),
-                ]
+                ],
             ]);
 
         } catch (\Exception $e) {
-            Log::error('Failed to send verification email: ' . $e->getMessage(), [
+            Log::error('Failed to send verification email: '.$e->getMessage(), [
                 'trace' => $e->getTraceAsString(),
-                'request_data' => $request->all()
+                'request_data' => $request->all(),
             ]);
 
             return response()->json([
@@ -115,18 +116,18 @@ class VerifyEmailController extends Controller
 
         try {
             $user = $request->user();
-            
+
             if (!$user) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'User not authenticated'
+                    'message' => 'User not authenticated',
                 ], 401);
             }
 
             if ($user->hasVerifiedEmail()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Email already verified'
+                    'message' => 'Email already verified',
                 ], 400);
             }
 
@@ -136,7 +137,7 @@ class VerifyEmailController extends Controller
             Log::info('Verification email sent for current user', [
                 'user_id' => $user->id,
                 'email' => $user->email,
-                'verification_id' => $verification->id
+                'verification_id' => $verification->id,
             ]);
 
             return response()->json([
@@ -145,16 +146,16 @@ class VerifyEmailController extends Controller
                 'verification' => [
                     'id' => $verification->id,
                     'method' => $verification->method,
-                    'expires_at' => $verification->expires_at->format('Y-m-d H:i:s')
-                ]
+                    'expires_at' => $verification->expires_at->format('Y-m-d H:i:s'),
+                ],
             ]);
 
         } catch (\Exception $e) {
-            Log::error('Failed to send verification for current user: ' . $e->getMessage());
+            Log::error('Failed to send verification for current user: '.$e->getMessage());
 
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to send verification email'
+                'message' => 'Failed to send verification email',
             ], 500);
         }
     }
@@ -169,15 +170,16 @@ class VerifyEmailController extends Controller
 
         try {
             $validator = Validator::make($request->all(), [
-                'token' => 'required|string'
+                'token' => 'required|string',
             ]);
 
             if ($validator->fails()) {
                 Log::warning('Token validation failed:', ['errors' => $validator->errors()->toArray()]);
+
                 return response()->json([
                     'success' => false,
                     'message' => 'Invalid request data',
-                    'errors' => $validator->errors()
+                    'errors' => $validator->errors(),
                 ], 422);
             }
 
@@ -190,28 +192,28 @@ class VerifyEmailController extends Controller
                     'success' => true,
                     'message' => $result['message'],
                     'user' => [
-                        'uuid'              => $result['user']->uuid,
-                        'first_name'        => $result['user']->first_name,
-                        'last_name'         => $result['user']->last_name,
-                        'email'             => $result['user']->email,
+                        'uuid' => $result['user']->uuid,
+                        'first_name' => $result['user']->first_name,
+                        'last_name' => $result['user']->last_name,
+                        'email' => $result['user']->email,
                         'email_verified_at' => $result['user']->email_verified_at,
-                    ]
+                    ],
                 ]);
             }
 
             return response()->json([
                 'success' => false,
-                'message' => $result['message']
+                'message' => $result['message'],
             ], 400);
 
         } catch (\Exception $e) {
-            Log::error('Token verification failed: ' . $e->getMessage(), [
-                'trace' => $e->getTraceAsString()
+            Log::error('Token verification failed: '.$e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
             ]);
 
             return response()->json([
                 'success' => false,
-                'message' => 'Verification failed. Please try again.'
+                'message' => 'Verification failed. Please try again.',
             ], 500);
         }
     }
@@ -224,16 +226,16 @@ class VerifyEmailController extends Controller
         try {
             $validator = Validator::make($request->all(), [
                 'user_uuid' => 'required_without:user_id|string|exists:users,uuid',
-                'user_id'   => 'required_without:user_uuid|integer',
-                'email'     => 'required|email',
-                'code'      => 'required|string|size:6',
+                'user_id' => 'required_without:user_uuid|integer',
+                'email' => 'required|email',
+                'code' => 'required|string|size:6',
             ]);
 
             if ($validator->fails()) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Invalid request data',
-                    'errors' => $validator->errors()
+                    'errors' => $validator->errors(),
                 ], 422);
             }
 
@@ -246,33 +248,32 @@ class VerifyEmailController extends Controller
                 $request->input('email'),
                 $request->input('code')
             );
-            
 
             if ($result['success']) {
                 return response()->json([
                     'success' => true,
                     'message' => $result['message'],
                     'user' => [
-                        'uuid'              => $result['user']->uuid,
-                        'first_name'        => $result['user']->first_name,
-                        'last_name'         => $result['user']->last_name,
-                        'email'             => $result['user']->email,
+                        'uuid' => $result['user']->uuid,
+                        'first_name' => $result['user']->first_name,
+                        'last_name' => $result['user']->last_name,
+                        'email' => $result['user']->email,
                         'email_verified_at' => $result['user']->email_verified_at,
-                    ]
+                    ],
                 ]);
             }
 
             return response()->json([
                 'success' => false,
-                'message' => $result['message'] ?? 'Verification failed'
+                'message' => $result['message'] ?? 'Verification failed',
             ], 400);
 
         } catch (\Exception $e) {
-            Log::error('Verify by code exception: ' . $e->getMessage(), [
+            Log::error('Verify by code exception: '.$e->getMessage(), [
                 'trace' => $e->getTraceAsString(),
-                'request' => $request->all()
+                'request' => $request->all(),
             ]);
-            
+
             return response()->json([
                 'success' => false,
                 'message' => 'Verification failed. Please try again.',
@@ -291,16 +292,17 @@ class VerifyEmailController extends Controller
         try {
             $validator = Validator::make($request->all(), [
                 'user_uuid' => 'required_without:user_id|string|exists:users,uuid',
-                'user_id'   => 'required_without:user_uuid|integer',
-                'email'     => 'required|email',
+                'user_id' => 'required_without:user_uuid|integer',
+                'email' => 'required|email',
             ]);
 
             if ($validator->fails()) {
                 Log::warning('Resend validation failed:', ['errors' => $validator->errors()->toArray()]);
+
                 return response()->json([
                     'success' => false,
                     'message' => 'Invalid request data',
-                    'errors' => $validator->errors()
+                    'errors' => $validator->errors(),
                 ], 422);
             }
 
@@ -321,19 +323,19 @@ class VerifyEmailController extends Controller
                         'id' => $result['verification']->id ?? null,
                         'method' => $result['verification']->method ?? null,
                         'expires_at' => $result['verification']->expires_at ?? null,
-                    ]
+                    ],
                 ]);
             }
 
             return response()->json([
                 'success' => false,
-                'message' => $result['message'] ?? 'Failed to resend verification'
+                'message' => $result['message'] ?? 'Failed to resend verification',
             ], 400);
 
         } catch (\Exception $e) {
-            Log::error('Resend verification failed: ' . $e->getMessage(), [
+            Log::error('Resend verification failed: '.$e->getMessage(), [
                 'trace' => $e->getTraceAsString(),
-                'request_data' => $request->all()
+                'request_data' => $request->all(),
             ]);
 
             return response()->json([
@@ -354,7 +356,7 @@ class VerifyEmailController extends Controller
                 return response()->json([
                     'success' => false,
                     'message' => 'You do not have permission to perform this action.',
-                    'error'   => 'forbidden',
+                    'error' => 'forbidden',
                 ], 403);
             }
 
@@ -374,18 +376,18 @@ class VerifyEmailController extends Controller
                 'method' => $result['method'] ?? null,
                 'created_at' => $result['created_at'] ?? null,
                 'user' => [
-                    'uuid'               => $user->uuid,
-                    'email_verified_at'  => $user->email_verified_at,
-                    'is_active'          => $user->is_active,
-                ]
+                    'uuid' => $user->uuid,
+                    'email_verified_at' => $user->email_verified_at,
+                    'is_active' => $user->is_active,
+                ],
             ]);
 
         } catch (\Exception $e) {
-            Log::error('Verification status check failed: ' . $e->getMessage());
+            Log::error('Verification status check failed: '.$e->getMessage());
 
             return response()->json([
                 'success' => false,
-                'message' => 'Unable to check verification status'
+                'message' => 'Unable to check verification status',
             ], 500);
         }
     }

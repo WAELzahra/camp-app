@@ -48,13 +48,13 @@
 //         if ($request->user()) {
 //             $request->user()->currentAccessToken()->delete();
 //         }
-        
+
 //         // For session-based authentication (with cookies)
 //         Auth::guard('web')->logout();
-        
+
 //         $request->session()->invalidate();
 //         $request->session()->regenerateToken();
-        
+
 //         return response()->json([
 //             'success' => true,
 //             'message' => 'Déconnexion réussie.'
@@ -70,54 +70,49 @@
 //     }
 // }
 
-
-
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Auth\TokenLoginRequest;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Log;
 
 class AuthenticatedSessionController extends Controller
 {
-   public function store(Request $request)
-{
-    $credentials = $request->only('email', 'password');
+    public function store(Request $request)
+    {
+        $credentials = $request->only('email', 'password');
 
-    if (!Auth::attempt($credentials)) {
-        Log::channel('security')->warning('Failed login attempt', [
-            'email' => $request->input('email'),
-            'ip'    => $request->ip(),
-            'ua'    => $request->userAgent(),
+        if (!Auth::attempt($credentials)) {
+            Log::channel('security')->warning('Failed login attempt', [
+                'email' => $request->input('email'),
+                'ip' => $request->ip(),
+                'ua' => $request->userAgent(),
+            ]);
+
+            return response()->json(['message' => 'Invalid credentials'], 401);
+        }
+
+        // Regenerate session ID on every login — prevents session fixation attacks
+        // and guarantees a clean session even if the previous user's session
+        // was not fully invalidated before this login attempt.
+        $request->session()->regenerate();
+
+        $user = Auth::user();
+        $user->last_login_at = now();
+        $user->save();
+
+        Log::channel('security')->info('Successful login', [
+            'user_id' => $user->id,
+            'email' => $user->email,
+            'ip' => $request->ip(),
         ]);
-        return response()->json(['message' => 'Invalid credentials'], 401);
+
+        return response()->json([
+            'user' => new \App\Http\Resources\UserResource($user->load('role')),
+        ]);
     }
-
-    // Regenerate session ID on every login — prevents session fixation attacks
-    // and guarantees a clean session even if the previous user's session
-    // was not fully invalidated before this login attempt.
-    $request->session()->regenerate();
-
-    $user = Auth::user();
-    $user->last_login_at = now();
-    $user->save();
-
-    Log::channel('security')->info('Successful login', [
-        'user_id' => $user->id,
-        'email'   => $user->email,
-        'ip'      => $request->ip(),
-    ]);
-
-    return response()->json([
-        'user' => new \App\Http\Resources\UserResource($user->load('role')),
-    ]);
-}
-
-
-
-
 
     /**
      * Déconnecte l'utilisateur (web).
@@ -125,15 +120,15 @@ class AuthenticatedSessionController extends Controller
     public function destroy(Request $request)
     {
         $user = Auth::user();
-        
+
         // For session-based authentication (with cookies)
         Auth::guard('web')->logout();
-        
+
         $request->session()->invalidate();
         $request->session()->regenerateToken();
-        
+
         return response()->json([
-            'message' => 'Déconnexion réussie.'
+            'message' => 'Déconnexion réussie.',
         ]);
     }
 
@@ -148,12 +143,9 @@ class AuthenticatedSessionController extends Controller
     /**
      * Connexion Postman/API — retourne un token Sanctum Bearer.
      */
-    public function tokenLogin(Request $request)
+    public function tokenLogin(TokenLoginRequest $request)
     {
-        $credentials = $request->validate([
-            'email'    => 'required|email',
-            'password' => 'required|string',
-        ]);
+        $credentials = $request->validated();
 
         if (!Auth::attempt($credentials)) {
             return response()->json(['success' => false, 'message' => 'Identifiants incorrects'], 401);
@@ -166,11 +158,11 @@ class AuthenticatedSessionController extends Controller
 
         return response()->json([
             'success' => true,
-            'token'   => $token,
-            'user'    => [
-                'uuid'  => $user->uuid,
+            'token' => $token,
+            'user' => [
+                'uuid' => $user->uuid,
                 'email' => $user->email,
-                'role'  => $user->role->name ?? null,
+                'role' => $user->role->name ?? null,
             ],
         ]);
     }

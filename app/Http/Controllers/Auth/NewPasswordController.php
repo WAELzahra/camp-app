@@ -5,35 +5,35 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use App\Services\PasswordResetService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Validator;
 use Laravel\Sanctum\PersonalAccessToken;
 
 class NewPasswordController extends Controller
 {
     protected PasswordResetService $passwordResetService;
-    
+
     public function __construct(PasswordResetService $passwordResetService)
     {
         $this->passwordResetService = $passwordResetService;
     }
-    
+
     /**
      * Send password reset email with code
      */
     public function sendResetEmail(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'email' => 'required|email|exists:users,email'
+            'email' => 'required|email|exists:users,email',
         ], [
-            'email.exists' => 'No account found with this email address.'
+            'email.exists' => 'No account found with this email address.',
         ]);
 
         if ($validator->fails()) {
             return response()->json([
                 'success' => false,
                 'message' => $validator->errors()->first('email'),
-                'errors' => $validator->errors()
+                'errors' => $validator->errors(),
             ], 422);
         }
 
@@ -54,17 +54,19 @@ class NewPasswordController extends Controller
 
         try {
             $result = $this->passwordResetService->createResetRequest($request->email);
+
             return response()->json($result, $result['success'] ? 200 : 422);
 
         } catch (\Throwable $e) {
             Log::error('Failed to send reset email', [
                 'exception' => get_class($e),
-                'message'   => $e->getMessage(),
-                'email'     => $request->input('email'),
+                'message' => $e->getMessage(),
+                'email' => $request->input('email'),
             ]);
+
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to send reset email. Please try again.'
+                'message' => 'Failed to send reset email. Please try again.',
             ], 500);
         }
     }
@@ -76,14 +78,14 @@ class NewPasswordController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'email' => 'required|email',
-            'code' => 'required|string|size:6'
+            'code' => 'required|string|size:6',
         ]);
 
         if ($validator->fails()) {
             return response()->json([
                 'success' => false,
                 'message' => 'Invalid data',
-                'errors' => $validator->errors()
+                'errors' => $validator->errors(),
             ], 422);
         }
 
@@ -98,11 +100,12 @@ class NewPasswordController extends Controller
         } catch (\Throwable $e) {
             Log::error('Failed to verify reset code', [
                 'exception' => get_class($e),
-                'message'   => $e->getMessage(),
+                'message' => $e->getMessage(),
             ]);
+
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to verify code. Please try again.'
+                'message' => 'Failed to verify code. Please try again.',
             ], 500);
         }
     }
@@ -115,14 +118,14 @@ class NewPasswordController extends Controller
         $validator = Validator::make($request->all(), [
             'email' => 'required|email',
             'code' => 'required|string|size:6',
-            'password' => 'required|string|min:8|confirmed'
+            'password' => 'required|string|min:8|confirmed',
         ]);
 
         if ($validator->fails()) {
             return response()->json([
                 'success' => false,
                 'message' => 'Invalid data',
-                'errors' => $validator->errors()
+                'errors' => $validator->errors(),
             ], 422);
         }
 
@@ -152,11 +155,12 @@ class NewPasswordController extends Controller
         } catch (\Throwable $e) {
             Log::error('Failed to reset password', [
                 'exception' => get_class($e),
-                'message'   => $e->getMessage(),
+                'message' => $e->getMessage(),
             ]);
+
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to reset password. Please try again.'
+                'message' => 'Failed to reset password. Please try again.',
             ], 500);
         }
     }
