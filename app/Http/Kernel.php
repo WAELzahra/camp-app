@@ -87,6 +87,7 @@ class Kernel extends HttpKernel
         'organizer' => \App\Http\Middleware\UserIsGroup::class,
         'supplier_or_camper'        => \App\Http\Middleware\SupplierOrCamper::class,
         'centre.not.pending'        => \App\Http\Middleware\EnsureCentreNotPendingClaim::class,
+        'legal.accepted'            => \App\Http\Middleware\RequiresLegalAcceptance::class,
 
     ];
 }

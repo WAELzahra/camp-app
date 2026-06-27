@@ -67,7 +67,8 @@
       "Bash(vendor/bin/pint app/Http/Requests/Reservation app/Http/Controllers/Reservation/CancellationPreviewController.php)",
       "Bash(php -l app/Http/Controllers/Admin/AdminPaymentController.php)",
       "Bash(php -l app/Http/Controllers/Admin/AdminSettingsController.php)",
-      "Bash(vendor/bin/pint app/Http/Controllers/Admin/AdminPaymentController.php app/Http/Controllers/Admin/AdminSettingsController.php config/admin.php)"
+      "Bash(vendor/bin/pint app/Http/Controllers/Admin/AdminPaymentController.php app/Http/Controllers/Admin/AdminSettingsController.php config/admin.php)",
+      "Bash([ -d \"$FE\" ])"
     ]
   }
 }

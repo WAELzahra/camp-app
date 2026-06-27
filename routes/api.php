@@ -1531,3 +1531,15 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
         Route::patch('/{popup}/toggle',    [PopupController::class, 'toggle']);
     });
 });
+
+// ==================== LEGAL DOCUMENT ROUTES ====================
+
+// Public — signup page links to current doc versions
+Route::get('/legal/documents', [\App\Http\Controllers\Legal\LegalDocumentController::class, 'index']);
+
+// Authenticated — status check, acceptance, history
+Route::middleware(['auth:sanctum'])->prefix('legal')->group(function () {
+    Route::get('/status',  [\App\Http\Controllers\Legal\LegalAcceptanceController::class, 'status']);
+    Route::post('/accept', [\App\Http\Controllers\Legal\LegalAcceptanceController::class, 'accept']);
+    Route::get('/history', [\App\Http\Controllers\Legal\LegalAcceptanceController::class, 'history']);
+});

@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\RegisterRequest;
 use App\Models\Role;
 use App\Models\User;
+use App\Services\LegalConsentService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 
@@ -126,6 +127,19 @@ class RegisteredUserController extends Controller
                         'responded_at' => now(),
                     ]);
                 }
+            }
+
+            // 5️⃣ Record acceptance of all currently active legal documents.
+            // IP + user-agent captured here (server-side) for legal proof.
+            $activeDocIds = LegalConsentService::getActiveDocuments()->pluck('id')->toArray();
+            if (!empty($activeDocIds)) {
+                LegalConsentService::recordAcceptances(
+                    user:        $user,
+                    documentIds: $activeDocIds,
+                    ipAddress:   $request->ip(),
+                    userAgent:   $request->userAgent() ?? '',
+                    method:      'registration'
+                );
             }
 
             DB::commit();

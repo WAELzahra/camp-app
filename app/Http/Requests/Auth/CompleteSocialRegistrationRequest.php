@@ -14,7 +14,8 @@ class CompleteSocialRegistrationRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'role_id' => 'required|integer|between:1,5',
+            'role_id'      => 'required|integer|between:1,5',
+            'cgu_accepted' => ['required', 'boolean', 'accepted'],
         ];
     }
 }

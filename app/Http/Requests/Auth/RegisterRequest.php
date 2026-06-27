@@ -44,6 +44,9 @@ class RegisterRequest extends FormRequest
             'product_category' => ['nullable', 'string', 'max:255'],
             'legal_document_file' => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
             'center_images.*' => ['nullable', 'image', 'mimes:jpg,jpeg,png,gif', 'max:5120'],
+
+            // Must explicitly accept all active legal documents at registration.
+            'cgu_accepted'      => ['required', 'boolean', 'accepted'],
         ];
     }
 }

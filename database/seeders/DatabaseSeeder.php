@@ -9,6 +9,9 @@ class DatabaseSeeder extends Seeder
     public function run(): void
     {
         $this->call([
+            // ── Legal documents (must run before UserSeeder so acceptances can be linked) ──
+            LegalDocumentSeeder::class,
+
             // ── Foundation ──────────────────────────────────────────────
             RoleSeeder::class,
             ServiceCategorySeeder::class,

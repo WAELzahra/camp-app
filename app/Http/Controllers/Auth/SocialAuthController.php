@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\CompleteSocialRegistrationRequest;
 use App\Models\User;
+use App\Services\LegalConsentService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -147,8 +148,20 @@ class SocialAuthController extends Controller
         $user->update([
             'role_id' => $data['role_id'],
             'is_active' => $isActive,
-            'first_login' => false, // Role confirmed — don't re-show the popup on next login.
+            'first_login' => false,
         ]);
+
+        // Record acceptance of all currently active legal documents.
+        $activeDocIds = LegalConsentService::getActiveDocuments()->pluck('id')->toArray();
+        if (!empty($activeDocIds)) {
+            LegalConsentService::recordAcceptances(
+                user:        $user,
+                documentIds: $activeDocIds,
+                ipAddress:   $request->ip(),
+                userAgent:   $request->userAgent() ?? '',
+                method:      'registration'
+            );
+        }
 
         return response()->json([
             'success' => true,
