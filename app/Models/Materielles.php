@@ -2,17 +2,21 @@
 
 namespace App\Models;
 
+use App\Traits\HasSlug;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class Materielles extends Model
 {
-    use HasFactory;
+    use HasFactory, HasSlug;
+
+    protected string $slugSource = 'nom';
 
     protected $fillable = [
         'fournisseur_id',
         'category_id',
         'nom',
+        'slug',
         'brand',
         'description',
         'trip_type_tags',

@@ -38,16 +38,22 @@ class BoutiqueController extends Controller
      * Show a specific boutique by its fournisseur_id.
      * Also returns the boutique's materiels for the shop page.
      */
-    public function show(int $fournisseur_id)
+    public function show($fournisseur_id)
     {
-        $boutique = Boutiques::with(['fournisseur', 'materielles'])
-            ->where('fournisseur_id', $fournisseur_id)
-            ->first();
+        $with = ['fournisseur.profile', 'materielles'];
+        if (is_numeric($fournisseur_id)) {
+            $boutique = Boutiques::with($with)->where('fournisseur_id', $fournisseur_id)->first();
+        } else {
+            $boutique = Boutiques::with($with)->where('slug', $fournisseur_id)->first();
+            if (!$boutique && ($numId = static::decodeBase64Id($fournisseur_id))) {
+                $boutique = Boutiques::with($with)->where('fournisseur_id', $numId)->first();
+            }
+        }
 
         if (!$boutique) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'No boutique found for this fournisseur.',
+                'message' => 'No boutique found.',
             ], 404);
         }
 

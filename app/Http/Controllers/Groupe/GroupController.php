@@ -31,13 +31,15 @@ class GroupController extends Controller
      */
     public function show($id)
 {
-    $groupe = ProfileGroupe::with([
-        'profile.user',
-        'profile.user.events' => function ($q) {
-            $q->whereDate('date_sortie', '>=', now());
-        },
-        'followers'
-    ])->find($id);
+    $with = ['profile.user', 'profile.user.events' => fn ($q) => $q->whereDate('date_sortie', '>=', now()), 'followers'];
+    if (is_numeric($id)) {
+        $groupe = ProfileGroupe::with($with)->find($id);
+    } else {
+        $groupe = ProfileGroupe::with($with)->where('slug', $id)->first();
+        if (!$groupe && ($numId = static::decodeBase64Id($id))) {
+            $groupe = ProfileGroupe::with($with)->find($numId);
+        }
+    }
 
     if (!$groupe) {
         return response()->json(['success' => false, 'message' => 'Groupe introuvable.'], 404);
@@ -47,6 +49,7 @@ class GroupController extends Controller
         'success' => true,
         'groupe' => [
             'id' => $groupe->id,
+            'slug' => $groupe->slug,
             'nom_groupe' => $groupe->nom_groupe,
             'cin_responsable' => $groupe->cin_responsable,
             'bio' => $groupe->profile->bio ?? null,

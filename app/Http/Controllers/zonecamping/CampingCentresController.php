@@ -42,9 +42,12 @@ class CampingCentresController extends Controller
             $userId = $centre->profile?->user_id;
             $photos = [];
             $coverImage = null;
+            $centreSlug = null;
             if ($userId) {
                 // Always fetch by camping_centre_id — user_id is only metadata (who uploaded).
-                $campingCentreId = \App\Models\CampingCentre::where('user_id', $userId)->value('id');
+                $cc = \App\Models\CampingCentre::where('user_id', $userId)->first(['id', 'slug']);
+                $campingCentreId = $cc?->id;
+                $centreSlug = $cc?->slug;
                 if ($campingCentreId) {
                     $photos = Photo::where('camping_centre_id', $campingCentreId)
                         ->limit(5)
@@ -67,6 +70,7 @@ class CampingCentresController extends Controller
 
             return [
                 'id' => $centre->id,
+                'slug' => $centreSlug,
                 'name' => $centre->name,
                 'description' => $centre->profile?->bio ?? '',
                 'latitude' => (float) $centre->latitude,
@@ -88,7 +92,16 @@ class CampingCentresController extends Controller
      */
     public function showCentre($id)
     {
-        $centre = CampingCentre::with(['zones', 'profileCentre', 'user.profile', 'photos'])->findOrFail($id);
+        $with = ['zones', 'profileCentre', 'user.profile', 'photos'];
+        if (is_numeric($id)) {
+            $centre = CampingCentre::with($with)->findOrFail($id);
+        } else {
+            $centre = CampingCentre::with($with)->where('slug', $id)->first();
+            if (!$centre && ($numId = static::decodeBase64Id($id))) {
+                $centre = CampingCentre::with($with)->find($numId);
+            }
+            abort_if(!$centre, 404);
+        }
 
         $pc = $centre->profileCentre;
         $isPartner = (bool) $centre->is_partner;
@@ -118,6 +131,7 @@ class CampingCentresController extends Controller
             'status' => 'success',
             'data' => [
                 'id' => $centre->id,
+                'slug' => $centre->slug,
                 'name' => $centre->nom,
                 'capacite' => $pc?->capacite ?? 0,
                 'price_per_night' => $pc ? (float) $pc->price_per_night : 0,

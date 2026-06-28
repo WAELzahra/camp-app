@@ -135,10 +135,16 @@ class CampingZonesController extends Controller
      */
     public function show($id)
     {
-        $zone = CampingZone::with([
-            'photos',
-            'coverPhoto',
-        ])->findOrFail($id);
+        $with = ['photos', 'coverPhoto'];
+        if (is_numeric($id)) {
+            $zone = CampingZone::with($with)->findOrFail($id);
+        } else {
+            $zone = CampingZone::with($with)->where('slug', $id)->first();
+            if (!$zone && ($numId = static::decodeBase64Id($id))) {
+                $zone = CampingZone::with($with)->find($numId);
+            }
+            abort_if(!$zone, 404);
+        }
 
         $user = Auth::user();
         $isAdmin = $user && $user->role && $user->role->name === 'admin';
@@ -540,6 +546,7 @@ class CampingZonesController extends Controller
 
         $data = $zones->map(fn ($zone) => [
             'id' => $zone->id,
+            'slug' => $zone->slug,
             'name' => $zone->nom,
             'description' => $zone->description ?? '',
             'latitude' => (float) $zone->lat,
@@ -702,6 +709,7 @@ class CampingZonesController extends Controller
 
         return [
             'id' => $zone->id,
+            'slug' => $zone->slug,
             'nom' => $zone->nom,
             'name' => $zone->nom,
             'city' => $zone->city,
@@ -730,6 +738,7 @@ class CampingZonesController extends Controller
     {
         $data = [
             'id' => $zone->id,
+            'slug' => $zone->slug,
             'nom' => $zone->nom,
             'name' => $zone->nom,
             'city' => $zone->city,

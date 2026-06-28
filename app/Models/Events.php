@@ -2,20 +2,22 @@
 
 namespace App\Models;
 
+use App\Traits\HasSlug;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use App\Models\Photo; 
+use App\Models\Photo;
 
 class Events extends Model
 {
-    use HasFactory;
+    use HasFactory, HasSlug;
 
-    protected $table = 'events'; 
-    
-    // Add these to the $fillable array
+    protected $table = 'events';
+    protected string $slugSource = 'title';
+
     protected $fillable = [
         "group_id",
         "title",
+        "slug",
         "description",
         "event_type",
         "start_date",

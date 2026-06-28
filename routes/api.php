@@ -170,10 +170,10 @@ Route::middleware('auth:sanctum')->group(function () {
 // -------------------- PUBLIC SHOPS & EQUIPMENT --------------------
 Route::get('/boutiques', [BoutiqueController::class, 'index']);
 Route::get('/boutiques/uuid/{uuid}', [BoutiqueController::class, 'showByUuid']);
-Route::get('/boutiques/{fournisseur_id}', [BoutiqueController::class, 'show'])->where('fournisseur_id', '[0-9]+');
+Route::get('/boutiques/{fournisseur_id}', [BoutiqueController::class, 'show']);
 Route::get('/materielles/categories', [MaterielleController::class, 'categories']);
 Route::get('/materielles/fournisseur/{fournisseur_id}', [MaterielleController::class, 'index']);
-Route::get('/materielles/{materielle_id}', [MaterielleController::class, 'show'])->where('materielle_id', '[0-9]+');
+Route::get('/materielles/{materielle_id}', [MaterielleController::class, 'show']);
 Route::get('/materielles/{materielle_id}/quote', [MaterielleController::class, 'quote'])->where('materielle_id', '[0-9]+');
 Route::get('/materielles/compare/{id1}/{id2}', [MaterielleController::class, 'compare']);
 Route::get('/materielles', [MaterielleController::class, 'marketplace']);
@@ -193,12 +193,13 @@ Route::prefix('events')->group(function () {
     Route::get('/{id}/share-links', [EventController::class, 'getEventShareLinks'])->where('id', '[0-9]+');
     Route::get('/{id}/copy-link', [EventController::class, 'getEventCopyLink'])->where('id', '[0-9]+');
     Route::get('/{eventId}/services', [\App\Http\Controllers\Event\EventServiceController::class, 'index'])->where('eventId', '[0-9]+');
-    Route::get('/{id}', [EventController::class, 'getEventDetails'])->where('id', '[0-9]+');
+    Route::get('/{id}', [EventController::class, 'getEventDetails']);
 });
 
 // -------------------- PUBLIC GROUPS --------------------
 Route::get('/groupes/search', [GroupController::class, 'searchGroups']);
 Route::get('/groupes', [GroupController::class, 'listGroupsWithFeedbacks']);
+Route::get('/groupes/{id}', [GroupController::class, 'show']);
 
 // -------------------- PUBLIC CAMPING ZONES --------------------
 Route::prefix('zones')->group(function () {
@@ -226,7 +227,7 @@ Route::prefix('centres')->group(function () {
     Route::get('/search-unlinked', [CentreClaimController::class, 'searchUnlinked']); // partenariats
     Route::get('/by-user/{userId}', [CampingCentresController::class, 'getByUser'])->whereNumber('userId');
     Route::get('/{id}/zones', [CampingCentresController::class, 'listZones'])->whereNumber('id');
-    Route::get('/{id}', [CampingCentresController::class, 'showCentre'])->whereNumber('id');
+    Route::get('/{id}', [CampingCentresController::class, 'showCentre']);
 });
 
 // -------------------- PUBLIC CAMPING (Combined) --------------------

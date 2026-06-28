@@ -2,16 +2,20 @@
 
 namespace App\Models;
 
+use App\Traits\HasSlug;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class Boutiques extends Model
 {
-    use HasFactory;
+    use HasFactory, HasSlug;
+
+    protected string $slugSource = 'nom_boutique';
 
     protected $fillable = [
         'fournisseur_id',
         'nom_boutique',
+        'slug',
         'description',
         'status',
         'path_to_img',

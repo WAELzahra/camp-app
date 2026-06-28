@@ -2,18 +2,21 @@
 
 namespace App\Models;
 
+use App\Traits\HasSlug;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class ProfileGroupe extends Model
 {
-    use HasFactory;
+    use HasFactory, HasSlug;
 
     protected $table = 'profile_groupes';
+    protected string $slugSource = 'nom_groupe';
 
     protected $fillable = [
         'profile_id',
         'nom_groupe',
+        'slug',
         'id_album_photo',
         'id_annonce',
         'patente_path',

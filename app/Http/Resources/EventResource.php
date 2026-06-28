@@ -60,6 +60,7 @@ class EventResource extends BaseApiResource
 
         return [
             'id'                      => $this->id,
+            'slug'                    => $this->slug,
             'title'                   => $this->title,
             'description'             => $this->description,
             'event_type'              => $this->event_type,

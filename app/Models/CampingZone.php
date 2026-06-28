@@ -2,17 +2,20 @@
 
 namespace App\Models;
 
+use App\Traits\HasSlug;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Storage;
 
 class CampingZone extends Model
 {
-    use HasFactory;
+    use HasFactory, HasSlug;
 
     protected $table = 'camping_zones';
+    protected string $slugSource = 'nom';
 
     protected $fillable = [
+        'slug',
         'nom',
         'type_activitee',
         'city',

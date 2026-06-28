@@ -139,11 +139,18 @@ class MaterielleController extends Controller
     /**
      * Show a specific materiel with its photos, category and feedbacks.
      */
-    public function show(int $materielle_id)
+    public function show($materielle_id)
     {
         try {
-            $materielle = Materielles::with(['photos', 'category', 'feedbacks', 'fournisseur.profile', 'seasonalRates'])
-                ->find($materielle_id);
+            $with = ['photos', 'category', 'feedbacks', 'fournisseur.profile', 'seasonalRates'];
+            if (is_numeric($materielle_id)) {
+                $materielle = Materielles::with($with)->find($materielle_id);
+            } else {
+                $materielle = Materielles::with($with)->where('slug', $materielle_id)->first();
+                if (!$materielle && ($numId = static::decodeBase64Id($materielle_id))) {
+                    $materielle = Materielles::with($with)->find($numId);
+                }
+            }
 
             if (!$materielle) {
                 return response()->json(['status' => 'error', 'message' => 'Materielle not found.'], 404);
@@ -600,6 +607,7 @@ class MaterielleController extends Controller
 
             return [
                 'id' => $m->id,
+                'slug' => $m->slug,
                 'nom' => $m->nom,
                 'description' => $m->description,
                 'is_rentable' => $m->is_rentable,

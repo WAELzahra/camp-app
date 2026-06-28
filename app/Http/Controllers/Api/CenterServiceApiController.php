@@ -39,13 +39,16 @@ class CenterServiceApiController extends Controller
         $user = $profile?->user;
         $userId = $user?->id;
 
-        /* ── Resolve user's linked CampingCentre (for photo fallbacks) ─── */
+        /* ── Resolve user's linked CampingCentre (for photo fallbacks + slug) ─── */
         // Use profile_centre_id first — it is a direct 1-to-1 link and always
         // points to the correct CampingCentre row even when multiple rows share
         // the same user_id (e.g. after unlink → auto-sync → re-link).
         // Falling back to user_id would return a random row and miss the photos.
-        $campingCentreId = CampingCentre::where('profile_centre_id', $center->id)->value('id')
-            ?? ($userId ? CampingCentre::where('user_id', $userId)->value('id') : null);
+        // Fetch id + slug in one query so we don't need a second lookup later.
+        $cc = CampingCentre::where('profile_centre_id', $center->id)->select('id', 'slug')->first()
+            ?? ($userId ? CampingCentre::where('user_id', $userId)->select('id', 'slug')->first() : null);
+        $campingCentreId = $cc?->id;
+        $ccSlug          = $cc?->slug;
 
         /* ── Cover image ─────────────────────────────────────────────── */
         // Priority: camping_centre photos table (always has correct current paths,
@@ -173,6 +176,7 @@ class CenterServiceApiController extends Controller
         /* ── Assemble ─────────────────────────────────────────────────── */
         $data = [
             'id' => $center->id,
+            'slug' => $ccSlug,
             'name' => $center->name,
             'capacite' => $center->capacite,
             'price_per_night' => (float) $center->price_per_night,
@@ -269,7 +273,21 @@ class CenterServiceApiController extends Controller
                 });
         }
 
-        $partnerResult = $centers->map(function ($c) use ($ratingMap, $coverPhotoMap) {
+        // Bulk-load CampingCentre slugs for partner centres (keyed by profile_centre_id)
+        $partnerIds = $centers->pluck('id')->filter()->toArray();
+        $slugByProfileCentreId = [];
+        if (!empty($partnerIds)) {
+            \App\Models\CampingCentre::whereIn('profile_centre_id', $partnerIds)
+                ->select('profile_centre_id', 'slug')
+                ->get()
+                ->each(function ($cc) use (&$slugByProfileCentreId) {
+                    if ($cc->profile_centre_id) {
+                        $slugByProfileCentreId[$cc->profile_centre_id] = $cc->slug;
+                    }
+                });
+        }
+
+        $partnerResult = $centers->map(function ($c) use ($ratingMap, $coverPhotoMap, $slugByProfileCentreId) {
             $profile = $c->profile;
             $user = $profile?->user;
             $userId = $user?->id;
@@ -295,6 +313,7 @@ class CenterServiceApiController extends Controller
 
             return [
                 'id' => $c->id,
+                'slug' => $slugByProfileCentreId[$c->id] ?? null,
                 'name' => $c->name,
                 'capacite' => $c->capacite,
                 'price_per_night' => (float) $c->price_per_night,
@@ -329,6 +348,7 @@ class CenterServiceApiController extends Controller
             ->filter(fn ($c) => !isset($partnerNameSet[mb_strtolower(trim($c->nom ?? ''))]))
             ->map(fn ($c) => [
                 'id' => $c->id,
+                'slug' => $c->slug,
                 'name' => $c->nom,
                 'capacite' => 0,
                 'price_per_night' => 0,
@@ -357,11 +377,22 @@ class CenterServiceApiController extends Controller
      * ────────────────────────────────────────────────────────────────── */
     public function centerServices($centerId)
     {
-        $center = ProfileCentre::with([
-            'profile.user',
-            'centerServices.serviceCategory',
-            'availableEquipment',
-        ])->findOrFail($centerId);
+        $with = ['profile.user', 'centerServices.serviceCategory', 'availableEquipment'];
+
+        if (is_numeric($centerId)) {
+            $center = ProfileCentre::with($with)->findOrFail($centerId);
+        } else {
+            // Try slug: look up the linked CampingCentre, then find its ProfileCentre
+            $profileCentreId = CampingCentre::where('slug', $centerId)->value('profile_centre_id');
+            if ($profileCentreId) {
+                $center = ProfileCentre::with($with)->findOrFail($profileCentreId);
+            } else {
+                // Fall back to base64-decoded numeric id
+                $numId = static::decodeBase64Id($centerId);
+                abort_if(!$numId, 404);
+                $center = ProfileCentre::with($with)->findOrFail($numId);
+            }
+        }
 
         // formatCenter with $withPhotos=true returns the full flat shape that
         // normalizeCentre() on the frontend expects (detects via `capacite` key).

@@ -164,9 +164,16 @@ class EventController extends Controller
      */
     public function getEventDetails($id)
     {
-        // No is_active filter — finished/past events must stay viewable
-        // (the list endpoint also has no is_active filter, so they appear there too).
-        $event = Events::with(['group', 'group.acceptedSupplierLink.supplier:id,uuid,first_name,last_name,avatar', 'photos'])->find($id);
+        // No is_active filter — finished/past events must stay viewable.
+        $with = ['group', 'group.acceptedSupplierLink.supplier:id,uuid,first_name,last_name,avatar', 'photos'];
+        if (is_numeric($id)) {
+            $event = Events::with($with)->find($id);
+        } else {
+            $event = Events::with($with)->where('slug', $id)->first();
+            if (!$event && ($numId = static::decodeBase64Id($id))) {
+                $event = Events::with($with)->find($numId);
+            }
+        }
 
         if (!$event) {
             return response()->json(['message' => 'Event not found'], 404);
