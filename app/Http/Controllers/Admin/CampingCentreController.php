@@ -147,51 +147,60 @@ class CampingCentreController extends Controller
     // Mettre à jour un centre
     public function update(UpdateCampingCentreRequest $request, $id)
     {
-        // Récupérer le centre
         $centre = CampingCentre::findOrFail($id);
-
-        // Validation des données reçues
         $data = $request->validated();
 
-        // Gestion de l'image si upload
+        // Handle image upload
         if ($request->hasFile('image')) {
-            // Supprimer ancienne image si elle existe
             if ($centre->image) {
                 Storage::disk('public')->delete($centre->image);
             }
             $data['image'] = $request->file('image')->store('centres', 'public');
         }
 
-        // Mettre à jour le centre
+        // Update the camping_centres record
         $centre->update($data);
 
-        // Si le centre est inscrit (lié à un user), mettre à jour les infos dans user/profile
+        // Sync linked user and profile_centre
         if ($centre->user_id) {
             $user = $centre->user;
+
             if ($request->filled('nom')) {
-                $user->name = $request->nom;
+                $parts = explode(' ', trim($request->nom), 2);
+                $user->first_name = $parts[0];
+                $user->last_name = $parts[1] ?? '';
             }
             if ($request->filled('adresse')) {
                 $user->adresse = $request->adresse;
             }
             $user->save();
 
-            // Mettre à jour le profile centre si exists
             if ($centre->profileCentre) {
-                $profile = $centre->profileCentre;
+                $pc = $centre->profileCentre;
+
+                if ($request->filled('nom')) {
+                    $pc->name = $request->nom;                  // nom → name
+                }
                 if ($request->filled('description')) {
-                    $profile->description = $request->description;
+                    $pc->description = $request->description;
                 }
-                if ($request->filled('type')) {
-                    $profile->type = $request->type;
+                if ($request->has('lat')) {
+                    $pc->latitude = $request->lat;              // lat → latitude
                 }
-                $profile->save();
+                if ($request->has('lng')) {
+                    $pc->longitude = $request->lng;             // lng → longitude
+                }
+                if ($request->has('telephone')) {
+                    $pc->contact_phone = $request->telephone;   // telephone → contact_phone
+                }
+
+                $pc->save();
             }
         }
 
         return response()->json([
             'message' => 'Centre mis à jour avec succès',
-            'centre' => $centre,
+            'centre' => $centre->fresh(['user', 'profileCentre', 'photos']),
         ]);
     }
 

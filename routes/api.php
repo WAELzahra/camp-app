@@ -1068,7 +1068,6 @@ Route::middleware(['auth:sanctum'])->prefix('reservation')->group(function () {
 });
 
 // ==================== ADMIN ROUTES (UNIQUEMENT ICI) ====================
-// ==================== ADMIN ROUTES (UNIQUEMENT ICI) ====================
 Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function () {
 
     // Payout bank details of every user (read-only)
