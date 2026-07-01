@@ -1205,6 +1205,10 @@ Route::prefix('annonces')->group(function () {
         Route::get('/export', [AdminReservationsController::class, 'export']);
         Route::post('/materielle/check-availability/{materialId}', [AdminReservationsController::class, 'checkMaterialAvailability']);
         Route::post('/materielle/{id}/generate-master-pin', [AdminReservationsController::class, 'generateMasterPin']);
+        Route::get('/search-people', [AdminReservationsController::class, 'searchPeople']);
+        Route::get('/search-groups', [AdminReservationsController::class, 'searchGroups']);
+        Route::get('/search-boutiques', [AdminReservationsController::class, 'searchBoutiques']);
+        Route::get('/circuits', [AdminReservationsController::class, 'listCircuits']);
 
         Route::prefix('{type}')->whereIn('type', ['center', 'events', 'materielle', 'guides'])->group(function () {
             Route::post('/', [AdminReservationsController::class, 'store']);

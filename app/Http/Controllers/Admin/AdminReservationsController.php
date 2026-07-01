@@ -8,8 +8,10 @@ use App\Http\Requests\Admin\CheckMaterialAvailabilityRequest;
 use App\Http\Requests\Admin\ExportReservationsRequest;
 use App\Http\Requests\Admin\IndexReservationsRequest;
 use App\Mail\ReservationStatusUpdated;
+use App\Models\AdminWalletTransaction;
 use App\Models\Balance;
 use App\Models\CampingCentre;
+use App\Models\Circuit;
 use App\Models\Events;
 use App\Models\Materielles;
 use App\Models\Payments;
@@ -19,7 +21,9 @@ use App\Models\Reservations_centre;
 use App\Models\Reservations_events;
 use App\Models\Reservations_materielles;
 use App\Models\User;
+use App\Models\ReservationServiceItem;
 use App\Models\WalletTransaction;
+use App\Services\CommissionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -910,10 +914,10 @@ class AdminReservationsController extends Controller
     private function getRelationsForType($type)
     {
         $relations = [
-            'center' => ['user', 'centre', 'serviceItems.service.category'],
-            'events' => ['user', 'event', 'group'],
+            'center'     => ['user', 'centre.campingCentre.profileCentre', 'serviceItems'],
+            'events'     => ['user', 'event', 'group', 'services.service'],
             'materielle' => ['user', 'fournisseur', 'materielle'],
-            'guides' => ['user', 'circuit', 'guide'],
+            'guides'     => ['user', 'circuit', 'guide'],
         ];
 
         return $relations[$type] ?? [];
@@ -924,12 +928,36 @@ class AdminReservationsController extends Controller
         switch ($type) {
             case 'center':
                 $reservation->total_price = $reservation->total_price ?? ($reservation->calculateTotal() ?? 0);
-                $reservation->service_types = $reservation->serviceTypes ?? null;
-                $reservation->services_by_category = $reservation->servicesByCategory ?? null;
+                if ($reservation->centre) {
+                    $cc = $reservation->centre->campingCentre;
+                    $cp = $cc?->profileCentre;
+                    $reservation->centre_detail = [
+                        'owner_name'       => trim(($reservation->centre->first_name ?? '') . ' ' . ($reservation->centre->last_name ?? '')),
+                        'owner_email'      => $reservation->centre->email,
+                        'owner_phone'      => $reservation->centre->phone_number,
+                        'owner_ville'      => $reservation->centre->ville,
+                        'centre_nom'       => $cc?->nom,
+                        'centre_adresse'   => $cc?->adresse,
+                        'centre_telephone' => $cc?->telephone,
+                        'contact_email'    => $cp?->contact_email,
+                        'contact_phone'    => $cp?->contact_phone,
+                        'manager_name'     => $cp?->manager_name,
+                    ];
+                }
                 break;
             case 'events':
-                $reservation->event_title = $reservation->event->title ?? null;
-                $reservation->organizer = $reservation->group->name ?? null;
+                $reservation->event_title = $reservation->event?->title;
+                $reservation->organizer   = $reservation->group?->nom_groupe
+                    ?? trim(($reservation->group?->first_name ?? '') . ' ' . ($reservation->group?->last_name ?? ''));
+                if ($reservation->group) {
+                    $reservation->group_detail = [
+                        'name'  => $reservation->group->nom_groupe
+                                    ?? trim(($reservation->group->first_name ?? '') . ' ' . ($reservation->group->last_name ?? '')),
+                        'email' => $reservation->group->email,
+                        'phone' => $reservation->group->phone_number,
+                        'ville' => $reservation->group->ville,
+                    ];
+                }
                 break;
             case 'materielle':
                 $reservation->material_name = $reservation->materielle->nom ?? null;
@@ -1114,6 +1142,179 @@ class AdminReservationsController extends Controller
     }
 
     /**
+     * Search active users by name/email, optionally filtered by role, for the
+     * "create reservation manually" admin form (picking a centre owner, group
+     * organizer, supplier/fournisseur, guide, or the booking camper).
+     */
+    public function searchPeople(Request $request)
+    {
+        $q    = trim((string) $request->get('q', ''));
+        $role = $request->get('role');
+
+        $roleIds = [
+            'centre'    => 3,
+            'fournisseur' => 4,
+            'guide'     => 5,
+            'groupe'    => 2,
+            'organizer' => 2,
+            'campeur'   => 1,
+        ];
+
+        $lower = strtolower($q);
+
+        $users = User::where('is_active', 1)
+            ->when($role && isset($roleIds[$role]), fn ($query) => $query->where('role_id', $roleIds[$role]))
+            ->when($q !== '', function ($query) use ($lower) {
+                $like = "%{$lower}%";
+                $query->where(function ($sub) use ($lower, $like) {
+                    $sub->whereRaw('LOWER(first_name) LIKE ?', [$like])
+                        ->orWhereRaw('LOWER(last_name) LIKE ?', [$like])
+                        ->orWhereRaw('LOWER(email) LIKE ?', [$like])
+                        ->orWhereRaw("LOWER(CONCAT(first_name, ' ', last_name)) LIKE ?", [$like])
+                        ->orWhereHas('profileGroupe', fn ($g) => $g->whereRaw('LOWER(nom_groupe) LIKE ?', [$like]));
+                });
+            })
+            ->with('profileGroupe:id,user_id,nom_groupe')
+            ->select('id', 'first_name', 'last_name', 'email', 'avatar', 'role_id')
+            ->limit(20)
+            ->get()
+            ->map(function ($user) {
+                $item = [
+                    'id'         => $user->id,
+                    'first_name' => $user->first_name,
+                    'last_name'  => $user->last_name,
+                    'email'      => $user->email,
+                    'avatar'     => $user->avatar,
+                    'role_id'    => $user->role_id,
+                    'nom_groupe' => $user->profileGroupe->nom_groupe ?? null,
+                ];
+
+                // Pricing stats for groupe organisateurs
+                if ($user->role_id === 2) {
+                    $stats = \App\Models\Events::where('group_id', $user->id)
+                        ->selectRaw('COUNT(*) as cnt, MIN(price) as min_price, MAX(price) as max_price')
+                        ->first();
+                    $item['event_count']     = (int) ($stats->cnt ?? 0);
+                    $item['event_min_price'] = $stats->min_price ?? null;
+                    $item['event_max_price'] = $stats->max_price ?? null;
+                }
+
+                // Pricing stats for fournisseurs
+                if ($user->role_id === 4) {
+                    $stats = \App\Models\Materielles::where('fournisseur_id', $user->id)
+                        ->selectRaw('COUNT(*) as cnt, MIN(LEAST(COALESCE(tarif_nuit,9999999), COALESCE(prix_vente,9999999))) as min_price')
+                        ->first();
+                    $item['item_count']     = (int) ($stats->cnt ?? 0);
+                    $item['item_min_price'] = $stats->min_price < 9999999 ? $stats->min_price : null;
+                }
+
+                return $item;
+            });
+
+        return response()->json(['success' => true, 'data' => $users]);
+    }
+
+    /**
+     * Search groups by nom_groupe (profile_groupes table).
+     * Returns user_id + group name + event count / min price so the admin form
+     * can show useful context without a second round-trip.
+     */
+    public function searchGroups(Request $request)
+    {
+        $q     = trim((string) $request->get('q', ''));
+        $lower = strtolower($q);
+        $like  = "%{$lower}%";
+
+        $rows = DB::table('profile_groupes as pg')
+            ->join('profiles as p', 'p.id', '=', 'pg.profile_id')
+            ->join('users as u', 'u.id', '=', 'p.user_id')
+            ->where('u.is_active', 1)
+            ->where('u.role_id', 2)
+            ->when($q !== '', function ($q2) use ($like) {
+                $q2->where(function ($sub) use ($like) {
+                    $sub->whereRaw('LOWER(pg.nom_groupe) LIKE ?', [$like])
+                        ->orWhereRaw("LOWER(CONCAT(u.first_name, ' ', u.last_name)) LIKE ?", [$like]);
+                });
+            })
+            ->select('u.id', 'u.email', 'u.avatar', 'pg.nom_groupe')
+            ->orderBy('pg.nom_groupe')
+            ->limit(20)
+            ->get();
+
+        $data = $rows->map(function ($row) {
+            $stats = Events::where('group_id', $row->id)
+                ->selectRaw('COUNT(*) as cnt, MIN(price) as min_price')
+                ->first();
+            return [
+                'id'              => $row->id,
+                'nom_groupe'      => $row->nom_groupe,
+                'email'           => $row->email,
+                'event_count'     => (int) ($stats->cnt ?? 0),
+                'event_min_price' => $stats->min_price ?? null,
+            ];
+        });
+
+        return response()->json(['success' => true, 'data' => $data]);
+    }
+
+    /**
+     * Search suppliers by boutique name (boutiques table).
+     * Returns fournisseur user_id + boutique name + item count / min price.
+     */
+    public function searchBoutiques(Request $request)
+    {
+        $q     = trim((string) $request->get('q', ''));
+        $lower = strtolower($q);
+        $like  = "%{$lower}%";
+
+        $rows = DB::table('boutiques as b')
+            ->join('users as u', 'u.id', '=', 'b.fournisseur_id')
+            ->where('u.is_active', 1)
+            ->where('u.role_id', 4)
+            ->when($q !== '', function ($q2) use ($like) {
+                $q2->where(function ($sub) use ($like) {
+                    $sub->whereRaw('LOWER(b.nom_boutique) LIKE ?', [$like])
+                        ->orWhereRaw("LOWER(CONCAT(u.first_name, ' ', u.last_name)) LIKE ?", [$like]);
+                });
+            })
+            ->select('u.id as user_id', 'u.email', 'b.nom_boutique', 'b.description')
+            ->orderBy('b.nom_boutique')
+            ->limit(20)
+            ->get();
+
+        $data = $rows->map(function ($row) {
+            $stats = Materielles::where('fournisseur_id', $row->user_id)
+                ->selectRaw('COUNT(*) as cnt, MIN(LEAST(COALESCE(tarif_nuit,9999999), COALESCE(prix_vente,9999999))) as min_price')
+                ->first();
+            $minPrice = ($stats->min_price ?? 9999999) < 9999999 ? $stats->min_price : null;
+            return [
+                'id'             => $row->user_id,
+                'nom_boutique'   => $row->nom_boutique,
+                'description'    => $row->description,
+                'email'          => $row->email,
+                'item_count'     => (int) ($stats->cnt ?? 0),
+                'item_min_price' => $minPrice,
+            ];
+        });
+
+        return response()->json(['success' => true, 'data' => $data]);
+    }
+
+    /**
+     * Flat list of circuits for the guide-reservation admin form. Circuits have
+     * no owning guide and no public listing endpoint elsewhere in the platform.
+     */
+    public function listCircuits()
+    {
+        $circuits = Circuit::select('id', 'adresse_debut_circuit', 'adresse_fin_circuit', 'distance_km', 'difficulty')
+            ->orderBy('id', 'desc')
+            ->limit(200)
+            ->get();
+
+        return response()->json(['success' => true, 'data' => $circuits]);
+    }
+
+    /**
      * Crée une nouvelle réservation
      */
     public function store(Request $request, $type)
@@ -1127,40 +1328,53 @@ class AdminReservationsController extends Controller
 
         $rules = [
             'center' => [
-                'user_id' => 'required|exists:users,id',
-                'centre_id' => 'required|exists:centres,id',
+                'user_id' => 'nullable|exists:users,id',
+                'centre_id' => 'required|exists:users,id',
                 'date_debut' => 'required|date',
                 'date_fin' => 'required|date|after_or_equal:date_debut',
                 'nbr_place' => 'required|integer|min:1',
+                'total_price' => 'required|numeric|min:0',
                 'status' => 'sometimes|in:pending,approved,rejected,modified,canceled',
                 'note' => 'nullable|string',
                 'payments_id' => 'nullable|exists:payments,id',
+                'service_items' => 'sometimes|array',
+                'service_items.*.profile_center_service_id' => 'nullable|integer',
+                'service_items.*.service_name' => 'required_with:service_items|string|max:255',
+                'service_items.*.unit_price' => 'required_with:service_items|numeric|min:0',
+                'service_items.*.unit' => 'required_with:service_items|string|max:50',
+                'service_items.*.quantity' => 'required_with:service_items|integer|min:1',
+                'service_items.*.service_description' => 'nullable|string',
             ],
             'events' => [
-                'user_id' => 'required|exists:users,id',
+                'user_id' => 'nullable|exists:users,id',
                 'event_id' => 'required|exists:events,id',
-                'group_id' => 'required|exists:groups,id',
+                'group_id' => 'required|exists:users,id',
                 'name' => 'required|string|max:255',
                 'email' => 'nullable|email',
                 'phone' => 'nullable|string|max:20',
                 'nbr_place' => 'required|integer|min:1',
+                'discount_amount' => 'nullable|numeric|min:0',
                 'status' => 'sometimes|in:en_attente_paiement,confirmée,en_attente_validation,refusée,annulée_par_utilisateur,annulée_par_organisateur,remboursement_en_attente,remboursée_partielle,remboursée_totale',
                 'payment_id' => 'nullable|exists:payments,id',
                 'created_by' => 'nullable|exists:users,id',
+                'event_services' => 'sometimes|array',
+                'event_services.*.event_service_id' => 'required_with:event_services|integer|exists:event_services,id',
+                'event_services.*.quantity' => 'required_with:event_services|integer|min:1',
+                'event_services.*.notes' => 'nullable|string|max:500',
             ],
             'materielle' => [
-                'user_id' => 'required|exists:users,id',
+                'user_id' => 'nullable|exists:users,id',
                 'materielle_id' => 'required|exists:materielles,id',
-                'fournisseur_id' => 'required|exists:fournisseurs,id',
+                'fournisseur_id' => 'required|exists:users,id',
                 'date_debut' => 'required|date',
                 'date_fin' => 'required|date|after_or_equal:date_debut',
                 'quantite' => 'required|integer|min:1',
-                'montant_payer' => 'required|numeric|min:0',
-                'status' => 'sometimes|in:pending,approved,rejected,canceled',
+                'montant_total' => 'required|numeric|min:0',
+                'status' => 'sometimes|in:pending,confirmed,paid,retrieved,returned,rejected,cancelled_by_camper,cancelled_by_fournisseur,disputed',
                 'payments_id' => 'nullable|exists:payments,id',
             ],
             'guides' => [
-                'user_id' => 'required|exists:users,id',
+                'user_id' => 'nullable|exists:users,id',
                 'guide_id' => 'required|exists:users,id',
                 'circuit_id' => 'required|exists:circuits,id',
                 'date_debut' => 'required|date',
@@ -1171,7 +1385,13 @@ class AdminReservationsController extends Controller
             ],
         ];
 
-        $validator = Validator::make($request->all(), $rules[$type]);
+        // Default user_id to the authenticated admin when not provided by the frontend
+        $input = $request->all();
+        if (empty($input['user_id'])) {
+            $input['user_id'] = Auth::id();
+        }
+
+        $validator = Validator::make($input, $rules[$type]);
 
         if ($validator->fails()) {
             return response()->json([
@@ -1203,27 +1423,62 @@ class AdminReservationsController extends Controller
                 if (!isset($data['status'])) {
                     $data['status'] = 'en_attente_paiement';
                 }
-                // Check available places
+                // Admin bypass: decrement remaining_spots only when tracked & sufficient.
+                // Never hard-block — admin overrides capacity limits.
                 $event = Events::findOrFail($data['event_id']);
-                if ($event->nbr_place_restante < $data['nbr_place']) {
-                    DB::rollBack();
-
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Pas assez de places disponibles pour cet événement',
-                    ], 422);
+                if ($event->remaining_spots !== null && $event->remaining_spots >= $data['nbr_place']) {
+                    $event->remaining_spots -= $data['nbr_place'];
+                    $event->save();
                 }
-                $event->nbr_place_restante -= $data['nbr_place'];
-                $event->save();
+
+                $eventServiceItems = $data['event_services'] ?? [];
+                unset($data['event_services']);
 
                 $reservation = Reservations_events::create($data);
+
+                foreach ($eventServiceItems as $item) {
+                    $svc = \App\Models\EventService::find($item['event_service_id']);
+                    if (!$svc) continue;
+                    \App\Models\EventReservationService::create([
+                        'event_reservation_id'   => $reservation->id,
+                        'event_service_id'       => $svc->id,
+                        'quantity'               => $item['quantity'],
+                        'notes'                  => $item['notes'] ?? null,
+                        'price_snapshot'         => $svc->price,
+                        'pricing_unit_snapshot'  => $svc->pricing_unit,
+                        'subtotal'               => round($svc->price * $item['quantity'], 2),
+                    ]);
+                }
             } else {
                 if (!isset($data['status'])) {
                     $data['status'] = 'pending';
                 }
+                $serviceItems = $data['service_items'] ?? [];
+                unset($data['service_items']);
                 $modelClass = self::RESERVATION_TYPES[$type];
                 $reservation = $modelClass::create($data);
+
+                if ($type === 'center' && !empty($serviceItems)) {
+                    $nights = max(1, \Carbon\Carbon::parse($data['date_debut'])->diffInDays(\Carbon\Carbon::parse($data['date_fin'])));
+                    foreach ($serviceItems as $item) {
+                        $isPerNight = (bool) preg_match('/night|nuit/i', $item['unit'] ?? '');
+                        $subtotal = $item['unit_price'] * $item['quantity'] * ($isPerNight ? $nights : 1);
+                        ReservationServiceItem::create([
+                            'reservation_id' => $reservation->id,
+                            'profile_center_service_id' => $item['profile_center_service_id'] ?? null,
+                            'service_name' => $item['service_name'],
+                            'service_description' => $item['service_description'] ?? null,
+                            'unit_price' => $item['unit_price'],
+                            'unit' => $item['unit'],
+                            'quantity' => $item['quantity'],
+                            'subtotal' => round($subtotal, 2),
+                        ]);
+                    }
+                    $reservation->update(['service_count' => count($serviceItems)]);
+                }
             }
+
+            $this->creditProviderWalletOnAdminCreate($reservation, $type, $data);
 
             DB::commit();
 
@@ -1239,10 +1494,16 @@ class AdminReservationsController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
+            \Log::error("AdminReservationsController::store [{$type}] " . $e->getMessage(), [
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'input' => $request->all(),
+            ]);
 
             return response()->json([
                 'success' => false,
                 'message' => 'An unexpected error occurred. Please try again.',
+                'debug'   => app()->isLocal() ? $e->getMessage() : null,
             ], 500);
         }
     }
@@ -1279,6 +1540,77 @@ class AdminReservationsController extends Controller
         } catch (\Throwable $e) {
             // Never let a mail failure crash the HTTP response
             \Log::error("Reservation status email failed [{$type}#{$reservation->id}]: ".$e->getMessage());
+        }
+    }
+
+    /**
+     * When the admin creates a reservation already set to its "approved" status,
+     * credit the provider's wallet exactly as the normal confirm()/updateStatus()
+     * flows do — admin-created reservations carry no platform fee (the admin pays
+     * none), but the provider's commission still applies.
+     */
+    private function creditProviderWalletOnAdminCreate($reservation, $type, array $data): void
+    {
+        if (($data['status'] ?? null) !== $this->getApprovedStatus($type)) {
+            return;
+        }
+
+        switch ($type) {
+            case 'center':
+                $gross = (float) $reservation->total_price;
+                $beneficiaryId = $reservation->centre_id;
+                $commissionType = 'center';
+                $refType = 'centre_reservation';
+                $description = "Revenu réservation #{$reservation->id} (créée par admin)";
+                break;
+
+            case 'events':
+                $event = Events::find($reservation->event_id);
+                if (!$event) {
+                    return;
+                }
+                $gross = max(0, round(($reservation->nbr_place * $event->price) - ($reservation->discount_amount ?? 0), 2));
+                $beneficiaryId = $reservation->group_id;
+                $commissionType = 'group';
+                $refType = 'event_reservation';
+                $description = "Revenu réservation événement : {$event->title} (créée par admin)";
+                break;
+
+            case 'materielle':
+                $gross = (float) $reservation->montant_total;
+                $beneficiaryId = $reservation->fournisseur_id;
+                $commissionType = 'supplier';
+                $refType = 'materiel_reservation';
+                $description = "Revenu réservation matériel #{$reservation->id} (créée par admin)";
+                break;
+
+            default:
+                // Guides carry no wallet/commission flow in this platform.
+                return;
+        }
+
+        if ($gross <= 0 || !$beneficiaryId) {
+            return;
+        }
+
+        $calc = CommissionService::calculateForUser($commissionType, $gross, $beneficiaryId);
+        $commissionPct = round($calc['rate'] * 100, 2);
+
+        Balance::forUser($beneficiaryId)->crediter($calc['net_revenue']);
+        WalletTransaction::logCredit(
+            $beneficiaryId, 'reservation_income',
+            $gross, $commissionPct, $calc['commission'], $calc['net_revenue'],
+            $refType, $reservation->id, $description,
+            $reservation->user_id
+        );
+
+        if ($calc['commission'] > 0) {
+            AdminWalletTransaction::log(
+                'commission', $calc['commission'],
+                $refType, $reservation->id,
+                "Commission — réservation #{$reservation->id} (créée par admin)",
+                $beneficiaryId
+            );
         }
     }
 
