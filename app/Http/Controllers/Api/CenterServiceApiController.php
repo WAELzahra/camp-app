@@ -318,6 +318,7 @@ class CenterServiceApiController extends Controller
                 'capacite' => $c->capacite,
                 'price_per_night' => (float) $c->price_per_night,
                 'category' => $c->category,
+                'host_type' => $c->effective_host_type,
                 'disponibilite' => (bool) $c->disponibilite,
                 'latitude' => $c->latitude ? (string) $c->latitude : null,
                 'longitude' => $c->longitude ? (string) $c->longitude : null,
@@ -353,6 +354,7 @@ class CenterServiceApiController extends Controller
                 'capacite' => 0,
                 'price_per_night' => 0,
                 'category' => 'Camping',
+                'host_type' => ProfileCentre::inferHostType($c->nom),
                 'disponibilite' => true,
                 'latitude' => $c->lat ? (string) $c->lat : null,
                 'longitude' => $c->lng ? (string) $c->lng : null,
@@ -400,6 +402,7 @@ class CenterServiceApiController extends Controller
         $data = $this->formatCenter($center, null, null, true);
         $data['is_partner'] = true;
         $data['_source'] = 'partner';
+        $data['host_type'] = $center->effective_host_type;
 
         return response()->json($data);
     }

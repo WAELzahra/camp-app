@@ -16,6 +16,7 @@ class UpdateProfileCentreFromAdminRequest extends FormRequest
         return [
             'price_per_night' => 'nullable|numeric|min:0',
             'category' => 'nullable|string|max:100',
+            'host_type' => 'nullable|string|in:camping,gite,maison,auberge,ecolodge',
             'capacite' => 'nullable|integer|min:0',
             'contact_email' => 'nullable|email|max:255',
             'contact_phone' => 'nullable|string|max:50',

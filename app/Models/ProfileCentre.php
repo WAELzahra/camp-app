@@ -19,6 +19,7 @@ class ProfileCentre extends Model
         'capacite',
         'price_per_night',
         'category',
+        'host_type',
         'legal_document',
         'document_legal_type',
         'document_legal_expiration',
@@ -30,6 +31,29 @@ class ProfileCentre extends Model
         'manager_name',
         'established_date',
     ];
+
+    /**
+     * host_type with a name-based fallback: existing centres created before the
+     * column existed have host_type = null, so we infer from the name until the
+     * owner/admin declares one explicitly.
+     */
+    public function getEffectiveHostTypeAttribute(): string
+    {
+        if (!empty($this->host_type)) {
+            return $this->host_type;
+        }
+        return self::inferHostType($this->name);
+    }
+
+    public static function inferHostType(?string $name): string
+    {
+        $n = mb_strtolower($name ?? '');
+        if (preg_match('/maison\s*d[\'’]?\s*h[oô]tes?|(^|\s)dar\s/u', $n)) return 'maison';
+        if (preg_match('/g[iî]te/u', $n))                               return 'gite';
+        if (preg_match('/auberge/u', $n))                               return 'auberge';
+        if (preg_match('/[eé]co[\s\-]?lodge/u', $n))                    return 'ecolodge';
+        return 'camping';
+    }
 
     protected $casts = [
         'disponibilite' => 'boolean',

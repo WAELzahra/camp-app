@@ -19,6 +19,8 @@ class ProfileCentreResource extends BaseApiResource
             'capacite'                   => $this->capacite,
             'price_per_night'            => $this->price_per_night,
             'category'                   => $this->category,
+            'host_type'                  => $this->host_type,
+            'effective_host_type'        => $this->resource->exists ? $this->effective_host_type : null,
             'disponibilite'              => (bool) $this->disponibilite,
             'latitude'                   => $this->latitude,
             'longitude'                  => $this->longitude,

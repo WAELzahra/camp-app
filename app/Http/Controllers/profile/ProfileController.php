@@ -123,6 +123,13 @@ class ProfileController extends Controller
                 $data['disponibilite'] = $request->boolean('disponibilite');
             }
 
+            // host_type: whitelist values; anything else (including '') clears
+            // back to null = auto-inferred from the centre name
+            if ($request->exists('host_type')) {
+                $ht = $request->input('host_type');
+                $data['host_type'] = in_array($ht, ['camping', 'gite', 'maison', 'auberge', 'ecolodge'], true) ? $ht : null;
+            }
+
             \Log::info('Updating center with data', ['data' => $data]);
 
             $center->update($data);
@@ -421,6 +428,13 @@ class ProfileController extends Controller
                         'longitude',
                         'established_date',
                     ]);
+
+                    // host_type: whitelist values; anything else (including '')
+                    // clears back to null = auto-inferred from the centre name
+                    if ($request->exists('host_type')) {
+                        $ht = $request->input('host_type');
+                        $centreData['host_type'] = in_array($ht, ['camping', 'gite', 'maison', 'auberge', 'ecolodge'], true) ? $ht : null;
+                    }
 
                     // Handle numeric conversions
                     if (isset($centreData['capacite'])) {

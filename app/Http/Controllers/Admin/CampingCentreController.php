@@ -283,6 +283,8 @@ class CampingCentreController extends Controller
                 'description' => $pc->profile?->bio ?? null,
                 'price_per_night' => $pc->price_per_night !== null ? (float) $pc->price_per_night : null,
                 'category' => $pc->category,
+                'host_type' => $pc->host_type,
+                'effective_host_type' => $pc->effective_host_type,
                 'capacite' => $pc->capacite,
                 'disponibilite' => (bool) $pc->disponibilite,
                 'contact_email' => $pc->contact_email,
@@ -351,6 +353,13 @@ class CampingCentreController extends Controller
             'price_per_night', 'category', 'capacite',
             'contact_email', 'contact_phone', 'manager_name', 'disponibilite',
         ])->filter(fn ($v) => !is_null($v))->toArray();
+
+        // host_type is nullable on purpose: null means "auto" (inferred from the
+        // centre name), so an explicit null must reach the DB instead of being
+        // filtered out like the other fields.
+        if ($request->exists('host_type')) {
+            $pcFields['host_type'] = $validated['host_type'] ?? null;
+        }
 
         if (!empty($pcFields)) {
             $pc->update($pcFields);
