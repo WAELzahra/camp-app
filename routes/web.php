@@ -42,6 +42,17 @@ Route::get('/test-mail', function () {
 });
 
 
+/*
+|--------------------------------------------------------------------------
+| Social share previews (Open Graph / Twitter Cards)
+|--------------------------------------------------------------------------
+| Crawler bots are redirected here by the SPA host's .htaccess; the page
+| carries the entity's OG tags and bounces humans back to the SPA.
+*/
+Route::get('/share/{type}/{slug}', [\App\Http\Controllers\ShareController::class, 'show'])
+    ->where('type', 'centre|zone|event|material|boutique')
+    ->name('share.preview');
+
 Route::get('/', function () {
     return view('welcome');
 });
