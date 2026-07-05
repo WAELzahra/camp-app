@@ -36,25 +36,15 @@ class CentreShareProvider extends AbstractShareProvider
         );
     }
 
+    /**
+     * Photos of the centre itself, then the partner owner's uploads,
+     * then the legacy image column, then the profile cover.
+     */
     private function coverImage(CampingCentre $centre): ?string
     {
-        // 1. Photos attached to the centre itself (cover first)
-        $photo = Photo::where('camping_centre_id', $centre->id)
-            ->whereNotNull('path_to_img')
-            ->orderByRaw('is_cover DESC, id DESC')
-            ->value('path_to_img');
-
-        // 2. Photos of the partner owner's account (admin/owner uploads)
-        if (!$photo && $centre->user_id) {
-            $photo = Photo::where('user_id', $centre->user_id)
-                ->whereNotNull('path_to_img')
-                ->orderByRaw('is_cover DESC, id DESC')
-                ->value('path_to_img');
-        }
-
-        // 3. Legacy image column, then the profile cover
         return $this->imageUrl(
-            $photo
+            $this->latestPhotoPath('camping_centre_id', $centre->id)
+            ?: $this->latestPhotoPath('user_id', $centre->user_id)
             ?: $centre->image
             ?: $centre->profileCentre?->profile?->cover_image
         );

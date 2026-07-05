@@ -50,7 +50,7 @@ Route::get('/test-mail', function () {
 | carries the entity's OG tags and bounces humans back to the SPA.
 */
 Route::get('/share/{type}/{slug}', [\App\Http\Controllers\ShareController::class, 'show'])
-    ->where('type', 'centre|zone|event|material|boutique')
+    ->where('type', 'centre|zone|event|material|boutique|group')
     ->name('share.preview');
 
 Route::get('/', function () {

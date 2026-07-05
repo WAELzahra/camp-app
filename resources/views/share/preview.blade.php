@@ -9,6 +9,9 @@
     <link rel="canonical" href="{{ $canonicalUrl }}">
 
     {{-- Open Graph --}}
+    @if (config('services.facebook.client_id'))
+        <meta property="fb:app_id" content="{{ config('services.facebook.client_id') }}">
+    @endif
     <meta property="og:site_name" content="{{ $siteName }}">
     <meta property="og:type" content="{{ $preview->ogType }}">
     <meta property="og:title" content="{{ $preview->title }} | {{ $siteName }}">

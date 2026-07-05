@@ -5,7 +5,6 @@ namespace App\Models;
 use App\Traits\HasSlug;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\Storage;
 
 class CampingZone extends Model
 {
@@ -114,20 +113,9 @@ class CampingZone extends Model
      */
     public function getCoverImageAttribute()
     {
-        $cover = $this->coverPhoto;
-        
-        if ($cover && $cover->path_to_img) {
-            // If it's already a full URL, return as is
-            if (filter_var($cover->path_to_img, FILTER_VALIDATE_URL)) {
-                return $cover->path_to_img;
-            }
-            
-            // Otherwise, prepend the storage URL
-            return Storage::disk('public')->url($cover->path_to_img);
-        }
-        
-        // Return null if no cover image exists
-        return null;
+        // storage_url() is R2-aware: full URLs pass through, relative paths
+        // map to R2_PUBLIC_URL in production instead of APP_URL/storage.
+        return storage_url($this->coverPhoto?->path_to_img);
     }
 
     /**
@@ -135,15 +123,11 @@ class CampingZone extends Model
      */
     public function getImagesAttribute()
     {
-        return $this->photos->map(function ($photo) {
-            // If it's already a full URL, return as is
-            if (filter_var($photo->path_to_img, FILTER_VALIDATE_URL)) {
-                return $photo->path_to_img;
-            }
-            
-            // Otherwise, prepend the storage URL
-            return Storage::disk('public')->url($photo->path_to_img);
-        })->toArray();
+        return $this->photos
+            ->map(fn ($photo) => storage_url($photo->path_to_img))
+            ->filter()
+            ->values()
+            ->toArray();
     }
 
     /**

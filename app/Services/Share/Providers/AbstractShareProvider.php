@@ -57,4 +57,20 @@ abstract class AbstractShareProvider implements SharePreviewProvider
     {
         return $path ? storage_url($path) : null;
     }
+
+    /**
+     * Best photo from the shared photos table for one owning column
+     * (cover first, then most recent). Returns the raw storage path.
+     */
+    protected function latestPhotoPath(string $ownerColumn, ?int $ownerId): ?string
+    {
+        if (!$ownerId) {
+            return null;
+        }
+
+        return \App\Models\Photo::where($ownerColumn, $ownerId)
+            ->whereNotNull('path_to_img')
+            ->orderByRaw('is_cover DESC, id DESC')
+            ->value('path_to_img');
+    }
 }
