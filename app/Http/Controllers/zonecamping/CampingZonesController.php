@@ -34,7 +34,7 @@ class CampingZonesController extends Controller
         // so we bypass $appends entirely via formatZoneList() and skip loading photos/centre.
         $query = CampingZone::with(['coverPhoto'])
             ->select([
-                'id', 'nom', 'city', 'region', 'difficulty', 'terrain', 'terrain_type',
+                'id', 'slug', 'nom', 'city', 'region', 'difficulty', 'terrain', 'terrain_type',
                 'is_beginner_friendly', 'danger_level', 'best_season', 'rating',
                 'reviews_count', 'lat', 'lng', 'status', 'is_closed', 'is_public',
                 'created_at',
@@ -699,13 +699,11 @@ class CampingZonesController extends Controller
      */
     private function formatZoneList(CampingZone $zone): array
     {
-        $coverImage = null;
-        if ($zone->relationLoaded('coverPhoto') && $zone->coverPhoto) {
-            $path = $zone->coverPhoto->path_to_img;
-            $coverImage = filter_var($path, FILTER_VALIDATE_URL)
-                ? $path
-                : Storage::disk('public')->url($path);
-        }
+        // storage_url() is R2-aware: full URLs pass through, relative paths
+        // map to R2_PUBLIC_URL in production instead of APP_URL/storage.
+        $coverImage = $zone->relationLoaded('coverPhoto')
+            ? storage_url($zone->coverPhoto?->path_to_img)
+            : null;
 
         return [
             'id' => $zone->id,
