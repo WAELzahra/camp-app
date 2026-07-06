@@ -56,6 +56,10 @@ class RegisteredUserController extends Controller
                 'is_active' => $isActive,
                 'first_login' => true,
                 'nombre_signalement' => 0,
+                // KYC (Task A-01): providers start blocked until admin verification;
+                // campers stay active — their KYC only triggers on withdrawal/equipment rental.
+                'kyc_status'     => $role->name === 'campeur' ? 'not_required' : 'pending',
+                'account_status' => $role->name === 'campeur' ? 'active' : 'pending_kyc',
             ]);
 
             // 2️⃣ Créer le profile général
@@ -71,11 +75,14 @@ class RegisteredUserController extends Controller
             ];
             $profileType = $profileTypeMap[$role->name] ?? $role->name;
 
+            // Engagement mode (Task A-02): always starts in commission mode;
+            // providers can switch it later from their profile settings.
             DB::table('profiles')->insert([
                 'user_id' => $user->id,
                 'bio' => null,
                 'cover_image' => null,
                 'type' => $profileType,
+                'engagement_mode' => 'commission',
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);

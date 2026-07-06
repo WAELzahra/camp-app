@@ -29,6 +29,7 @@ class Kernel extends HttpKernel
     'require.active'  => \App\Http\Middleware\RequireActiveAccount::class,
     'admin'           => \App\Http\Middleware\AdminMiddleware::class,
     'role'            => \App\Http\Middleware\RoleMiddleware::class,
+    'kyc.verified'    => \App\Http\Middleware\EnsureKycVerified::class,
 ];
 
 

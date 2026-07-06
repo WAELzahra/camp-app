@@ -826,6 +826,12 @@ class EventController extends Controller
                         );
                     }
 
+                    // Unified payment trace (admin "Transactions" tab)
+                    \App\Services\Payments\ReservationLedgerService::recordGatewayPayment(
+                        $reservation->user_id, $reservation->id, 'event',
+                        $totalToRelease, 'reservation_credit', $reservation->payment_reference ?? null
+                    );
+
                     DB::commit();
                 } catch (\Throwable $e) {
                     DB::rollBack();
@@ -857,6 +863,25 @@ class EventController extends Controller
                     return response()->json(['success' => false, 'message' => 'Erreur lors du remboursement.'], 500);
                 }
             }
+        }
+
+        // ── MANUAL payment accepted by the organizer: settle the paid tranche ──
+        if ($reservation->payment_method === 'manual'
+            && $reservation->payment_confirmed_at
+            && $reservation->status === 'en_attente_validation'
+            && $newStatus === 'confirmée') {
+            $platformFeeAmt = round((float) ($reservation->platform_fee_amount ?? 0), 2);
+            $grossFull = round($netBase + $servicesTotal + $platformFeeAmt, 2);
+            $tranche = $reservation->payment_option === 'deposit'
+                ? (float) ($reservation->amount_now ?? $grossFull)
+                : $grossFull;
+
+            DB::transaction(fn () => \App\Services\Payments\ReservationLedgerService::creditManualTranche(
+                'event_reservation', $reservation->id,
+                (int) $reservation->group_id, 'group', (int) $reservation->user_id,
+                $grossFull, $platformFeeAmt, $tranche, true,
+                "Revenu réservation événement : {$event->title} (paiement manuel)"
+            ));
         }
 
         $reservation->status = $newStatus;

@@ -483,8 +483,12 @@ Route::middleware('auth:sanctum')->group(function () {
             'status'           => 'en_attente',
         ]);
 
+        // KYC (Task A-01): withdrawal is a camper KYC trigger — runs in
+        // parallel, the withdrawal itself is never blocked or reversed.
+        \App\Services\Kyc\KycTriggerService::triggerForCamper(auth()->user());
+
         return response()->json(['success' => true, 'data' => $wd], 201);
-    });
+    })->middleware('kyc.verified');
 
     // ---- My withdrawals (user reads own) ----
     Route::get('/my/withdrawals', function (\Illuminate\Http\Request $request) {
@@ -786,7 +790,7 @@ Route::middleware('auth:sanctum')->group(function () {
         // Public: get available equipment from organizer's suppliers for a specific event
         Route::get('/{eventId}/materials', [\App\Http\Controllers\Organizer\OrganizerSupplierController::class, 'eventMaterials']);
 
-        Route::middleware(['group', 'require.active'])->group(function () {
+        Route::middleware(['group', 'require.active', 'kyc.verified'])->group(function () {
             Route::post('/', [EventController::class, 'store']);
             Route::put('/{id}', [EventController::class, 'update']);
             Route::delete('/{id}', [EventController::class, 'destroy']);
@@ -959,7 +963,7 @@ Route::patch('reservation/materiel/{id}/confirm', [ReservationMaterielleControll
 Route::middleware(['auth:sanctum', 'supplier_or_camper'])->group(function () {
     Route::prefix('materielles')->group(function () {
         Route::get('/{materielle_id}/edit', [MaterielleController::class, 'edit']);
-        Route::post('/', [MaterielleController::class, 'store']);
+        Route::post('/', [MaterielleController::class, 'store'])->middleware('kyc.verified');
         Route::post('/{id}', [MaterielleController::class, 'update']);
         Route::delete('/{id}', [MaterielleController::class, 'destroy']);
         Route::patch('/{id}/activate', [MaterielleController::class, 'activate']);
@@ -1537,6 +1541,62 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
 });
 
 // ==================== LEGAL DOCUMENT ROUTES ====================
+
+
+/*
+|--------------------------------------------------------------------------
+| KYC / Engagement mode / Payment traceability (Tasks A-01, A-02, A-04)
+|--------------------------------------------------------------------------
+*/
+
+// Public: only active payment gateways are shown to users
+Route::get('/payment-gateways/active', [\App\Http\Controllers\Payment\PaymentTransactionController::class, 'activeGateways']);
+
+Route::middleware('auth:sanctum')->group(function () {
+    // KYC — user side (status + encrypted document upload)
+    Route::get('/kyc/status',     [\App\Http\Controllers\Kyc\KycController::class, 'status']);
+    Route::post('/kyc/documents', [\App\Http\Controllers\Kyc\KycController::class, 'upload']);
+    Route::get('/kyc/legal-document', [\App\Http\Controllers\Kyc\KycController::class, 'legalDocument']);
+    Route::get('/my/documents/{kind}', [\App\Http\Controllers\Documents\PersonalDocumentController::class, 'showOwn'])->where('kind', 'cin|certificat|patente|cin_commercant|registre_commerce');
+
+    // Engagement mode — provider side
+    Route::get('/engagement-mode',                 [\App\Http\Controllers\Engagement\EngagementModeController::class, 'show']);
+    Route::post('/engagement-mode/change-request', [\App\Http\Controllers\Engagement\EngagementModeController::class, 'requestChange']);
+
+    // Payment reconciliation — own transactions only
+    Route::get('/my/payment-transactions',        [\App\Http\Controllers\Payment\PaymentTransactionController::class, 'myIndex']);
+    Route::get('/my/payment-transactions/export', [\App\Http\Controllers\Payment\PaymentTransactionController::class, 'myExport']);
+});
+
+Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function () {
+    // KYC verification console (Task A-01 §1F)
+    Route::get('/kyc/pending',          [\App\Http\Controllers\Admin\AdminKycController::class, 'pending']);
+    Route::get('/kyc/{user}/document',  [\App\Http\Controllers\Admin\AdminKycController::class, 'downloadDocument']);
+    Route::get('/kyc/{user}/legal-document', [\App\Http\Controllers\Admin\AdminKycController::class, 'downloadLegalDocument']);
+    Route::get('/users/{user}/documents/{kind}', [\App\Http\Controllers\Documents\PersonalDocumentController::class, 'showForAdmin'])->where('kind', 'cin|certificat|patente|cin_commercant|registre_commerce')->whereNumber('user');
+    Route::get('/kyc/{user}',           [\App\Http\Controllers\Admin\AdminKycController::class, 'show'])->whereNumber('user');
+    Route::post('/kyc/{user}/approve',  [\App\Http\Controllers\Admin\AdminKycController::class, 'approve']);
+    Route::post('/kyc/{user}/reject',   [\App\Http\Controllers\Admin\AdminKycController::class, 'reject']);
+
+    // Engagement mode requests (Task A-02 §2C)
+    Route::get('/engagement-mode/requests',           [\App\Http\Controllers\Engagement\EngagementModeController::class, 'pendingRequests']);
+    Route::post('/engagement-mode/{profile}/approve', [\App\Http\Controllers\Engagement\EngagementModeController::class, 'approveChange']);
+    Route::post('/engagement-mode/{profile}/reject',  [\App\Http\Controllers\Engagement\EngagementModeController::class, 'rejectChange']);
+    Route::patch('/engagement-mode/{profile}/rates',  [\App\Http\Controllers\Engagement\EngagementModeController::class, 'updateRates']);
+
+    // Invoicing engine (Task A-03)
+    Route::get('/invoices',                [\App\Http\Controllers\Admin\AdminInvoiceController::class, 'index']);
+    Route::post('/invoices',               [\App\Http\Controllers\Admin\AdminInvoiceController::class, 'store']);
+    Route::get('/invoices/{invoice}/pdf',  [\App\Http\Controllers\Admin\AdminInvoiceController::class, 'downloadPdf']);
+    Route::post('/invoices/{invoice}/void',[\App\Http\Controllers\Admin\AdminInvoiceController::class, 'void']);
+
+    // Payment gateways console + full reconciliation (Task A-04)
+    Route::get('/payment-gateways',                    [\App\Http\Controllers\Payment\PaymentTransactionController::class, 'gateways']);
+    Route::patch('/payment-gateways/{gateway}/toggle', [\App\Http\Controllers\Payment\PaymentTransactionController::class, 'toggleGateway']);
+    Route::get('/payment-transactions',                [\App\Http\Controllers\Payment\PaymentTransactionController::class, 'adminIndex']);
+    Route::get('/payment-transactions/export',         [\App\Http\Controllers\Payment\PaymentTransactionController::class, 'adminExport']);
+    Route::post('/payment-transactions/{transaction}/refund', [\App\Http\Controllers\Payment\PaymentTransactionController::class, 'refund']);
+});
 
 // Public — signup page links to current doc versions
 Route::get('/legal/documents', [\App\Http\Controllers\Legal\LegalDocumentController::class, 'index']);

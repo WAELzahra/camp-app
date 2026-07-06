@@ -23,7 +23,8 @@ class ProfileGuideResource extends BaseApiResource
         ];
 
         if ($this->isSelf && $this->certificat_path) {
-            $data['certificat_url'] = storage_url($this->certificat_path);
+            // Encrypted at rest — served decrypted through the authenticated endpoint
+            $data['certificat_url'] = url('/api/my/documents/certificat');
         }
 
         return $data;

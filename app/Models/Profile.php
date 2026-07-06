@@ -21,6 +21,12 @@ class Profile extends Model
         'city',
         'address',
         'is_public',
+        'engagement_mode',
+        'commission_rate',
+        'agency_margin',
+        'engagement_mode_locked_at',
+        'engagement_mode_change_requested_at',
+        'engagement_mode_change_to',
     ];
 
     protected $casts = [

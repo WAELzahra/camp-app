@@ -363,15 +363,16 @@ class ProfileController extends Controller
                             $guide = ProfileGuide::create(['profile_id' => $profile->id]);
                         }
 
-                        // Delete old certificat if exists
-                        if ($guide->certificat_path && Storage::disk('public')->exists($guide->certificat_path)) {
-                            Storage::disk('public')->delete($guide->certificat_path);
+                        // Delete old certificat (encrypted store + legacy public disk)
+                        if ($guide->certificat_path) {
+                            app(\App\Services\Storage\EncryptedDocumentStore::class)->delete($guide->certificat_path);
+                            if (Storage::disk('public')->exists($guide->certificat_path)) {
+                                Storage::disk('public')->delete($guide->certificat_path);
+                            }
                         }
 
-                        // Store new certificat
-                        $directory = 'documents/guides';
-                        $filename = 'certificat_'.$user->id.'_'.time().'.'.$file->getClientOriginalExtension();
-                        $path = $file->storeAs($directory, $filename, 'public');
+                        // Store new certificat ENCRYPTED at rest
+                        $path = app(\App\Services\Storage\EncryptedDocumentStore::class)->put('certificats/'.$user->id, $file);
                         $guideData['certificat_path'] = $path;
 
                         \Log::info('Certificat uploaded:', ['path' => $path]);
@@ -465,26 +466,32 @@ class ProfileController extends Controller
                             $centre = ProfileCentre::create(['profile_id' => $profile->id]);
                         }
 
-                        // Delete old document if exists (check both fields for backward compatibility)
-                        if ($centre->legal_document && Storage::disk('public')->exists($centre->legal_document)) {
-                            Storage::disk('public')->delete($centre->legal_document);
+                        // Delete old document (legacy public-disk files and encrypted ones)
+                        $docStore = app(\App\Services\Storage\EncryptedDocumentStore::class);
+                        if ($centre->legal_document) {
+                            $docStore->delete($centre->legal_document);
+                            if (Storage::disk('public')->exists($centre->legal_document)) {
+                                Storage::disk('public')->delete($centre->legal_document);
+                            }
                         }
 
-                        // Store new document - USE legal_document field
-                        $directory = 'documents/centres';
-                        $filename = 'legal_doc_'.$user->id.'_'.time().'.'.$file->getClientOriginalExtension();
-                        $path = $file->storeAs($directory, $filename, 'public');
-                        $centreData['legal_document'] = $path; // Changed from document_legal_path
+                        // Store new document ENCRYPTED at rest (default disk = R2 in prod);
+                        // it is only readable through the authorized decrypt endpoints.
+                        $path = $docStore->put('legal/'.$user->id, $file);
+                        $centreData['legal_document'] = $path;
 
-                        \Log::info('Legal document uploaded:', ['path' => $path]);
+                        \Log::info('Legal document uploaded (encrypted):', ['path' => $path]);
                     }
 
                     // Handle delete document flag - USE legal_document
                     if ($request->has('delete_document') && $request->delete_document == '1') {
                         $centre = $profile->profileCentre;
                         if ($centre) {
-                            if ($centre->legal_document && Storage::disk('public')->exists($centre->legal_document)) {
-                                Storage::disk('public')->delete($centre->legal_document);
+                            if ($centre->legal_document) {
+                                app(\App\Services\Storage\EncryptedDocumentStore::class)->delete($centre->legal_document);
+                                if (Storage::disk('public')->exists($centre->legal_document)) {
+                                    Storage::disk('public')->delete($centre->legal_document);
+                                }
                             }
                             $centreData['legal_document'] = null; // Changed from document_legal_path
                             $centreData['document_legal_type'] = null;
@@ -527,15 +534,16 @@ class ProfileController extends Controller
                             $groupe = ProfileGroupe::create(['profile_id' => $profile->id]);
                         }
 
-                        // Delete old patente if exists
-                        if ($groupe->patente_path && Storage::disk('public')->exists($groupe->patente_path)) {
-                            Storage::disk('public')->delete($groupe->patente_path);
+                        // Delete old patente (encrypted store + legacy public disk)
+                        if ($groupe->patente_path) {
+                            app(\App\Services\Storage\EncryptedDocumentStore::class)->delete($groupe->patente_path);
+                            if (Storage::disk('public')->exists($groupe->patente_path)) {
+                                Storage::disk('public')->delete($groupe->patente_path);
+                            }
                         }
 
-                        // Store new patente
-                        $directory = 'documents/groupes';
-                        $filename = 'patente_'.$user->id.'_'.time().'.'.$file->getClientOriginalExtension();
-                        $path = $file->storeAs($directory, $filename, 'public');
+                        // Store new patente ENCRYPTED at rest
+                        $path = app(\App\Services\Storage\EncryptedDocumentStore::class)->put('patentes/'.$user->id, $file);
                         $groupeData['patente_path'] = $path;
 
                         \Log::info('Patente uploaded:', ['path' => $path]);
@@ -591,18 +599,20 @@ class ProfileController extends Controller
                     throw new \Exception('CIN validation failed: '.json_encode($validator->errors()));
                 }
 
-                // Delete old CIN if exists
-                if ($profile->cin_path && Storage::disk('public')->exists($profile->cin_path)) {
-                    Storage::disk('public')->delete($profile->cin_path);
+                // Delete old CIN if exists (encrypted store + legacy public disk)
+                if ($profile->cin_path) {
+                    app(\App\Services\Storage\EncryptedDocumentStore::class)->delete($profile->cin_path);
+                    if (Storage::disk('public')->exists($profile->cin_path)) {
+                        Storage::disk('public')->delete($profile->cin_path);
+                    }
                 }
 
-                // Store new CIN
-                $directory = 'documents/cin';
-                $filename = 'cin_'.$user->id.'_'.time().'.'.$file->getClientOriginalExtension();
-                $path = $file->storeAs($directory, $filename, 'public');
+                // Store new CIN ENCRYPTED at rest — served only through the
+                // authorized decrypt endpoints (self + admin).
+                $path = app(\App\Services\Storage\EncryptedDocumentStore::class)->put('cin/'.$user->id, $file);
                 $profile->update(['cin_path' => $path]);
 
-                \Log::info('CIN uploaded:', ['path' => $path]);
+                \Log::info('CIN uploaded (encrypted):', ['path' => $path]);
             }
 
             // Handle CIN deletion

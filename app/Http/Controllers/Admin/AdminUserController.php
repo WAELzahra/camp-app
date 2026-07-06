@@ -164,7 +164,7 @@ class AdminUserController extends Controller
                         'tarif' => $pg->tarif,
                         'zone_travail' => $pg->zone_travail,
                         'has_certificat' => (bool) $pg->certificat_path,
-                        'certificat_url' => $pg->certificat_path ? storage_url($pg->certificat_path) : null,
+                        'certificat_url' => $pg->certificat_path ? url("/api/admin/users/{$user->id}/documents/certificat") : null,
                         'certificat_type' => $pg->certificat_type,
                         'certificat_expiration' => $pg->certificat_expiration
                             ? $pg->certificat_expiration->format('Y-m-d') : null,
@@ -176,7 +176,7 @@ class AdminUserController extends Controller
                     $profileExtra['profile_groupe'] = [
                         'nom_groupe' => $pg->nom_groupe,
                         'has_patente' => (bool) $pg->patente_path,
-                        'patente_url' => $pg->patente_path ? storage_url($pg->patente_path) : null,
+                        'patente_url' => $pg->patente_path ? url("/api/admin/users/{$user->id}/documents/patente") : null,
                     ];
                 }
 
@@ -828,7 +828,7 @@ class AdminUserController extends Controller
                 'type' => $user->profile->type,
                 'activities' => $user->profile->activities,
                 'has_cin' => (bool) $user->profile->cin_path,
-                'cin_url' => $user->profile->cin_path ? storage_url($user->profile->cin_path) : null,
+                'cin_url' => $user->profile->cin_path ? url("/api/admin/users/{$user->id}/documents/cin") : null,
             ];
         }
 
@@ -878,7 +878,7 @@ class AdminUserController extends Controller
             // CIN
             $documents['cin'] = [
                 'has_cin' => (bool) $user->profile->cin_path,
-                'url' => $user->profile->cin_path ? storage_url($user->profile->cin_path) : null,
+                'url' => $user->profile->cin_path ? url("/api/admin/users/{$user->id}/documents/cin") : null,
             ];
 
             // Documents guide
@@ -888,7 +888,7 @@ class AdminUserController extends Controller
                     'has_certificat' => (bool) $guide->certificat_path,
                     'certificat_type' => $guide->certificat_type,
                     'certificat_expiration' => $guide->certificat_expiration,
-                    'certificat_url' => $guide->certificat_path ? storage_url($guide->certificat_path) : null,
+                    'certificat_url' => $guide->certificat_path ? url("/api/admin/users/{$user->id}/documents/certificat") : null,
                 ];
             }
 
@@ -899,7 +899,7 @@ class AdminUserController extends Controller
                     'has_legal_document' => (bool) $centre->legal_document,
                     'document_legal_type' => $centre->document_legal_type,
                     'document_legal_expiration' => $centre->document_legal_expiration,
-                    'document_legal_url' => $centre->legal_document ? storage_url($centre->legal_document) : null,
+                    'document_legal_url' => $centre->legal_document ? url("/api/admin/kyc/{$user->id}/legal-document") : null,
                 ];
             }
 
@@ -908,7 +908,7 @@ class AdminUserController extends Controller
                 $groupe = $user->profile->profileGroupe;
                 $documents['groupe'] = [
                     'has_patente' => (bool) $groupe->patente_path,
-                    'patente_url' => $groupe->patente_path ? storage_url($groupe->patente_path) : null,
+                    'patente_url' => $groupe->patente_path ? url("/api/admin/users/{$user->id}/documents/patente") : null,
                 ];
             }
 
@@ -917,9 +917,9 @@ class AdminUserController extends Controller
                 $fournisseur = $user->profile->profileFournisseur;
                 $documents['fournisseur'] = [
                     'has_cin_commercant' => (bool) $fournisseur->cin_commercant_path,
-                    'cin_commercant_url' => $fournisseur->cin_commercant_path ? storage_url($fournisseur->cin_commercant_path) : null,
+                    'cin_commercant_url' => $fournisseur->cin_commercant_path ? url("/api/admin/users/{$user->id}/documents/cin_commercant") : null,
                     'has_registre_commerce' => (bool) $fournisseur->registre_commerce_path,
-                    'registre_commerce_url' => $fournisseur->registre_commerce_path ? storage_url($fournisseur->registre_commerce_path) : null,
+                    'registre_commerce_url' => $fournisseur->registre_commerce_path ? url("/api/admin/users/{$user->id}/documents/registre_commerce") : null,
                 ];
             }
         }

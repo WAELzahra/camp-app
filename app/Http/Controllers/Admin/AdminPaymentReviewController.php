@@ -105,6 +105,12 @@ class AdminPaymentReviewController extends Controller
         $wasBalance = ($reservation->status === 'solde_soumis');
         $newStatus = $this->resolveConfirmedStatus($reservation, $type);
 
+        // Amount actually received with THIS confirmation (before mutating fields)
+        $grossTotal = (float) ($reservation->total_price ?? $reservation->montant_total ?? (($reservation->amount_now ?? 0) + ($reservation->amount_later ?? 0)));
+        $tranche = $wasBalance
+            ? (float) ($reservation->amount_later ?? 0)
+            : ($reservation->payment_option === 'deposit' ? (float) ($reservation->amount_now ?? $grossTotal) : $grossTotal);
+
         $reservation->status = $newStatus;
         $reservation->payment_confirmed_at = now();
         $reservation->confirmed_by = Auth::id();
@@ -112,6 +118,32 @@ class AdminPaymentReviewController extends Controller
             $reservation->amount_later = 0; // balance settled in full
         }
         $reservation->save();
+
+        // ── Money traceability (Task A-04) ──────────────────────────────────
+        $reservationTypeKey = match ($type) { 'events' => 'event', 'centres' => 'centre', default => 'materielle' };
+        \App\Services\Payments\ReservationLedgerService::recordGatewayPayment(
+            (int) $reservation->user_id, (int) $reservation->id, $reservationTypeKey,
+            $tranche, 'flouci',
+            ($reservation->payment_reference ?? 'RES-' . $reservation->id) . ($wasBalance ? '-SOLDE' : '')
+        );
+
+        // Balance settlement: the provider already accepted the reservation, so
+        // the remaining tranche is earned NOW — credit it (fee was charged on tranche 1).
+        if ($wasBalance && $tranche > 0) {
+            [$providerId, $commissionKey, $refType] = match ($type) {
+                'events'  => [(int) $reservation->group_id, 'group', 'event_reservation'],
+                'centres' => [(int) $reservation->centre_id, 'center', 'centre_reservation'],
+                default   => [(int) $reservation->fournisseur_id,
+                              (\App\Models\User::find($reservation->fournisseur_id)?->role_id === 4 ? 'supplier' : 'camper'),
+                              'materiel_reservation'],
+            };
+
+            \Illuminate\Support\Facades\DB::transaction(fn () => \App\Services\Payments\ReservationLedgerService::creditManualTranche(
+                $refType, (int) $reservation->id, $providerId, $commissionKey, (int) $reservation->user_id,
+                $grossTotal, (float) ($reservation->platform_fee_amount ?? 0), $tranche, false,
+                "Solde réservation #{$reservation->id} (paiement manuel)"
+            ));
+        }
 
         $this->notifyUser(
             $reservation->user_id,

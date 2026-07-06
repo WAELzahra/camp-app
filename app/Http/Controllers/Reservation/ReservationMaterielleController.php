@@ -295,6 +295,10 @@ class ReservationMaterielleController extends Controller
                 'balance_due_at' => $balanceDueAt,
             ]);
 
+            // KYC (Task A-01): equipment reservation is a camper KYC trigger —
+            // runs in parallel, the reservation is never blocked or reversed.
+            \App\Services\Kyc\KycTriggerService::triggerForCamper($user);
+
             // Set the payment reference now that we have the ID
             if ($paymentMethod === 'manual') {
                 $reservation->payment_reference = PaymentReferenceService::forReservation($reservation->id);
@@ -448,6 +452,31 @@ class ReservationMaterielleController extends Controller
                         $reservation->fournisseur_id
                     );
                 }
+
+                // Unified payment trace (admin "Transactions" tab)
+                \App\Services\Payments\ReservationLedgerService::recordGatewayPayment(
+                    $reservation->user_id, $reservation->id, 'materielle',
+                    $gross, 'reservation_credit', $reservation->payment_reference ?? null
+                );
+            } elseif ($reservation->montant_total > 0
+                && $reservation->payment_method === 'manual'
+                && $reservation->payment_confirmed_at) {
+                // MANUAL payment accepted by the supplier: settle the paid tranche.
+                $reservation->load('fournisseur');
+                $receiverType = ($reservation->fournisseur && $reservation->fournisseur->role_id === 4)
+                    ? 'supplier' : 'camper';
+                $gross = (float) $reservation->montant_total;
+                $fee = (float) ($reservation->platform_fee_amount ?? 0);
+                $tranche = $reservation->payment_option === 'deposit'
+                    ? (float) ($reservation->amount_now ?? $gross)
+                    : $gross;
+
+                DB::transaction(fn () => \App\Services\Payments\ReservationLedgerService::creditManualTranche(
+                    'materiel_reservation', $reservation->id,
+                    (int) $reservation->fournisseur_id, $receiverType, (int) $reservation->user_id,
+                    $gross, $fee, $tranche, true,
+                    "Revenu réservation matériel #{$reservation->id} (paiement manuel)"
+                ));
             }
 
             DB::commit();

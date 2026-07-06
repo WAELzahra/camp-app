@@ -34,7 +34,9 @@ class ProfileCentreResource extends BaseApiResource
         ];
 
         if ($this->isSelf && $this->legal_document) {
-            $data['legal_document_url'] = storage_url($this->legal_document);
+            // Legal documents are encrypted at rest — served decrypted through
+            // the authenticated endpoint, never as a raw storage URL.
+            $data['legal_document_url'] = url('/api/kyc/legal-document');
         }
 
         return $data;

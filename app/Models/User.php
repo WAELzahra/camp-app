@@ -33,6 +33,14 @@ class User extends Authenticatable implements MustVerifyEmail
         'avatar',
         'provider',
         'provider_id',
+        'kyc_status',
+        'kyc_submitted_at',
+        'kyc_verified_at',
+        'kyc_rejected_at',
+        'kyc_document_type',
+        'kyc_document_path',
+        'kyc_notes',
+        'account_status',
     ];
 
     protected $hidden = [
@@ -42,6 +50,9 @@ class User extends Authenticatable implements MustVerifyEmail
         'id',
         'role_id',
         'provider_id',
+        // KYC internals — document path and admin notes are never exposed to users
+        'kyc_document_path',
+        'kyc_notes',
     ];
 
     protected $casts = [
@@ -50,7 +61,21 @@ class User extends Authenticatable implements MustVerifyEmail
         'first_login'       => 'boolean',
         'password'          => 'hashed',
         'preferences'       => 'array',
+        'kyc_submitted_at'  => 'datetime',
+        'kyc_verified_at'   => 'datetime',
+        'kyc_rejected_at'   => 'datetime',
     ];
+
+    /** Camper (and admin) accounts never require up-front KYC. */
+    public function isKycExempt(): bool
+    {
+        return in_array($this->role?->name, ['campeur', 'admin'], true);
+    }
+
+    public function isKycVerified(): bool
+    {
+        return $this->kyc_status === 'verified';
+    }
 
     protected static function boot(): void
     {

@@ -898,6 +898,30 @@ class ReservationsCentreController extends Controller
                     $reservation->centre_id
                 );
             }
+
+            // Unified payment trace (admin "Transactions" tab)
+            \App\Services\Payments\ReservationLedgerService::recordGatewayPayment(
+                $reservation->user_id, $reservation->id, 'centre',
+                $gross, 'reservation_credit', $reservation->payment_reference ?? null
+            );
+        } elseif ($reservation->payment_method === 'manual'
+            && $reservation->payment_confirmed_at
+            && $reservation->total_price > 0) {
+            // MANUAL payment accepted by the host: settle the paid tranche now.
+            // Deposits settle amount_now here; the balance settles when the
+            // admin confirms the solde (AdminPaymentReviewController).
+            $gross   = (float) $reservation->total_price;
+            $fee     = (float) ($reservation->platform_fee_amount ?? 0);
+            $tranche = $reservation->payment_option === 'deposit'
+                ? (float) ($reservation->amount_now ?? $gross)
+                : $gross;
+
+            DB::transaction(fn () => \App\Services\Payments\ReservationLedgerService::creditManualTranche(
+                'centre_reservation', $reservation->id,
+                (int) $reservation->centre_id, 'center', (int) $reservation->user_id,
+                $gross, $fee, $tranche, true,
+                "Revenu réservation #{$reservation->id} (paiement manuel)"
+            ));
         }
 
         // Send email
