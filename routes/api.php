@@ -173,6 +173,18 @@ Route::get('/boutiques/uuid/{uuid}', [BoutiqueController::class, 'showByUuid']);
 Route::get('/boutiques/{fournisseur_id}', [BoutiqueController::class, 'show']);
 Route::get('/materielles/categories', [MaterielleController::class, 'categories']);
 Route::get('/materielles/fournisseur/{fournisseur_id}', [MaterielleController::class, 'index']);
+// "me" MUST be registered before the {materielle_id} wildcard below — Laravel
+// matches routes in registration order and show() accepts non-numeric slugs,
+// so nothing here can safely constrain the wildcard to exclude "me" instead.
+Route::middleware('auth:sanctum')->get('/materielles/me', function (Request $request) {
+    $materielles = \App\Models\Materielles::with(['photos', 'category', 'seasonalRates'])
+        ->where('fournisseur_id', $request->user()->id)
+        ->get();
+    // Append the R2-aware absolute URL to each photo so the frontend
+    // never has to resolve storage paths itself.
+    $materielles->each(fn($m) => $m->photos->each->append('url'));
+    return response()->json(['data' => $materielles]);
+});
 Route::get('/materielles/{materielle_id}', [MaterielleController::class, 'show']);
 Route::get('/materielles/{materielle_id}/quote', [MaterielleController::class, 'quote'])->where('materielle_id', '[0-9]+');
 Route::get('/materielles/compare/{id1}/{id2}', [MaterielleController::class, 'compare']);
@@ -297,15 +309,6 @@ Route::middleware('auth:sanctum')->group(function () {
         return $boutique
             ? response()->json($boutique)
             : response()->json(null, 204);
-    });
-    Route::get('/materielles/me', function (Request $request) {
-        $materielles = \App\Models\Materielles::with(['photos', 'category', 'seasonalRates'])
-            ->where('fournisseur_id', $request->user()->id)
-            ->get();
-        // Append the R2-aware absolute URL to each photo so the frontend
-        // never has to resolve storage paths itself.
-        $materielles->each(fn($m) => $m->photos->each->append('url'));
-        return response()->json(['data' => $materielles]);
     });
     Route::get('/groupes/my/co-owners', function (Request $request) {
         return app(\App\Http\Controllers\Groupe\GroupeCoOwnerController::class)->list(
@@ -1556,6 +1559,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // KYC — user side (status + encrypted document upload)
     Route::get('/kyc/status',     [\App\Http\Controllers\Kyc\KycController::class, 'status']);
     Route::post('/kyc/documents', [\App\Http\Controllers\Kyc\KycController::class, 'upload']);
+    Route::get('/kyc/document',   [\App\Http\Controllers\Kyc\KycController::class, 'document']);
     Route::get('/kyc/legal-document', [\App\Http\Controllers\Kyc\KycController::class, 'legalDocument']);
     Route::get('/my/documents/{kind}', [\App\Http\Controllers\Documents\PersonalDocumentController::class, 'showOwn'])->where('kind', 'cin|certificat|patente|cin_commercant|registre_commerce');
 

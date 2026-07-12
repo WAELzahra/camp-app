@@ -71,6 +71,23 @@ class KycController extends Controller
     }
 
     /**
+     * GET /kyc/document — the user views their OWN submitted KYC document
+     * (encrypted at rest; decrypted here, streamed inline so the profile
+     * page can keep showing it after a refresh).
+     */
+    public function document(Request $request, KycDocumentStore $store)
+    {
+        $path = $request->user()->kyc_document_path;
+
+        abort_if(empty($path), 404, 'Aucun document.');
+        abort_unless($store->exists($path), 404, 'Fichier introuvable.');
+
+        return response($store->get($path))
+            ->header('Content-Type', $store->mimeType($path))
+            ->header('Content-Disposition', 'inline; filename="kyc-document.' . $store->extension($path) . '"');
+    }
+
+    /**
      * GET /kyc/legal-document — a centre owner views their own legal
      * document (stored encrypted; decrypted here, streamed inline).
      */
