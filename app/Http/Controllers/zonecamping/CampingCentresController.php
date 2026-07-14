@@ -8,6 +8,7 @@ use App\Models\CampingCentre;
 use App\Models\Favoris;
 use App\Models\Photo;
 use App\Models\ProfileCentre;
+use App\Services\ProviderIdentityGuard;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -18,7 +19,16 @@ class CampingCentresController extends Controller
      */
     public function getCentresMap()
     {
-        $centres = CampingCentre::select('id', 'nom', 'adresse', 'lat', 'lng', 'type', 'image')->get();
+        $userId = Auth::id();
+        $centres = CampingCentre::select('id', 'nom', 'adresse', 'lat', 'lng', 'type', 'image', 'user_id')->get()
+            ->map(function ($centre) use ($userId) {
+                $revealed = ProviderIdentityGuard::hasPaidCentre($userId, $centre->user_id);
+                $centre->nom = $revealed ? $centre->nom : ProviderIdentityGuard::centreLabel('Camping', ProviderIdentityGuard::extractRegion($centre->adresse));
+                $centre->identity_revealed = $revealed;
+                unset($centre->user_id);
+
+                return $centre;
+            });
 
         return response()->json([
             'status' => 'success',
@@ -38,8 +48,10 @@ class CampingCentresController extends Controller
             ->where('disponibilite', true)
             ->get();
 
-        $data = $centres->map(function ($centre) {
+        $requesterId = Auth::id();
+        $data = $centres->map(function ($centre) use ($requesterId) {
             $userId = $centre->profile?->user_id;
+            $revealed = ProviderIdentityGuard::hasPaidCentre($requesterId, $userId);
             $photos = [];
             $coverImage = null;
             $centreSlug = null;
@@ -70,8 +82,9 @@ class CampingCentresController extends Controller
 
             return [
                 'id' => $centre->id,
-                'slug' => $centreSlug,
-                'name' => $centre->name,
+                'slug' => $revealed ? $centreSlug : null,
+                'name' => $revealed ? $centre->name : ProviderIdentityGuard::centreLabel($centre->category, $centre->profile?->city),
+                'identity_revealed' => $revealed,
                 'description' => $centre->profile?->bio ?? '',
                 'latitude' => (float) $centre->latitude,
                 'longitude' => (float) $centre->longitude,
@@ -127,22 +140,26 @@ class CampingCentresController extends Controller
             $photos = collect([['id' => null, 'url' => $coverImage, 'is_cover' => true]]);
         }
 
+        $revealed = ProviderIdentityGuard::hasPaidCentre(Auth::id(), $centre->user_id);
+        $category = $pc?->category ?? 'Camping';
+
         return response()->json([
             'status' => 'success',
             'data' => [
                 'id' => $centre->id,
-                'slug' => $centre->slug,
-                'name' => $centre->nom,
+                'slug' => $revealed ? $centre->slug : null,
+                'name' => $revealed ? $centre->nom : ProviderIdentityGuard::centreLabel($category, $centre->user?->profile?->city),
+                'identity_revealed' => $revealed,
                 'capacite' => $pc?->capacite ?? 0,
                 'price_per_night' => $pc ? (float) $pc->price_per_night : 0,
-                'category' => $pc?->category ?? 'Camping',
+                'category' => $category,
                 'disponibilite' => $pc ? (bool) $pc->disponibilite : true,
                 'latitude' => $centre->lat ? (string) $centre->lat : null,
                 'longitude' => $centre->lng ? (string) $centre->lng : null,
-                'telephone' => $centre->telephone,
-                'contact_email' => $pc?->contact_email,
-                'contact_phone' => $pc?->contact_phone,
-                'manager_name' => $pc?->manager_name,
+                'telephone' => $revealed ? $centre->telephone : null,
+                'contact_email' => $revealed ? $pc?->contact_email : null,
+                'contact_phone' => $revealed ? $pc?->contact_phone : null,
+                'manager_name' => $revealed ? $pc?->manager_name : null,
                 'average_rating' => null,
                 'review_count' => 0,
                 'is_partner' => $isPartner,
@@ -155,8 +172,8 @@ class CampingCentresController extends Controller
                     'cover_image' => $coverImage,
                     'user' => $centre->user ? [
                         'id' => $centre->user->id,
-                        'first_name' => $centre->user->first_name,
-                        'last_name' => $centre->user->last_name,
+                        'first_name' => $revealed ? $centre->user->first_name : null,
+                        'last_name' => $revealed ? $centre->user->last_name : null,
                     ] : null,
                 ],
                 'available_services' => [],
@@ -189,9 +206,19 @@ class CampingCentresController extends Controller
             $query->where('type', $request->type);
         }
 
+        $userId = Auth::id();
+        $results = $query->get()->map(function ($centre) use ($userId) {
+            $revealed = ProviderIdentityGuard::hasPaidCentre($userId, $centre->user_id);
+            $centre->nom = $revealed ? $centre->nom : ProviderIdentityGuard::centreLabel('Camping', ProviderIdentityGuard::extractRegion($centre->adresse));
+            $centre->slug = $revealed ? $centre->slug : null;
+            $centre->identity_revealed = $revealed;
+
+            return $centre;
+        });
+
         return response()->json([
             'status' => 'success',
-            'data' => $query->get(),
+            'data' => $results,
         ]);
     }
 
@@ -307,12 +334,14 @@ class CampingCentresController extends Controller
         }
 
         $url = url('/centres/'.$centre->id);
+        $revealed = ProviderIdentityGuard::hasPaidCentre(Auth::id(), $centre->user_id);
+        $shareName = $revealed ? $centre->nom : 'ce centre vérifié Tunisia Camp';
 
         return response()->json([
             'message' => 'Lien de partage généré',
             'url' => $url,
             'share_links' => [
-                'whatsapp' => 'https://wa.me/?text='.urlencode('Découvrez ce lieu : '.$centre->nom.' '.$url),
+                'whatsapp' => 'https://wa.me/?text='.urlencode('Découvrez ce lieu : '.$shareName.' '.$url),
                 'facebook' => 'https://www.facebook.com/sharer/sharer.php?u='.$url,
                 'instagram' => $url, // Instagram ne supporte pas de partage direct
             ],

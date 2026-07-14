@@ -268,13 +268,13 @@ class EventController extends Controller
      */
     public function show($id)
     {
-        $event = Events::with(['group', 'photos', 'feedbacks' => function ($q) {
+        $event = Events::with(['group', 'group.acceptedSupplierLink.supplier:id,uuid,first_name,last_name,avatar', 'photos', 'feedbacks' => function ($q) {
             $q->where('status', 'approved');
         }])->findOrFail($id);
 
         return response()->json([
             'success' => true,
-            'data' => $event,
+            'data' => new EventResource($event),
         ]);
     }
 

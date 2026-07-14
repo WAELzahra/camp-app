@@ -144,6 +144,9 @@ Route::get('/platform/stats', function () {
     ]]);
 });
 
+// -------------------- CANCELLATION GUARANTEE SUMMARY (landing page) --------------------
+Route::get('/cancellation-policy/public-summary', [\App\Http\Controllers\Reservation\CancellationPreviewController::class, 'publicSummary']);
+
 // -------------------- REPORTS (public submission, auth optional) --------------------
 Route::middleware('throttle:5,1')->post('/reports', [ReportController::class, 'store']);
 

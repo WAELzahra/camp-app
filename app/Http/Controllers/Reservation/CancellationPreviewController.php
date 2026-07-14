@@ -108,6 +108,42 @@ class CancellationPreviewController extends Controller
         ]);
     }
 
+    /**
+     * GET /api/cancellation-policy/public-summary
+     * Public, unauthenticated summary of the default cancellation policy per
+     * reservation type — used to showcase the real guarantee on the home page.
+     * Not tied to any specific reservation/centre.
+     */
+    public function publicSummary()
+    {
+        $platformFee = PlatformCancellationFee::where('actor_type', 'camper')->first();
+        $platformFeePct = ($platformFee?->is_active) ? (float) $platformFee->fee_percentage : 0.0;
+
+        $types = ['centre', 'event', 'materiel'];
+        $policies = collect($types)->map(function ($type) {
+            $policy = CancellationPolicyService::getPolicy($type);
+            if (!$policy) {
+                return ['type' => $type, 'has_policy' => false, 'tiers' => []];
+            }
+
+            return [
+                'type' => $type,
+                'has_policy' => true,
+                'grace_period_hours' => $policy->grace_period_hours,
+                'tiers' => $policy->tiers->map(fn ($t) => [
+                    'hours_before' => $t->hours_before,
+                    'fee_percentage' => (float) $t->fee_percentage,
+                    'label' => $t->label,
+                ])->values(),
+            ];
+        })->values();
+
+        return response()->json([
+            'platform_cancellation_fee_percentage' => $platformFeePct,
+            'policies' => $policies,
+        ]);
+    }
+
     private function resolveCentre(int $id, int $userId): array
     {
         $r = Reservations_centre::where('id', $id)->where('user_id', $userId)->firstOrFail();

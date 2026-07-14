@@ -10,6 +10,8 @@ use App\Models\Feedbacks;
 use App\Models\Photo;
 use App\Models\ProfileCentre;
 use App\Models\ServiceCategory;
+use App\Services\ProviderIdentityGuard;
+use Illuminate\Support\Facades\Auth;
 
 class CenterServiceApiController extends Controller
 {
@@ -173,20 +175,28 @@ class CenterServiceApiController extends Controller
             'notes' => $eq->notes ?? null,
         ])->values()->toArray();
 
+        /* ── Identity masking ────────────────────────────────────────────
+         * Real name/slug/contact/owner identity are only revealed once the
+         * requesting user has a paid reservation (deposit or full) with this
+         * exact centre. Address/photos/services stay visible either way.
+         * ───────────────────────────────────────────────────────────────── */
+        $revealed = ProviderIdentityGuard::hasPaidCentre(Auth::id(), $userId);
+
         /* ── Assemble ─────────────────────────────────────────────────── */
         $data = [
             'id' => $center->id,
-            'slug' => $ccSlug,
-            'name' => $center->name,
+            'slug' => $revealed ? $ccSlug : null,
+            'name' => $revealed ? $center->name : ProviderIdentityGuard::centreLabel($center->category, $profile?->city),
+            'identity_revealed' => $revealed,
             'capacite' => $center->capacite,
             'price_per_night' => (float) $center->price_per_night,
             'category' => $center->category,
             'disponibilite' => (bool) $center->disponibilite,
             'latitude' => $center->latitude ? (string) $center->latitude : null,
             'longitude' => $center->longitude ? (string) $center->longitude : null,
-            'contact_email' => $center->contact_email,
-            'contact_phone' => $center->contact_phone,
-            'manager_name' => $center->manager_name,
+            'contact_email' => $revealed ? $center->contact_email : null,
+            'contact_phone' => $revealed ? $center->contact_phone : null,
+            'manager_name' => $revealed ? $center->manager_name : null,
             'established_date' => $center->established_date?->format('Y-m-d'),
             'average_rating' => $avgRating ? round((float) $avgRating, 2) : null,
             'review_count' => $reviewCount,
@@ -197,9 +207,9 @@ class CenterServiceApiController extends Controller
                 'cover_image' => $coverImage,
                 'user' => $user ? [
                     'id' => $user->id,
-                    'first_name' => $user->first_name,
-                    'last_name' => $user->last_name,
-                    'avatar' => $this->photoUrl($user->avatar),
+                    'first_name' => $revealed ? $user->first_name : null,
+                    'last_name' => $revealed ? $user->last_name : null,
+                    'avatar' => $revealed ? $this->photoUrl($user->avatar) : null,
                     'ville' => $user->ville,
                 ] : null,
             ],
@@ -287,10 +297,12 @@ class CenterServiceApiController extends Controller
                 });
         }
 
-        $partnerResult = $centers->map(function ($c) use ($ratingMap, $coverPhotoMap, $slugByProfileCentreId) {
+        $requesterId = Auth::id();
+        $partnerResult = $centers->map(function ($c) use ($ratingMap, $coverPhotoMap, $slugByProfileCentreId, $requesterId) {
             $profile = $c->profile;
             $user = $profile?->user;
             $userId = $user?->id;
+            $revealed = ProviderIdentityGuard::hasPaidCentre($requesterId, $userId);
 
             // Photo table wins (any upload path); profile.cover_image is the fallback
             // for centers where no Photo record exists yet.
@@ -313,8 +325,9 @@ class CenterServiceApiController extends Controller
 
             return [
                 'id' => $c->id,
-                'slug' => $slugByProfileCentreId[$c->id] ?? null,
-                'name' => $c->name,
+                'slug' => $revealed ? ($slugByProfileCentreId[$c->id] ?? null) : null,
+                'name' => $revealed ? $c->name : ProviderIdentityGuard::centreLabel($c->category, $profile?->city),
+                'identity_revealed' => $revealed,
                 'capacite' => $c->capacite,
                 'price_per_night' => (float) $c->price_per_night,
                 'category' => $c->category,
@@ -347,29 +360,34 @@ class CenterServiceApiController extends Controller
             ->whereNull('profile_centre_id')
             ->get()
             ->filter(fn ($c) => !isset($partnerNameSet[mb_strtolower(trim($c->nom ?? ''))]))
-            ->map(fn ($c) => [
-                'id' => $c->id,
-                'slug' => $c->slug,
-                'name' => $c->nom,
-                'capacite' => 0,
-                'price_per_night' => 0,
-                'category' => 'Camping',
-                'host_type' => ProfileCentre::inferHostType($c->nom),
-                'disponibilite' => true,
-                'latitude' => $c->lat ? (string) $c->lat : null,
-                'longitude' => $c->lng ? (string) $c->lng : null,
-                'average_rating' => null,
-                'review_count' => 0,
-                'profile' => [
-                    'city' => null,
-                    'address' => $c->adresse,
-                    'cover_image' => $c->image ? storage_url($c->image) : null,
-                    'user' => null,
-                ],
-                'available_equipment' => [],
-                'is_partner' => (bool) $c->is_partner,
-                '_source' => 'camping',
-            ])->values();
+            ->map(function ($c) use ($requesterId) {
+                $revealed = ProviderIdentityGuard::hasPaidCentre($requesterId, $c->user_id);
+
+                return [
+                    'id' => $c->id,
+                    'slug' => $revealed ? $c->slug : null,
+                    'name' => $revealed ? $c->nom : ProviderIdentityGuard::centreLabel('Camping', ProviderIdentityGuard::extractRegion($c->adresse)),
+                    'identity_revealed' => $revealed,
+                    'capacite' => 0,
+                    'price_per_night' => 0,
+                    'category' => 'Camping',
+                    'host_type' => ProfileCentre::inferHostType($c->nom),
+                    'disponibilite' => true,
+                    'latitude' => $c->lat ? (string) $c->lat : null,
+                    'longitude' => $c->lng ? (string) $c->lng : null,
+                    'average_rating' => null,
+                    'review_count' => 0,
+                    'profile' => [
+                        'city' => null,
+                        'address' => $c->adresse,
+                        'cover_image' => $c->image ? storage_url($c->image) : null,
+                        'user' => null,
+                    ],
+                    'available_equipment' => [],
+                    'is_partner' => (bool) $c->is_partner,
+                    '_source' => 'camping',
+                ];
+            })->values();
 
         return response()->json($partnerResult->concat($nonPartnerResult)->values());
     }
