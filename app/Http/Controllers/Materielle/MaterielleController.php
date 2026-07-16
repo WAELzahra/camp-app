@@ -11,7 +11,6 @@ use App\Models\Materielles;
 use App\Models\MaterielleSeasonalRate;
 use App\Models\Photo;
 use App\Services\MaterielPricingService;
-use App\Services\ProviderIdentityGuard;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -161,15 +160,6 @@ class MaterielleController extends Controller
             // determine provider type (supplier vs camper) and build profile links.
             if ($materielle->fournisseur) {
                 $materielle->fournisseur->makeVisible(['id', 'role_id']);
-                $revealed = ProviderIdentityGuard::hasPaidFournisseur(Auth::id(), $materielle->fournisseur_id);
-                if (!$revealed) {
-                    $label = ProviderIdentityGuard::fournisseurLabel($materielle->category?->nom, $materielle->fournisseur->profile?->city);
-                    [$first, $last] = str_contains($label, ' ') ? explode(' ', $label, 2) : [$label, ''];
-                    $materielle->fournisseur->first_name = $first;
-                    $materielle->fournisseur->last_name = $last;
-                    $materielle->fournisseur->avatar = null;
-                }
-                $materielle->fournisseur->setAttribute('identity_revealed', $revealed);
             }
 
             return response()->json(['status' => 'success', 'data' => $materielle]);
@@ -611,13 +601,9 @@ class MaterielleController extends Controller
 
         $results = $query->paginate($perPage);
 
-        $requesterId = Auth::id();
-        $results->getCollection()->transform(function (Materielles $m) use ($requesterId) {
+        $results->getCollection()->transform(function (Materielles $m) {
             $cover = $m->photos->firstWhere('is_cover', true)
                    ?? $m->photos->first();
-            $revealed = ProviderIdentityGuard::hasPaidFournisseur($requesterId, $m->fournisseur_id);
-            $fournisseurLabel = ProviderIdentityGuard::fournisseurLabel($m->category?->nom, null);
-            [$fLabelFirst, $fLabelLast] = str_contains($fournisseurLabel, ' ') ? explode(' ', $fournisseurLabel, 2) : [$fournisseurLabel, ''];
 
             return [
                 'id' => $m->id,
@@ -641,10 +627,9 @@ class MaterielleController extends Controller
                 ] : null,
                 'fournisseur' => $m->fournisseur ? [
                     'id' => $m->fournisseur->id,
-                    'first_name' => $revealed ? $m->fournisseur->first_name : $fLabelFirst,
-                    'last_name' => $revealed ? $m->fournisseur->last_name : $fLabelLast,
-                    'avatar' => $revealed ? $m->fournisseur->avatar : null,
-                    'identity_revealed' => $revealed,
+                    'first_name' => $m->fournisseur->first_name,
+                    'last_name' => $m->fournisseur->last_name,
+                    'avatar' => $m->fournisseur->avatar,
                 ] : null,
                 'seasonal_rates' => $m->seasonalRates->map(fn ($r) => [
                     'name' => $r->name,

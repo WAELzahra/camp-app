@@ -6,51 +6,17 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Boutique\StoreBoutiqueRequest;
 use App\Http\Requests\Boutique\UpdateBoutiqueRequest;
 use App\Models\Boutiques;
-use App\Services\ProviderIdentityGuard;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 
 class BoutiqueController extends Controller
 {
     /**
-     * Mask the boutique/fournisseur identity unless the requester has a
-     * paid reservation with this exact fournisseur.
-     */
-    private function maskBoutique(Boutiques $boutique): Boutiques
-    {
-        $revealed = ProviderIdentityGuard::hasPaidFournisseur(Auth::id(), $boutique->fournisseur_id);
-        if (!$revealed) {
-            $productCategory = $boutique->fournisseur?->profile?->profileFournisseur?->product_category;
-            $city = $boutique->fournisseur?->profile?->city;
-            $label = ProviderIdentityGuard::fournisseurLabel($productCategory, $city);
-            [$first, $last] = str_contains($label, ' ') ? explode(' ', $label, 2) : [$label, ''];
-
-            $boutique->nom_boutique = $label;
-            if ($boutique->fournisseur) {
-                $boutique->fournisseur->makeVisible(['id', 'role_id']);
-                $boutique->fournisseur->first_name = $first;
-                $boutique->fournisseur->last_name = $last;
-                $boutique->fournisseur->avatar = null;
-                // Contact info is the actual off-platform-booking vector — mask it too.
-                $boutique->fournisseur->phone_number = null;
-                $boutique->fournisseur->email = null;
-            }
-        } elseif ($boutique->fournisseur) {
-            $boutique->fournisseur->makeVisible(['id', 'role_id']);
-        }
-        $boutique->fournisseur?->setAttribute('identity_revealed', $revealed);
-        $boutique->setAttribute('identity_revealed', $revealed);
-
-        return $boutique;
-    }
-
-    /**
      * Display all active boutiques (public listing).
      */
     public function index()
     {
-        $boutiques = Boutiques::with(['fournisseur.profile.profileFournisseur'])->get()
-            ->map(fn ($b) => $this->maskBoutique($b));
+        $boutiques = Boutiques::with('fournisseur')->get();
 
         return response()->json([
             'status' => 'success',
@@ -74,7 +40,7 @@ class BoutiqueController extends Controller
      */
     public function show($fournisseur_id)
     {
-        $with = ['fournisseur.profile.profileFournisseur', 'materielles'];
+        $with = ['fournisseur.profile', 'materielles'];
         if (is_numeric($fournisseur_id)) {
             $boutique = Boutiques::with($with)->where('fournisseur_id', $fournisseur_id)->first();
         } else {
@@ -93,7 +59,7 @@ class BoutiqueController extends Controller
 
         return response()->json([
             'status' => 'success',
-            'boutique' => $this->maskBoutique($boutique),
+            'boutique' => $boutique,
         ]);
     }
 

@@ -2,7 +2,6 @@
 
 namespace App\Http\Resources;
 
-use App\Services\ProviderIdentityGuard;
 use Illuminate\Http\Request;
 
 /**
@@ -34,22 +33,17 @@ class EventResource extends BaseApiResource
             'avatar'     => $supplierModel->avatar ? storage_url($supplierModel->avatar) : null,
         ] : null;
 
-        // Safe group reference (the organiser user) — real identity only once
-        // the requesting user has a paid reservation for this event.
+        // Safe group reference (the organiser user)
         $group = null;
         if ($this->relationLoaded('group') && $this->group) {
             $g = $this->group;
-            $revealed = ProviderIdentityGuard::hasPaidEvent($request->user()?->id, $this->id);
-            $label = ProviderIdentityGuard::organiserLabel($g->profile?->city);
-            [$maskedFirst, $maskedLast] = str_contains($label, ' ') ? explode(' ', $label, 2) : [$label, ''];
             $group = [
-                'id'                => $g->id,
-                'uuid'              => $revealed ? $g->uuid : null,
-                'first_name'        => $revealed ? $g->first_name : $maskedFirst,
-                'last_name'         => $revealed ? $g->last_name : $maskedLast,
-                'avatar'            => $revealed ? ($g->avatar ? storage_url($g->avatar) : null) : null,
-                'group_name'        => $revealed ? ($g->profile?->profileGroupe?->nom_groupe ?? null) : ($maskedFirst . ($maskedLast ? " {$maskedLast}" : '')),
-                'identity_revealed' => $revealed,
+                'id'         => $g->id,
+                'uuid'       => $g->uuid,
+                'first_name' => $g->first_name,
+                'last_name'  => $g->last_name,
+                'avatar'     => $g->avatar ? storage_url($g->avatar) : null,
+                'group_name' => $g->profile?->profileGroupe?->nom_groupe ?? null,
             ];
         }
 

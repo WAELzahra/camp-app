@@ -26,7 +26,6 @@ use App\Models\ProfileGroupe;
 use App\Models\ProfileGuide;
 use App\Models\ServiceCategory;
 use App\Models\User;
-use App\Services\ProviderIdentityGuard;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -1280,57 +1279,10 @@ class ProfileController extends Controller
             ]);
         }
 
-        // Provider identity masking: a camper only sees the real name/avatar/
-        // contact of a centre/organizer/fournisseur once they have a paid
-        // reservation with that exact provider (see ProviderIdentityGuard).
-        // This mirrors the masking already applied on the centre/event/
-        // materielle listing endpoints — this "consult profile" route must
-        // enforce the same rule, or it becomes a bypass.
-        $revealed = $isSelf || match ($profile->type) {
-            'groupe' => ProviderIdentityGuard::hasPaidEventWithGroup($requesterId, $user->id),
-            'centre' => ProviderIdentityGuard::hasPaidCentre($requesterId, $user->id),
-            'fournisseur' => ProviderIdentityGuard::hasPaidFournisseur($requesterId, $user->id),
-            default => true, // campeur / guide profiles aren't part of this masking system
-        };
-
-        $userData = (new ProfileUserResource($user))->resolve();
-        $detailsResource = $this->buildDetailsResource($profile, $isSelf);
-        $detailsData = $detailsResource?->resolve();
-
-        if (!$revealed) {
-            // Distinguishing, non-identifying label (category/city) instead of a
-            // single fixed placeholder repeated on every masked profile — a list
-            // of identical "Centre vérifié" cards is useless for browsing.
-            $label = match ($profile->type) {
-                'centre' => ProviderIdentityGuard::centreLabel($profile->profileCentre?->category, $profile->city),
-                'fournisseur' => ProviderIdentityGuard::fournisseurLabel($profile->profileFournisseur?->product_category, $profile->city),
-                'groupe' => ProviderIdentityGuard::organiserLabel($profile->city),
-                default => 'Prestataire vérifié',
-            };
-            [$first, $last] = str_contains($label, ' ') ? explode(' ', $label, 2) : [$label, ''];
-
-            $userData['first_name'] = $first;
-            $userData['last_name'] = $last;
-            $userData['avatar'] = null;
-            $userData['phone_number'] = null;
-
-            if ($detailsData !== null) {
-                if ($profile->type === 'groupe') {
-                    $detailsData['nom_groupe'] = $label;
-                } elseif ($profile->type === 'centre') {
-                    $detailsData['name'] = $label;
-                    $detailsData['contact_email'] = null;
-                    $detailsData['contact_phone'] = null;
-                    $detailsData['manager_name'] = null;
-                }
-            }
-        }
-        $userData['identity_revealed'] = $revealed;
-
         $data = [
-            'user' => $userData,
+            'user' => new ProfileUserResource($user),
             'profile' => new ProfileBaseResource($profile),
-            'details' => $detailsData,
+            'details' => $this->buildDetailsResource($profile, $isSelf),
         ];
 
         if ($profile->type === 'groupe') {
@@ -1358,9 +1310,8 @@ class ProfileController extends Controller
                 ])->values(),
             ] : null;
 
-            // Co-owners — expose only public-safe fields (no email, no id);
-            // masked along with the rest of the group's identity when unpaid.
-            $data['co_owners'] = ($profileGroupe && $revealed)
+            // Co-owners — expose only public-safe fields (no email, no id)
+            $data['co_owners'] = $profileGroupe
                 ? $profileGroupe->coOwners()
                     ->select('users.uuid', 'users.first_name', 'users.last_name', 'users.avatar')
                     ->get()

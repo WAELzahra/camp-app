@@ -22,7 +22,6 @@ use App\Models\PaymentStatus;
 use App\Models\EventParticipant;
 use App\Models\Feedbacks;
 use App\Models\Role;
-use App\Services\ProviderIdentityGuard;
 
 class GroupController extends Controller 
 {
@@ -46,22 +45,16 @@ class GroupController extends Controller
         return response()->json(['success' => false, 'message' => 'Groupe introuvable.'], 404);
     }
 
-    // Real identity only revealed once the requester has a paid reservation
-    // with one of this group's events.
-    $userId = $groupe->profile->user_id ?? null;
-    $revealed = ProviderIdentityGuard::hasPaidEventWithGroup(Auth::id(), $userId);
-
     return response()->json([
         'success' => true,
         'groupe' => [
             'id' => $groupe->id,
-            'slug' => $revealed ? $groupe->slug : null,
-            'nom_groupe' => $revealed ? $groupe->nom_groupe : ProviderIdentityGuard::organiserLabel($groupe->profile->user->ville ?? null),
-            'identity_revealed' => $revealed,
+            'slug' => $groupe->slug,
+            'nom_groupe' => $groupe->nom_groupe,
             'bio' => $groupe->profile->bio ?? null,
             'ville' => $groupe->profile->user->ville ?? null,
-            'email' => $revealed ? ($groupe->profile->user->email ?? null) : null,
-            'phone_number' => $revealed ? ($groupe->profile->user->phone_number ?? null) : null,
+            'email' => $groupe->profile->user->email ?? null,
+            'phone_number' => $groupe->profile->user->phone_number ?? null,
             'followers_count' => $groupe->followers->count(),
             'evenements_a_venir' => $groupe->profile->user->events->map(function ($event) {
                 return [
