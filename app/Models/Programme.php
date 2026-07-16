@@ -28,9 +28,9 @@ class Programme extends Model
         return $this->hasMany(ProgrammeRule::class)->orderBy('sort_order');
     }
 
-    public function steps()
+    public function items()
     {
-        return $this->hasMany(ProgrammeStep::class)->orderBy('sort_order');
+        return $this->hasMany(ProgrammeItem::class)->orderBy('day_offset')->orderBy('sort_order');
     }
 
     public function departures()
@@ -49,11 +49,11 @@ class Programme extends Model
     }
 
     /**
-     * Sum of all step-partner prices — the default per-participant price
-     * when a departure has no price_override.
+     * Sum of all item prices — the default per-participant price when a
+     * departure has no price_override.
      */
     public function basePrice(): float
     {
-        return (float) $this->steps->flatMap->stepPartners->sum('price');
+        return (float) $this->items->sum('price');
     }
 }

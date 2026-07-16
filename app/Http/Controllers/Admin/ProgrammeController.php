@@ -3,11 +3,13 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\Events;
+use App\Models\Materielles;
 use App\Models\Programme;
 use App\Models\ProgrammeDeparture;
+use App\Models\ProgrammeItem;
 use App\Models\ProgrammeReservation;
-use App\Models\ProgrammeStep;
-use App\Models\ProgrammeStepPartner;
+use App\Models\ProfileCentre;
 use App\Services\ProgrammeLedgerService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -24,7 +26,7 @@ class ProgrammeController extends Controller
     // GET /admin/programmes
     public function index()
     {
-        $programmes = Programme::with(['steps.stepPartners.partner', 'departures'])
+        $programmes = Programme::with(['items', 'departures'])
             ->orderByDesc('created_at')
             ->get();
 
@@ -55,11 +57,12 @@ class ProgrammeController extends Controller
     // GET /admin/programmes/{id}
     public function show(int $id)
     {
-        $programme = Programme::with([
-            'rules', 'steps.stepPartners.partner.partnerType', 'departures', 'cancellationPolicy',
-        ])->findOrFail($id);
+        $programme = Programme::with(['rules', 'items', 'departures', 'cancellationPolicy'])->findOrFail($id);
 
-        return response()->json(['programme' => $programme]);
+        return response()->json([
+            'programme' => $programme,
+            'items' => $programme->items->map(fn (ProgrammeItem $item) => $this->itemPayload($item)),
+        ]);
     }
 
     // PUT /admin/programmes/{id}
@@ -128,7 +131,7 @@ class ProgrammeController extends Controller
     // POST /admin/programmes/{id}/duplicate
     public function duplicate(int $id)
     {
-        $programme = Programme::with(['rules', 'steps.stepPartners'])->findOrFail($id);
+        $programme = Programme::with(['rules', 'items'])->findOrFail($id);
 
         $copy = DB::transaction(function () use ($programme) {
             $copy = Programme::create([
@@ -147,112 +150,120 @@ class ProgrammeController extends Controller
                 $copy->rules()->create(['type' => $rule->type, 'content' => $rule->content, 'sort_order' => $rule->sort_order]);
             }
 
-            foreach ($programme->steps as $step) {
-                $newStep = $copy->steps()->create($step->only([
-                    'sort_order', 'title', 'description', 'day_offset', 'start_time', 'end_time',
-                    'location_label', 'location_lat', 'location_lng',
+            foreach ($programme->items as $item) {
+                $copy->items()->create($item->only([
+                    'sort_order', 'day_offset', 'start_time', 'end_time', 'item_type', 'item_id', 'price', 'commission_rate',
                 ]));
-
-                foreach ($step->stepPartners as $sp) {
-                    $newStep->stepPartners()->create($sp->only(['partner_id', 'price', 'commission_rate']));
-                }
             }
 
             return $copy;
         });
 
-        return response()->json(['programme' => $copy->load('steps.stepPartners')], 201);
+        return response()->json(['programme' => $copy->load('items')], 201);
     }
 
-    /* ── Steps (nested) ──────────────────────────────────────────────────── */
+    /* ── Lookup: search existing published listings to bundle ───────────── */
 
-    // POST /admin/programmes/{id}/steps
-    public function storeStep(Request $request, int $id)
+    // GET /admin/programmes/lookup?type=event|centre|materiel&q=...
+    public function lookup(Request $request)
+    {
+        $validated = $request->validate([
+            'type' => 'required|in:event,centre,materiel',
+            'q' => 'nullable|string|max:100',
+        ]);
+        $q = $validated['q'] ?? '';
+
+        $results = match ($validated['type']) {
+            'event' => Events::where('is_active', true)
+                ->when($q, fn ($query) => $query->where('title', 'like', "%{$q}%"))
+                ->with('group:id,first_name,last_name')
+                ->orderBy('title')
+                ->limit(20)
+                ->get()
+                ->map(fn ($e) => [
+                    'id' => $e->id,
+                    'title' => $e->title,
+                    'suggested_price' => (float) $e->price,
+                    'owner_name' => $e->group ? trim("{$e->group->first_name} {$e->group->last_name}") : null,
+                ]),
+            'centre' => ProfileCentre::with('user:id,first_name,last_name')
+                ->when($q, fn ($query) => $query->where('name', 'like', "%{$q}%"))
+                ->orderBy('name')
+                ->limit(20)
+                ->get()
+                ->map(fn ($c) => [
+                    'id' => $c->id,
+                    'title' => $c->name,
+                    'suggested_price' => (float) ($c->price_per_night ?? 0),
+                    'owner_name' => $c->user ? trim("{$c->user->first_name} {$c->user->last_name}") : null,
+                ]),
+            'materiel' => Materielles::where('status', 'up')
+                ->when($q, fn ($query) => $query->where('nom', 'like', "%{$q}%"))
+                ->with('fournisseur:id,first_name,last_name')
+                ->orderBy('nom')
+                ->limit(20)
+                ->get()
+                ->map(fn ($m) => [
+                    'id' => $m->id,
+                    'title' => $m->nom,
+                    'suggested_price' => (float) ($m->tarif_nuit ?? $m->tarif_heure ?? $m->prix_vente ?? 0),
+                    'owner_name' => $m->fournisseur ? trim("{$m->fournisseur->first_name} {$m->fournisseur->last_name}") : null,
+                ]),
+        };
+
+        return response()->json(['results' => $results]);
+    }
+
+    /* ── Items (flat list — replaces steps + step-partners) ──────────────── */
+
+    // POST /admin/programmes/{id}/items
+    public function storeItem(Request $request, int $id)
     {
         $programme = Programme::findOrFail($id);
         $validated = $request->validate([
-            'sort_order' => 'nullable|integer',
-            'title' => 'required|string|max:255',
-            'description' => 'nullable|string',
-            'day_offset' => 'nullable|integer|min:0',
-            'start_time' => 'nullable|date_format:H:i',
-            'end_time' => 'nullable|date_format:H:i',
-            'location_label' => 'nullable|string|max:255',
-            'location_lat' => 'nullable|numeric',
-            'location_lng' => 'nullable|numeric',
-        ]);
-
-        $step = $programme->steps()->create($validated);
-
-        return response()->json(['step' => $step], 201);
-    }
-
-    // PUT /admin/programmes/{id}/steps/{stepId}
-    public function updateStep(Request $request, int $id, int $stepId)
-    {
-        $step = ProgrammeStep::where('programme_id', $id)->findOrFail($stepId);
-        $validated = $request->validate([
-            'sort_order' => 'nullable|integer',
-            'title' => 'sometimes|string|max:255',
-            'description' => 'nullable|string',
-            'day_offset' => 'nullable|integer|min:0',
-            'start_time' => 'nullable|date_format:H:i',
-            'end_time' => 'nullable|date_format:H:i',
-            'location_label' => 'nullable|string|max:255',
-            'location_lat' => 'nullable|numeric',
-            'location_lng' => 'nullable|numeric',
-        ]);
-
-        $step->update($validated);
-
-        return response()->json(['step' => $step]);
-    }
-
-    // DELETE /admin/programmes/{id}/steps/{stepId}
-    public function destroyStep(int $id, int $stepId)
-    {
-        ProgrammeStep::where('programme_id', $id)->findOrFail($stepId)->delete();
-
-        return response()->json(['message' => 'Étape supprimée.']);
-    }
-
-    /* ── Step partners (nested under a step) ─────────────────────────────── */
-
-    // POST /admin/programmes/{id}/steps/{stepId}/partners
-    public function storeStepPartner(Request $request, int $id, int $stepId)
-    {
-        $step = ProgrammeStep::where('programme_id', $id)->findOrFail($stepId);
-        $validated = $request->validate([
-            'partner_id' => 'required|exists:partners,id',
+            'item_type' => 'required|in:event,centre,materiel',
+            'item_id' => 'required|integer',
             'price' => 'required|numeric|min:0',
             'commission_rate' => 'nullable|numeric|min:0|max:100',
+            'sort_order' => 'nullable|integer',
+            'day_offset' => 'nullable|integer|min:0',
+            'start_time' => 'nullable|date_format:H:i',
+            'end_time' => 'nullable|date_format:H:i',
         ]);
 
-        $stepPartner = $step->stepPartners()->create($validated);
+        if (!$this->listingExists($validated['item_type'], $validated['item_id'])) {
+            return response()->json(['message' => 'Cette offre est introuvable ou n\'est plus publiée.'], 422);
+        }
 
-        return response()->json(['step_partner' => $stepPartner->load('partner')], 201);
+        $item = $programme->items()->create($validated);
+
+        return response()->json(['item' => $this->itemPayload($item)], 201);
     }
 
-    // PUT /admin/programmes/{id}/steps/{stepId}/partners/{spId}
-    public function updateStepPartner(Request $request, int $id, int $stepId, int $spId)
+    // PUT /admin/programmes/{id}/items/{itemId}
+    public function updateItem(Request $request, int $id, int $itemId)
     {
-        $stepPartner = ProgrammeStepPartner::where('programme_step_id', $stepId)->findOrFail($spId);
+        $item = ProgrammeItem::where('programme_id', $id)->findOrFail($itemId);
         $validated = $request->validate([
             'price' => 'sometimes|numeric|min:0',
             'commission_rate' => 'nullable|numeric|min:0|max:100',
+            'sort_order' => 'nullable|integer',
+            'day_offset' => 'nullable|integer|min:0',
+            'start_time' => 'nullable|date_format:H:i',
+            'end_time' => 'nullable|date_format:H:i',
         ]);
 
-        $stepPartner->update($validated);
+        $item->update($validated);
 
-        return response()->json(['step_partner' => $stepPartner->load('partner')]);
+        return response()->json(['item' => $this->itemPayload($item->fresh())]);
     }
 
-    // DELETE /admin/programmes/{id}/steps/{stepId}/partners/{spId}
-    public function destroyStepPartner(int $id, int $stepId, int $spId)
+    // DELETE /admin/programmes/{id}/items/{itemId}
+    public function destroyItem(int $id, int $itemId)
     {
-        ProgrammeStepPartner::where('programme_step_id', $stepId)->findOrFail($spId)->delete();
+        ProgrammeItem::where('programme_id', $id)->findOrFail($itemId)->delete();
 
-        return response()->json(['message' => 'Partenaire retiré de l\'étape.']);
+        return response()->json(['message' => 'Élément retiré du programme.']);
     }
 
     /* ── Departures ───────────────────────────────────────────────────────── */
@@ -310,7 +321,7 @@ class ProgrammeController extends Controller
     public function reservations(int $id)
     {
         $reservations = ProgrammeReservation::whereHas('departure', fn ($q) => $q->where('programme_id', $id))
-            ->with(['user:id,first_name,last_name,email', 'departure', 'shares.partner'])
+            ->with(['user:id,first_name,last_name,email', 'departure', 'shares.item', 'shares.owner:id,first_name,last_name'])
             ->orderByDesc('created_at')
             ->get();
 
@@ -345,11 +356,11 @@ class ProgrammeController extends Controller
 
         return response()->json([
             'total_collected' => round($totalCollected, 2),
-            'total_partner_net' => round($shares->sum('net_amount'), 2),
+            'total_owner_net' => round($shares->sum('net_amount'), 2),
             'total_commission' => round($shares->sum('commission_amount'), 2),
             'reservations_count' => $reservations->count(),
-            'by_partner' => $shares->groupBy('partner_id')->map(fn ($g) => [
-                'partner_id' => $g->first()->partner_id,
+            'by_owner' => $shares->groupBy('owner_user_id')->map(fn ($g) => [
+                'owner_user_id' => $g->first()->owner_user_id,
                 'gross' => round($g->sum('gross_amount'), 2),
                 'commission' => round($g->sum('commission_amount'), 2),
                 'net' => round($g->sum('net_amount'), 2),
@@ -361,11 +372,11 @@ class ProgrammeController extends Controller
     public function export(int $id)
     {
         $reservations = ProgrammeReservation::whereHas('departure', fn ($q) => $q->where('programme_id', $id))
-            ->with(['user:id,first_name,last_name,email', 'departure', 'shares.partner'])
+            ->with(['user:id,first_name,last_name,email', 'departure', 'shares.item', 'shares.owner:id,first_name,last_name'])
             ->orderBy('created_at')
             ->get();
 
-        $rows = ["Reservation ID,Client,Email,Depart,Participants,Total,Statut,Partenaire,Part nette"];
+        $rows = ["Reservation ID,Client,Email,Depart,Participants,Total,Statut,Element,Part nette"];
         foreach ($reservations as $r) {
             $clientName = trim(($r->user->first_name ?? '').' '.($r->user->last_name ?? ''));
             if ($r->shares->isEmpty()) {
@@ -373,13 +384,32 @@ class ProgrammeController extends Controller
                 continue;
             }
             foreach ($r->shares as $share) {
-                $rows[] = "{$r->id},{$clientName},{$r->user->email},{$r->departure->start_date},{$r->participants_count},{$r->total_price},{$r->status},{$share->partner->name},{$share->net_amount}";
+                $label = $share->item?->displayTitle() ?? "#{$share->programme_item_id}";
+                $rows[] = "{$r->id},{$clientName},{$r->user->email},{$r->departure->start_date},{$r->participants_count},{$r->total_price},{$r->status},{$label},{$share->net_amount}";
             }
         }
 
         return response(implode("\n", $rows), 200, [
             'Content-Type' => 'text/csv',
             'Content-Disposition' => "attachment; filename=programme-{$id}-export.csv",
+        ]);
+    }
+
+    private function listingExists(string $type, int $id): bool
+    {
+        return match ($type) {
+            'event' => Events::where('id', $id)->where('is_active', true)->exists(),
+            'centre' => ProfileCentre::where('id', $id)->exists(),
+            'materiel' => Materielles::where('id', $id)->where('status', 'up')->exists(),
+            default => false,
+        };
+    }
+
+    private function itemPayload(ProgrammeItem $item): array
+    {
+        return array_merge($item->toArray(), [
+            'display_title' => $item->displayTitle(),
+            'owner_name' => optional(\App\Models\User::find($item->ownerUserId()))->first_name,
         ]);
     }
 

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Programme;
 
 use App\Http\Controllers\Controller;
 use App\Models\Programme;
+use App\Models\ProgrammeItem;
 
 class ProgrammeController extends Controller
 {
@@ -11,7 +12,10 @@ class ProgrammeController extends Controller
     public function index()
     {
         $programmes = Programme::where('status', 'published')
-            ->with(['departures' => fn ($q) => $q->where('status', 'open')->where('start_date', '>=', now())])
+            ->with([
+                'items',
+                'departures' => fn ($q) => $q->where('status', 'open')->where('start_date', '>=', now()),
+            ])
             ->orderBy('title')
             ->get();
 
@@ -23,11 +27,20 @@ class ProgrammeController extends Controller
     {
         $programme = Programme::where('slug', $slug)
             ->where('status', 'published')
-            ->with(['rules', 'steps.stepPartners.partner:id,name,partner_type_id', 'steps.stepPartners.partner.partnerType'])
+            ->with(['rules', 'items'])
             ->firstOrFail();
 
         return response()->json([
             'programme' => $programme,
+            'items' => $programme->items->map(fn (ProgrammeItem $item) => [
+                'id' => $item->id,
+                'item_type' => $item->item_type,
+                'day_offset' => $item->day_offset,
+                'start_time' => $item->start_time,
+                'end_time' => $item->end_time,
+                'price' => $item->price,
+                'display_title' => $item->displayTitle(),
+            ]),
             'base_price' => $programme->basePrice(),
         ]);
     }

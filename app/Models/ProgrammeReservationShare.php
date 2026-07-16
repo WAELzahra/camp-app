@@ -8,13 +8,13 @@ class ProgrammeReservationShare extends Model
 {
     protected $fillable = [
         'programme_reservation_id',
-        'partner_id',
-        'programme_step_partner_id',
+        'programme_item_id',
+        'owner_user_id',
         'gross_amount',
         'commission_rate',
         'commission_amount',
         'net_amount',
-        'partner_credited',
+        'credited',
         'released_at',
     ];
 
@@ -23,7 +23,7 @@ class ProgrammeReservationShare extends Model
         'commission_rate' => 'float',
         'commission_amount' => 'float',
         'net_amount' => 'float',
-        'partner_credited' => 'boolean',
+        'credited' => 'boolean',
         'released_at' => 'datetime',
     ];
 
@@ -32,13 +32,13 @@ class ProgrammeReservationShare extends Model
         return $this->belongsTo(ProgrammeReservation::class, 'programme_reservation_id');
     }
 
-    public function partner()
+    public function item()
     {
-        return $this->belongsTo(Partner::class);
+        return $this->belongsTo(ProgrammeItem::class, 'programme_item_id');
     }
 
-    public function stepPartner()
+    public function owner()
     {
-        return $this->belongsTo(ProgrammeStepPartner::class, 'programme_step_partner_id');
+        return $this->belongsTo(User::class, 'owner_user_id');
     }
 }

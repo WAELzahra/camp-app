@@ -1523,46 +1523,30 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
 
 // ==================== PROGRAMME MODULE ROUTES ====================
 
-// Admin: partner directory
-Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function () {
-    Route::get('/partner-types',              [\App\Http\Controllers\Admin\PartnerController::class, 'types']);
-    Route::post('/partner-types',             [\App\Http\Controllers\Admin\PartnerController::class, 'storeType']);
-
-    Route::prefix('partners')->group(function () {
-        Route::get('/',                       [\App\Http\Controllers\Admin\PartnerController::class, 'index']);
-        Route::post('/',                      [\App\Http\Controllers\Admin\PartnerController::class, 'store']);
-        Route::get('/{id}',                   [\App\Http\Controllers\Admin\PartnerController::class, 'show']);
-        Route::put('/{id}',                   [\App\Http\Controllers\Admin\PartnerController::class, 'update']);
-        Route::delete('/{id}',                [\App\Http\Controllers\Admin\PartnerController::class, 'destroy']);
-        Route::post('/{id}/signed-link',      [\App\Http\Controllers\Admin\PartnerController::class, 'signedLink']);
-    });
-});
-
-// Admin: Programme CRUD (parent + nested steps/step-partners/departures) + reservations/payout/reporting
+// Admin: Programme CRUD (parent + nested items/departures) + reservations/payout/reporting.
+// Items reference EXISTING published Events/Centres/Materielles — see /lookup below.
 Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function () {
     Route::prefix('programmes')->group(function () {
-        Route::get('/',                                        [\App\Http\Controllers\Admin\ProgrammeController::class, 'index']);
-        Route::post('/',                                       [\App\Http\Controllers\Admin\ProgrammeController::class, 'store']);
-        Route::post('/reservations/{id}/confirm',              [\App\Http\Controllers\Admin\ProgrammeController::class, 'confirmReservation']);
-        Route::get('/{id}',                                    [\App\Http\Controllers\Admin\ProgrammeController::class, 'show']);
-        Route::put('/{id}',                                    [\App\Http\Controllers\Admin\ProgrammeController::class, 'update']);
-        Route::delete('/{id}',                                 [\App\Http\Controllers\Admin\ProgrammeController::class, 'destroy']);
-        Route::post('/{id}/publish',                           [\App\Http\Controllers\Admin\ProgrammeController::class, 'publish']);
-        Route::post('/{id}/schedule',                          [\App\Http\Controllers\Admin\ProgrammeController::class, 'schedule']);
-        Route::post('/{id}/archive',                           [\App\Http\Controllers\Admin\ProgrammeController::class, 'archive']);
-        Route::post('/{id}/duplicate',                         [\App\Http\Controllers\Admin\ProgrammeController::class, 'duplicate']);
-        Route::post('/{id}/steps',                             [\App\Http\Controllers\Admin\ProgrammeController::class, 'storeStep']);
-        Route::put('/{id}/steps/{stepId}',                     [\App\Http\Controllers\Admin\ProgrammeController::class, 'updateStep']);
-        Route::delete('/{id}/steps/{stepId}',                  [\App\Http\Controllers\Admin\ProgrammeController::class, 'destroyStep']);
-        Route::post('/{id}/steps/{stepId}/partners',           [\App\Http\Controllers\Admin\ProgrammeController::class, 'storeStepPartner']);
-        Route::put('/{id}/steps/{stepId}/partners/{spId}',     [\App\Http\Controllers\Admin\ProgrammeController::class, 'updateStepPartner']);
-        Route::delete('/{id}/steps/{stepId}/partners/{spId}',  [\App\Http\Controllers\Admin\ProgrammeController::class, 'destroyStepPartner']);
-        Route::post('/{id}/departures',                        [\App\Http\Controllers\Admin\ProgrammeController::class, 'storeDeparture']);
-        Route::put('/{id}/departures/{departureId}',           [\App\Http\Controllers\Admin\ProgrammeController::class, 'updateDeparture']);
-        Route::delete('/{id}/departures/{departureId}',        [\App\Http\Controllers\Admin\ProgrammeController::class, 'destroyDeparture']);
-        Route::get('/{id}/reservations',                       [\App\Http\Controllers\Admin\ProgrammeController::class, 'reservations']);
-        Route::get('/{id}/revenue',                            [\App\Http\Controllers\Admin\ProgrammeController::class, 'revenue']);
-        Route::get('/{id}/export',                             [\App\Http\Controllers\Admin\ProgrammeController::class, 'export']);
+        Route::get('/',                                  [\App\Http\Controllers\Admin\ProgrammeController::class, 'index']);
+        Route::post('/',                                 [\App\Http\Controllers\Admin\ProgrammeController::class, 'store']);
+        Route::get('/lookup',                            [\App\Http\Controllers\Admin\ProgrammeController::class, 'lookup']);
+        Route::post('/reservations/{id}/confirm',        [\App\Http\Controllers\Admin\ProgrammeController::class, 'confirmReservation']);
+        Route::get('/{id}',                              [\App\Http\Controllers\Admin\ProgrammeController::class, 'show']);
+        Route::put('/{id}',                              [\App\Http\Controllers\Admin\ProgrammeController::class, 'update']);
+        Route::delete('/{id}',                           [\App\Http\Controllers\Admin\ProgrammeController::class, 'destroy']);
+        Route::post('/{id}/publish',                     [\App\Http\Controllers\Admin\ProgrammeController::class, 'publish']);
+        Route::post('/{id}/schedule',                    [\App\Http\Controllers\Admin\ProgrammeController::class, 'schedule']);
+        Route::post('/{id}/archive',                     [\App\Http\Controllers\Admin\ProgrammeController::class, 'archive']);
+        Route::post('/{id}/duplicate',                   [\App\Http\Controllers\Admin\ProgrammeController::class, 'duplicate']);
+        Route::post('/{id}/items',                       [\App\Http\Controllers\Admin\ProgrammeController::class, 'storeItem']);
+        Route::put('/{id}/items/{itemId}',               [\App\Http\Controllers\Admin\ProgrammeController::class, 'updateItem']);
+        Route::delete('/{id}/items/{itemId}',            [\App\Http\Controllers\Admin\ProgrammeController::class, 'destroyItem']);
+        Route::post('/{id}/departures',                  [\App\Http\Controllers\Admin\ProgrammeController::class, 'storeDeparture']);
+        Route::put('/{id}/departures/{departureId}',     [\App\Http\Controllers\Admin\ProgrammeController::class, 'updateDeparture']);
+        Route::delete('/{id}/departures/{departureId}',  [\App\Http\Controllers\Admin\ProgrammeController::class, 'destroyDeparture']);
+        Route::get('/{id}/reservations',                 [\App\Http\Controllers\Admin\ProgrammeController::class, 'reservations']);
+        Route::get('/{id}/revenue',                      [\App\Http\Controllers\Admin\ProgrammeController::class, 'revenue']);
+        Route::get('/{id}/export',                       [\App\Http\Controllers\Admin\ProgrammeController::class, 'export']);
     });
 });
 
@@ -1578,11 +1562,10 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/programmes/reservations/{id}/cancel', [\App\Http\Controllers\Programme\ProgrammeReservationController::class, 'cancel']);
 });
 
-// Partner-scoped views
-Route::middleware(['auth:sanctum'])->get('/partner/programme-shares', [\App\Http\Controllers\Programme\ProgrammePartnerController::class, 'mine']);
-Route::get('/partner-view/{partner}', [\App\Http\Controllers\Programme\ProgrammePartnerController::class, 'signedView'])
-    ->name('programme.partner-view')
-    ->middleware('signed');
+// "My Programme income" — every bundled actor (event organizer, centre owner,
+// equipment supplier) already has a platform account, so this is just a
+// scoped-by-user query, no separate Partner directory needed.
+Route::middleware(['auth:sanctum'])->get('/programme/my-shares', [\App\Http\Controllers\Programme\ProgrammeOwnerSharesController::class, 'mine']);
 
 // ==================== WEB ADMIN ROUTES (for web interface) ====================
 Route::middleware(['auth', 'role:admin'])->prefix('admin')->name('admin.')->group(function () {
