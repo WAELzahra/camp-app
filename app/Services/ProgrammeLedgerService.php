@@ -29,7 +29,10 @@ class ProgrammeLedgerService
         $items = $reservation->selectedItems;
 
         $rawBase = (float) $items->sum('price') * $reservation->participants_count;
-        $ratio = $rawBase > 0 ? $reservation->amount_now / $rawBase : 0;
+        // Uses total_price (not amount_now) so a deposit booking still computes
+        // shares off the FULL final amount — payout is deferred until the whole
+        // amount (deposit + balance) has actually been collected, see payoutShares().
+        $ratio = $rawBase > 0 ? $reservation->total_price / $rawBase : 0;
 
         foreach ($items as $item) {
             $gross = round($item->price * $reservation->participants_count * $ratio, 2);
@@ -61,13 +64,17 @@ class ProgrammeLedgerService
 
     /**
      * Admin-triggered confirmation (V1 has no per-actor accept workflow):
-     * releases the camper's escrow and credits every item's real owner
-     * their net share.
+     * releases the camper's escrow (wallet payments only — a manual/bank-transfer
+     * booking never locked wallet funds in the first place) and credits every
+     * item's real owner their net share. Only call this once the reservation
+     * is fully paid (amount_later == 0) — see confirmReservation()'s guard.
      */
     public function payoutShares(ProgrammeReservation $reservation): void
     {
         DB::transaction(function () use ($reservation) {
-            Balance::forUser($reservation->user_id)->releaseEscrow($reservation->amount_now);
+            if ($reservation->payment_method === 'wallet') {
+                Balance::forUser($reservation->user_id)->releaseEscrow($reservation->amount_now);
+            }
 
             $shares = $reservation->shares()->where('credited', false)->with('item')->get();
 
@@ -110,6 +117,12 @@ class ProgrammeLedgerService
      */
     public function reverseEscrowOnly(ProgrammeReservation $reservation): void
     {
+        if ($reservation->payment_method !== 'wallet') {
+            // Nothing was ever collected on-platform for a manual booking that
+            // hasn't been paid yet — cancelling it is a pure status change.
+            return;
+        }
+
         DB::transaction(function () use ($reservation) {
             Balance::forUser($reservation->user_id)->refundEscrow($reservation->amount_now);
             WalletTransaction::logCredit(
@@ -125,8 +138,11 @@ class ProgrammeLedgerService
     /**
      * Cancellation after admin confirmation: funds already left escrow and were
      * paid out, so this claws back each owner's exact stored net_amount
-     * (never recalculated — see class docblock) and credits the camper
-     * whatever the cancellation policy allows ($refundToCamper).
+     * (never recalculated — see class docblock). For a wallet booking, also
+     * credits the camper whatever the cancellation policy allows
+     * ($refundToCamper) — for a manual/bank-transfer booking, refunding real
+     * money happens out-of-band by the admin, so the platform wallet is never
+     * credited (that would hand out money the platform never actually received).
      */
     public function reversePaidOutShares(ProgrammeReservation $reservation, float $refundToCamper): void
     {
@@ -146,7 +162,7 @@ class ProgrammeLedgerService
                 );
             }
 
-            if ($refundToCamper > 0) {
+            if ($refundToCamper > 0 && $reservation->payment_method === 'wallet') {
                 Balance::forUser($reservation->user_id)->crediter($refundToCamper);
                 WalletTransaction::logCredit(
                     $reservation->user_id,

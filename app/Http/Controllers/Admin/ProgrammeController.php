@@ -355,6 +355,10 @@ class ProgrammeController extends Controller
     }
 
     // POST /admin/programmes/reservations/{id}/confirm
+    // Approves availability. Payout to item owners only fires once the
+    // reservation is fully paid (amount_later == 0) — a deposit booking's
+    // owners get credited later, when the balance is confirmed via the
+    // manual-payment review queue (see AdminPaymentReviewController).
     public function confirmReservation(int $id)
     {
         $reservation = ProgrammeReservation::with('departure.programme')->findOrFail($id);
@@ -363,7 +367,10 @@ class ProgrammeController extends Controller
             return response()->json(['message' => 'Seules les réservations en attente peuvent être confirmées.'], 422);
         }
 
-        $this->ledger->payoutShares($reservation);
+        $fullyPaid = (float) $reservation->amount_later <= 0;
+        if ($fullyPaid) {
+            $this->ledger->payoutShares($reservation);
+        }
         $reservation->update(['status' => 'confirmed']);
 
         $programmeTitle = $reservation->departure->programme->title;
@@ -371,20 +378,24 @@ class ProgrammeController extends Controller
         \App\Services\ProgrammeNotifier::notify(
             $reservation->user_id,
             'Réservation confirmée',
-            "Votre réservation pour \"{$programmeTitle}\" est confirmée !",
+            $fullyPaid
+                ? "Votre réservation pour \"{$programmeTitle}\" est confirmée !"
+                : "Votre réservation pour \"{$programmeTitle}\" est confirmée ! Le solde restant sera à régler avant le départ.",
             'reservation_confirmed',
             'high',
             "/programme-details/{$reservation->departure->programme->slug}"
         );
 
-        foreach ($reservation->shares()->with('item')->get()->unique('owner_user_id') as $share) {
-            \App\Services\ProgrammeNotifier::notify(
-                $share->owner_user_id,
-                'Nouvelle réservation programme',
-                "Votre offre \"{$share->item?->displayTitle()}\" a été réservée via le programme \"{$programmeTitle}\".",
-                'reservation_confirmed',
-                'medium'
-            );
+        if ($fullyPaid) {
+            foreach ($reservation->shares()->with('item')->get()->unique('owner_user_id') as $share) {
+                \App\Services\ProgrammeNotifier::notify(
+                    $share->owner_user_id,
+                    'Nouvelle réservation programme',
+                    "Votre offre \"{$share->item?->displayTitle()}\" a été réservée via le programme \"{$programmeTitle}\".",
+                    'reservation_confirmed',
+                    'medium'
+                );
+            }
         }
 
         return response()->json(['reservation' => $reservation->load('shares')]);

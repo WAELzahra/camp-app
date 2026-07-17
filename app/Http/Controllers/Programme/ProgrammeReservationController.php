@@ -4,12 +4,15 @@ namespace App\Http\Controllers\Programme;
 
 use App\Http\Controllers\Controller;
 use App\Models\Balance;
+use App\Models\PlatformSetting;
 use App\Models\ProgrammeDeparture;
 use App\Models\ProgrammeReservation;
 use App\Models\PromoCode;
 use App\Models\WalletTransaction;
 use App\Services\CancellationPolicyService;
 use App\Services\CommissionService;
+use App\Services\ManualPaymentService;
+use App\Services\PaymentReferenceService;
 use App\Services\ProgrammeLedgerService;
 use App\Services\ProgrammeNotifier;
 use Illuminate\Http\Request;
@@ -23,7 +26,6 @@ class ProgrammeReservationController extends Controller
     }
 
     // POST /programmes/{id}/reservations
-    // V1: wallet payment only, full payment only (no deposit/manual — see plan's stated simplifications).
     public function store(Request $request, int $id)
     {
         $user = Auth::user();
@@ -35,7 +37,15 @@ class ProgrammeReservationController extends Controller
             'promo_code' => 'nullable|string|max:50',
             'selected_item_ids' => 'required|array|min:1',
             'selected_item_ids.*' => 'integer',
+            'payment_method' => 'nullable|in:wallet,manual',
+            'payment_option' => 'nullable|in:full,deposit',
         ]);
+
+        $paymentMethod = $validated['payment_method'] ?? 'wallet';
+
+        if ($paymentMethod === 'manual' && !ManualPaymentService::isEnabled()) {
+            return response()->json(['message' => 'Le paiement manuel n\'est pas disponible actuellement.'], 422);
+        }
 
         $departure = ProgrammeDeparture::with('programme.items')->findOrFail($validated['programme_departure_id']);
 
@@ -90,12 +100,45 @@ class ProgrammeReservationController extends Controller
         $feeData = CommissionService::addServiceFee(max(0, round($basePrice - $discountAmount, 2)));
         $totalToPay = $feeData['total'];
 
-        $balance = Balance::forUser($user->id);
-        if ($balance->solde_disponible < $totalToPay) {
-            return response()->json(['message' => "Solde wallet insuffisant. Disponible : {$balance->solde_disponible} TND, requis : {$totalToPay} TND."], 422);
+        // ── Payment split ────────────────────────────────────────────────────
+        // Programme is an admin-curated bundle, not owned by a single provider,
+        // so deposit eligibility uses the platform-wide settings directly
+        // rather than a per-provider ProviderPaymentPreference (which doesn't
+        // make sense when N different actors are bundled together).
+        $paymentOption = 'full';
+        $amountNow = $totalToPay;
+        $amountLater = 0.0;
+        $balanceDueAt = null;
+
+        if ($paymentMethod === 'manual') {
+            $minTotal = (int) PlatformSetting::get('deposit_min_total', 150);
+            $minPct = (int) PlatformSetting::get('deposit_min_percentage', 20);
+            $maxPct = (int) PlatformSetting::get('deposit_max_percentage', 80);
+            $requestedOption = $validated['payment_option'] ?? 'full';
+
+            if ($requestedOption === 'deposit') {
+                if ($totalToPay < $minTotal) {
+                    return response()->json(['message' => "L'acompte n'est possible qu'à partir de {$minTotal} TND."], 422);
+                }
+                $pct = max($minPct, min($maxPct, 50));
+                $paymentOption = 'deposit';
+                $amountNow = round($totalToPay * $pct / 100, 2);
+                $amountLater = round($totalToPay - $amountNow, 2);
+
+                $due = $requestedDate->copy()->subDays(7);
+                $balanceDueAt = $due->isPast() ? now()->addDays(2)->toDateString() : $due->toDateString();
+            }
+        } else {
+            $balance = Balance::forUser($user->id);
+            if ($balance->solde_disponible < $totalToPay) {
+                return response()->json(['message' => "Solde wallet insuffisant. Disponible : {$balance->solde_disponible} TND, requis : {$totalToPay} TND."], 422);
+            }
         }
 
-        $reservation = DB::transaction(function () use ($departure, $validated, $user, $totalToPay, $promoCodeId, $balance, $selectedItems) {
+        $reservation = DB::transaction(function () use (
+            $departure, $validated, $user, $totalToPay, $promoCodeId, $selectedItems,
+            $paymentMethod, $paymentOption, $amountNow, $amountLater, $balanceDueAt
+        ) {
             $departure->increment('capacity_booked', $validated['participants_count']);
             if ($departure->seatsRemaining() === 0) {
                 $departure->update(['status' => 'full']);
@@ -111,22 +154,27 @@ class ProgrammeReservationController extends Controller
                 'user_id' => $user->id,
                 'participants_count' => $validated['participants_count'],
                 'total_price' => $totalToPay,
-                'payment_method' => 'wallet',
-                'payment_option' => 'full',
-                'amount_now' => $totalToPay,
-                'amount_later' => null,
-                'status' => 'pending',
-                'promo_code_id' => $promoCodeId,
+                'payment_method' => $paymentMethod,
+                'payment_option' => $paymentOption,
+                'amount_now' => $amountNow,
+                'amount_later' => $amountLater,
+                'balance_due_at' => $balanceDueAt,
+                'status' => $paymentMethod === 'manual' ? 'pending_payment' : 'pending',
             ]);
 
             $reservation->selectedItems()->attach($selectedItems->pluck('id'));
 
-            $balance->lockFunds($totalToPay);
-            WalletTransaction::logDebit(
-                $user->id, 'reservation_payment', $totalToPay,
-                'programme_reservation', $reservation->id,
-                "Paiement réservation programme #{$reservation->id} (en attente de confirmation)"
-            );
+            if ($paymentMethod === 'manual') {
+                $reservation->payment_reference = PaymentReferenceService::forReservation($reservation->id);
+                $reservation->save();
+            } else {
+                Balance::forUser($user->id)->lockFunds($totalToPay);
+                WalletTransaction::logDebit(
+                    $user->id, 'reservation_payment', $totalToPay,
+                    'programme_reservation', $reservation->id,
+                    "Paiement réservation programme #{$reservation->id} (en attente de confirmation)"
+                );
+            }
 
             $this->ledger->createShares($reservation);
 
@@ -135,14 +183,70 @@ class ProgrammeReservationController extends Controller
 
         ProgrammeNotifier::notify(
             $user->id,
-            'Demande de réservation reçue',
-            "Votre demande pour \"{$departure->programme->title}\" a bien été reçue et sera examinée selon la disponibilité réelle. Vous serez notifié dès confirmation.",
+            $paymentMethod === 'manual' ? 'Réservation créée — paiement à confirmer' : 'Demande de réservation reçue',
+            $paymentMethod === 'manual'
+                ? "Votre réservation pour \"{$departure->programme->title}\" est créée. Effectuez votre virement (référence {$reservation->payment_reference}) puis confirmez-le sur la page de la réservation."
+                : "Votre demande pour \"{$departure->programme->title}\" a bien été reçue et sera examinée selon la disponibilité réelle. Vous serez notifié dès confirmation.",
             'status_update',
             'medium',
             "/programme-details/{$departure->programme->slug}"
         );
 
-        return response()->json(['reservation' => $reservation->load('shares')], 201);
+        $payload = ['reservation' => $reservation->load('shares')];
+        if ($paymentMethod === 'manual') {
+            $payload['payment_info'] = [
+                'reference' => $reservation->payment_reference,
+                'option' => $paymentOption,
+                'amount_now' => $amountNow,
+                'amount_later' => $amountLater,
+                'balance_due_at' => $balanceDueAt,
+                'flouci_link' => ManualPaymentService::flouciLink(),
+            ];
+        }
+
+        return response()->json($payload, 201);
+    }
+
+    // GET /programmes/reservations/{id}/payment-info
+    public function paymentInfo(Request $request, int $id)
+    {
+        $reservation = ProgrammeReservation::where('user_id', $request->user()->id)->findOrFail($id);
+
+        return response()->json([
+            'payment_reference' => $reservation->payment_reference,
+            'payment_option' => $reservation->payment_option,
+            'amount_now' => $reservation->amount_now,
+            'amount_later' => $reservation->amount_later,
+            'balance_due_at' => $reservation->balance_due_at,
+            'status' => $reservation->status,
+            'flouci_link' => ManualPaymentService::flouciLink(),
+        ]);
+    }
+
+    // POST /programmes/reservations/{id}/payment-submitted
+    public function submitPayment(Request $request, int $id)
+    {
+        $reservation = ProgrammeReservation::with('departure.programme')
+            ->where('user_id', $request->user()->id)
+            ->findOrFail($id);
+
+        if ($reservation->payment_method !== 'manual') {
+            return response()->json(['message' => "Cette réservation n'utilise pas le paiement manuel."], 422);
+        }
+
+        if (is_null($reservation->payment_confirmed_at) && in_array($reservation->status, ['pending_payment', 'paiement_invalide'])) {
+            $reservation->update(['status' => 'paiement_soumis', 'payment_submitted_at' => now()]);
+
+            return response()->json(['message' => 'Paiement soumis pour vérification.', 'reservation' => $reservation->fresh()]);
+        }
+
+        if ((float) $reservation->amount_later > 0 && $reservation->status === 'confirmed') {
+            $reservation->update(['status' => 'solde_soumis', 'payment_submitted_at' => now()]);
+
+            return response()->json(['message' => 'Solde soumis pour vérification.', 'reservation' => $reservation->fresh()]);
+        }
+
+        return response()->json(['message' => 'Aucun paiement en attente pour cette réservation.'], 422);
     }
 
     // GET /my/programme-reservations
@@ -162,14 +266,13 @@ class ProgrammeReservationController extends Controller
         $user = $request->user();
         $reservation = ProgrammeReservation::with('departure.programme')->where('user_id', $user->id)->findOrFail($id);
 
-        if (!in_array($reservation->status, ['pending', 'confirmed'])) {
+        $cancellable = ['pending_payment', 'paiement_soumis', 'paiement_invalide', 'pending', 'confirmed'];
+        if (!in_array($reservation->status, $cancellable)) {
             return response()->json(['message' => 'Cette réservation ne peut plus être annulée.'], 422);
         }
 
         DB::transaction(function () use ($reservation) {
-            if ($reservation->status === 'pending') {
-                $this->ledger->reverseEscrowOnly($reservation);
-            } else {
+            if ($reservation->status === 'confirmed') {
                 $programme = $reservation->departure->programme;
                 $policyResult = CancellationPolicyService::preview(
                     'programme',
@@ -180,6 +283,10 @@ class ProgrammeReservationController extends Controller
                 );
                 $refund = $policyResult ? (float) $policyResult['refund_amount'] : (float) $reservation->amount_now;
                 $this->ledger->reversePaidOutShares($reservation, $refund);
+            } else {
+                // pending_payment / paiement_soumis / paiement_invalide / pending —
+                // no payout has happened yet (no-op for manual bookings not yet paid).
+                $this->ledger->reverseEscrowOnly($reservation);
             }
 
             $reservation->departure->decrement('capacity_booked', $reservation->participants_count);

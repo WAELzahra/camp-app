@@ -1291,9 +1291,9 @@ Route::prefix('annonces')->group(function () {
         Route::put('/{id}/status',   [AdminPaymentController::class, 'updateStatus']);
         // Manual payment review — confirm / reject
         Route::post('/{type}/{id}/confirm', [\App\Http\Controllers\Admin\AdminPaymentReviewController::class, 'confirm'])
-            ->where('type', 'events|centres|materielles');
+            ->where('type', 'events|centres|materielles|programmes');
         Route::post('/{type}/{id}/reject',  [\App\Http\Controllers\Admin\AdminPaymentReviewController::class, 'reject'])
-            ->where('type', 'events|centres|materielles');
+            ->where('type', 'events|centres|materielles|programmes');
         Route::post('/wallet/{id}/confirm', [\App\Http\Controllers\Admin\AdminPaymentReviewController::class, 'confirmWallet']);
         Route::post('/wallet/{id}/reject',  [\App\Http\Controllers\Admin\AdminPaymentReviewController::class, 'rejectWallet']);
     });
@@ -1557,9 +1557,11 @@ Route::get('/programmes/{slug}/departures',         [\App\Http\Controllers\Progr
 
 // Booking (any authenticated user)
 Route::middleware(['auth:sanctum'])->group(function () {
-    Route::post('/programmes/{id}/reservations',        [\App\Http\Controllers\Programme\ProgrammeReservationController::class, 'store']);
-    Route::get('/my/programme-reservations',            [\App\Http\Controllers\Programme\ProgrammeReservationController::class, 'mine']);
-    Route::post('/programmes/reservations/{id}/cancel', [\App\Http\Controllers\Programme\ProgrammeReservationController::class, 'cancel']);
+    Route::post('/programmes/{id}/reservations',                  [\App\Http\Controllers\Programme\ProgrammeReservationController::class, 'store']);
+    Route::get('/my/programme-reservations',                      [\App\Http\Controllers\Programme\ProgrammeReservationController::class, 'mine']);
+    Route::post('/programmes/reservations/{id}/cancel',            [\App\Http\Controllers\Programme\ProgrammeReservationController::class, 'cancel']);
+    Route::get('/programmes/reservations/{id}/payment-info',       [\App\Http\Controllers\Programme\ProgrammeReservationController::class, 'paymentInfo']);
+    Route::post('/programmes/reservations/{id}/payment-submitted', [\App\Http\Controllers\Programme\ProgrammeReservationController::class, 'submitPayment']);
 });
 
 // "My Programme income" — every bundled actor (event organizer, centre owner,

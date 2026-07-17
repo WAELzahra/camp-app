@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Payment\ConfirmWalletRechargeRequest;
 use App\Http\Requests\Payment\RejectPaymentRequest;
 use App\Models\Balance;
+use App\Models\ProgrammeReservation;
 use App\Models\Reservations_centre;
 use App\Models\Reservations_events;
 use App\Models\Reservations_materielles;
@@ -14,6 +15,7 @@ use App\Models\User;
 use App\Models\WalletRechargeRequest;
 use App\Models\WalletTransaction;
 use App\Notifications\CustomNotification;
+use App\Services\ProgrammeLedgerService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -22,11 +24,18 @@ use Illuminate\Support\Facades\DB;
 /**
  * Admin endpoints for reviewing and confirming/rejecting manual bank transfers.
  *
- * All 3 reservation types are handled through a single {type}/{id} pattern:
- *   type: events | centres | materielles
+ * events | centres | materielles share one provider-per-reservation credit
+ * path (ReservationLedgerService::creditManualTranche). `programmes` is
+ * handled separately (confirmProgrammePayment/rejectProgrammePayment) since
+ * a Programme reservation splits across N different item owners via
+ * ProgrammeLedgerService, not a single provider.
  */
 class AdminPaymentReviewController extends Controller
 {
+    public function __construct(private ProgrammeLedgerService $programmeLedger)
+    {
+    }
+
     /**
      * GET /admin/payments/pending
      * Returns all reservations with status paiement_soumis or solde_soumis,
@@ -57,6 +66,15 @@ class AdminPaymentReviewController extends Controller
             ->get()
             ->map(fn ($r) => $this->formatRow($r, 'materielles'));
 
+        $programmes = ProgrammeReservation::with(['user', 'departure.programme'])
+            ->whereIn('status', $statuses)
+            ->where('payment_method', 'manual')
+            ->latest('payment_submitted_at')
+            ->get()
+            ->map(fn ($r) => array_merge($this->formatRow($r, 'programmes'), [
+                'label' => $r->departure?->programme?->title,
+            ]));
+
         $walletRecharges = WalletRechargeRequest::with('user')
             ->where('status', 'paiement_soumis')
             ->latest('submitted_at')
@@ -80,7 +98,7 @@ class AdminPaymentReviewController extends Controller
             ]);
 
         return response()->json([
-            'data' => $events->concat($centres)->concat($materielles)->concat($walletRecharges)
+            'data' => $events->concat($centres)->concat($materielles)->concat($programmes)->concat($walletRecharges)
                 ->sortByDesc('payment_submitted_at')->values(),
         ]);
     }
@@ -91,6 +109,10 @@ class AdminPaymentReviewController extends Controller
      */
     public function confirm(string $type, int $id): JsonResponse
     {
+        if ($type === 'programmes') {
+            return $this->confirmProgrammePayment($id);
+        }
+
         $reservation = $this->findAny($type, $id);
         if (!$reservation) {
             return response()->json(['message' => 'Réservation introuvable.'], 404);
@@ -168,6 +190,9 @@ class AdminPaymentReviewController extends Controller
      */
     public function reject(string $type, int $id, RejectPaymentRequest $request): JsonResponse
     {
+        if ($type === 'programmes') {
+            return $this->rejectProgrammePayment($id);
+        }
 
         $reservation = $this->findAny($type, $id);
         if (!$reservation) {
@@ -399,5 +424,108 @@ class AdminPaymentReviewController extends Controller
             'centres' => 'pending',
             default => 'pending', // materielles
         };
+    }
+
+    /**
+     * Programme's manual-payment confirmation is kept separate from the
+     * events/centres/materielles path above because the money movement is
+     * fundamentally different: a Programme reservation splits across N item
+     * owners via ProgrammeLedgerService, not one single provider, so it can't
+     * go through ReservationLedgerService::creditManualTranche.
+     */
+    private function confirmProgrammePayment(int $id): JsonResponse
+    {
+        $reservation = ProgrammeReservation::with('departure.programme')->find($id);
+        if (!$reservation) {
+            return response()->json(['message' => 'Réservation introuvable.'], 404);
+        }
+
+        if (!in_array($reservation->status, ['paiement_soumis', 'solde_soumis'])) {
+            return response()->json(['message' => 'Aucun paiement en attente de validation pour cette réservation.'], 422);
+        }
+
+        $wasBalance = $reservation->status === 'solde_soumis';
+        $programmeTitle = $reservation->departure->programme->title;
+
+        if ($wasBalance) {
+            // The host/admin already approved availability earlier (that's how a
+            // reservation reaches 'solde_soumis' in the first place) — payout was
+            // deferred until now because the balance was still outstanding.
+            $reservation->update([
+                'status' => 'confirmed',
+                'amount_later' => 0,
+                'payment_confirmed_at' => now(),
+                'confirmed_by' => Auth::id(),
+            ]);
+
+            $this->programmeLedger->payoutShares($reservation);
+
+            $this->notifyUser(
+                $reservation->user_id,
+                'Solde confirmé ✓',
+                "Votre solde restant ({$reservation->payment_reference}) a été validé pour \"{$programmeTitle}\". Votre réservation est entièrement payée.",
+                'high'
+            );
+
+            foreach ($reservation->shares()->with('item')->get()->unique('owner_user_id') as $share) {
+                \App\Services\ProgrammeNotifier::notify(
+                    $share->owner_user_id,
+                    'Nouvelle réservation programme',
+                    "Votre offre \"{$share->item?->displayTitle()}\" a été réservée via le programme \"{$programmeTitle}\".",
+                    'reservation_confirmed',
+                    'medium'
+                );
+            }
+        } else {
+            $reservation->update([
+                'status' => 'pending',
+                'payment_confirmed_at' => now(),
+                'confirmed_by' => Auth::id(),
+            ]);
+
+            $this->notifyUser(
+                $reservation->user_id,
+                'Paiement confirmé ✓',
+                "Votre paiement ({$reservation->payment_reference}) pour \"{$programmeTitle}\" a été validé. Votre réservation est en attente de confirmation de disponibilité.",
+                'high'
+            );
+        }
+
+        return response()->json([
+            'message' => 'Paiement confirmé.',
+            'status' => $reservation->status,
+            'id' => $id,
+            'type' => 'programmes',
+        ]);
+    }
+
+    private function rejectProgrammePayment(int $id): JsonResponse
+    {
+        $reservation = ProgrammeReservation::find($id);
+        if (!$reservation) {
+            return response()->json(['message' => 'Réservation introuvable.'], 404);
+        }
+
+        if (!in_array($reservation->status, ['paiement_soumis', 'solde_soumis'])) {
+            return response()->json(['message' => 'Aucun paiement en attente de validation pour cette réservation.'], 422);
+        }
+
+        $wasBalance = $reservation->status === 'solde_soumis';
+        $reservation->status = $wasBalance ? 'confirmed' : 'paiement_invalide';
+        $reservation->save();
+
+        $this->notifyUser(
+            $reservation->user_id,
+            $wasBalance ? 'Solde non validé' : 'Virement non trouvé',
+            $wasBalance
+                ? "Nous n'avons pas pu vérifier votre virement de solde ({$reservation->payment_reference}). Veuillez vérifier et soumettre à nouveau."
+                : "Nous n'avons pas pu vérifier votre virement ({$reservation->payment_reference}). Veuillez vérifier la référence et soumettre à nouveau.",
+            'high'
+        );
+
+        return response()->json([
+            'message' => 'Paiement rejeté. Le camper est notifié de soumettre à nouveau.',
+            'status' => $reservation->status,
+        ]);
     }
 }

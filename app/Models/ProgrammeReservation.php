@@ -16,6 +16,11 @@ class ProgrammeReservation extends Model
         'payment_option',
         'amount_now',
         'amount_later',
+        'payment_reference',
+        'balance_due_at',
+        'payment_submitted_at',
+        'payment_confirmed_at',
+        'confirmed_by',
         'status',
         'promo_code_id',
     ];
@@ -25,6 +30,9 @@ class ProgrammeReservation extends Model
         'amount_now' => 'float',
         'amount_later' => 'float',
         'requested_date' => 'date',
+        'balance_due_at' => 'date',
+        'payment_submitted_at' => 'datetime',
+        'payment_confirmed_at' => 'datetime',
     ];
 
     public function departure()
