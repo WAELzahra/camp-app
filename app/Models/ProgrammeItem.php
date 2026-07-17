@@ -131,11 +131,37 @@ class ProgrammeItem extends Model
         return $owner ? trim("{$owner->first_name} {$owner->last_name}") : null;
     }
 
+    public function ownerAvatar(): ?string
+    {
+        $owner = User::find($this->ownerUserId());
+
+        return $owner?->avatar ? storage_url($owner->avatar) : null;
+    }
+
+    /**
+     * Average rating (0-5) left on the underlying listing, when that concept
+     * exists for this type — Events/Materielles both have a feedbacks()
+     * relation with a `note` column; ProfileCentre has no equivalent here.
+     */
+    public function rating(): ?float
+    {
+        $listing = $this->listing();
+        if (!$listing || !in_array($this->item_type, ['event', 'materiel'])) {
+            return null;
+        }
+
+        $avg = $listing->feedbacks()->avg('note');
+
+        return $avg ? round((float) $avg, 1) : null;
+    }
+
     /**
      * What the frontend needs to link this item back to the actor's own
-     * public page: a slug-routed listing for event/materiel (they each have
-     * their own detail page), or the owner's user id for centre — ProfileCentre
-     * has no dedicated public route, so it falls back to the owner's profile.
+     * public pages: a slug-routed listing for event/materiel (they each have
+     * their own detail page), plus the owner's user id for a profile link —
+     * every item type resolves to a real platform user, so a profile link is
+     * always available even when the listing itself has no dedicated page
+     * (ProfileCentre's case).
      */
     public function linkInfo(): array
     {
@@ -146,7 +172,7 @@ class ProgrammeItem extends Model
 
         return [
             'slug' => in_array($this->item_type, ['event', 'materiel']) ? $listing->slug : null,
-            'owner_user_id' => $this->item_type === 'centre' ? $listing->user?->id : null,
+            'owner_user_id' => $this->ownerUserId(),
         ];
     }
 

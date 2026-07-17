@@ -47,6 +47,8 @@ class ProgrammeController extends Controller
                     'subtitle' => $item->subtitle(),
                     'full_description' => $item->fullDescription(),
                     'owner_name' => $item->ownerName(),
+                    'owner_avatar' => $item->ownerAvatar(),
+                    'rating' => $item->rating(),
                     'slug' => $link['slug'],
                     'owner_user_id' => $link['owner_user_id'],
                 ];
