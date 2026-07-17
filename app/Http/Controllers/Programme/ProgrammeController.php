@@ -32,17 +32,25 @@ class ProgrammeController extends Controller
 
         return response()->json([
             'programme' => $programme,
-            'items' => $programme->items->map(fn (ProgrammeItem $item) => [
-                'id' => $item->id,
-                'item_type' => $item->item_type,
-                'day_offset' => $item->day_offset,
-                'start_time' => $item->start_time,
-                'end_time' => $item->end_time,
-                'price' => $item->price,
-                'display_title' => $item->displayTitle(),
-                'image' => $item->coverImageUrl(),
-                'subtitle' => $item->subtitle(),
-            ]),
+            'items' => $programme->items->map(function (ProgrammeItem $item) {
+                $link = $item->linkInfo();
+
+                return [
+                    'id' => $item->id,
+                    'item_type' => $item->item_type,
+                    'day_offset' => $item->day_offset,
+                    'start_time' => $item->start_time,
+                    'end_time' => $item->end_time,
+                    'price' => $item->price,
+                    'display_title' => $item->displayTitle(),
+                    'image' => $item->coverImageUrl(),
+                    'subtitle' => $item->subtitle(),
+                    'full_description' => $item->fullDescription(),
+                    'owner_name' => $item->ownerName(),
+                    'slug' => $link['slug'],
+                    'owner_user_id' => $link['owner_user_id'],
+                ];
+            }),
             'base_price' => $programme->basePrice(),
         ]);
     }

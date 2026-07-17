@@ -114,6 +114,42 @@ class ProgrammeItem extends Model
         return $listing ? self::resolveSubtitle($this->item_type, $listing) : null;
     }
 
+    public function fullDescription(): ?string
+    {
+        $listing = $this->listing();
+
+        return match ($this->item_type) {
+            'event', 'materiel' => $listing?->description,
+            default => null,
+        };
+    }
+
+    public function ownerName(): ?string
+    {
+        $owner = User::find($this->ownerUserId());
+
+        return $owner ? trim("{$owner->first_name} {$owner->last_name}") : null;
+    }
+
+    /**
+     * What the frontend needs to link this item back to the actor's own
+     * public page: a slug-routed listing for event/materiel (they each have
+     * their own detail page), or the owner's user id for centre — ProfileCentre
+     * has no dedicated public route, so it falls back to the owner's profile.
+     */
+    public function linkInfo(): array
+    {
+        $listing = $this->listing();
+        if (!$listing) {
+            return ['slug' => null, 'owner_user_id' => null];
+        }
+
+        return [
+            'slug' => in_array($this->item_type, ['event', 'materiel']) ? $listing->slug : null,
+            'owner_user_id' => $this->item_type === 'centre' ? $listing->user?->id : null,
+        ];
+    }
+
     /**
      * A representative image for the listing, so an admin picking from
      * search results (or a camper browsing a Programme) sees the same
