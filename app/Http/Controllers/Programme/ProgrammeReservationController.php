@@ -29,6 +29,7 @@ class ProgrammeReservationController extends Controller
 
         $validated = $request->validate([
             'programme_departure_id' => 'required|exists:programme_departures,id',
+            'requested_date' => 'required|date|after_or_equal:today',
             'participants_count' => 'required|integer|min:1',
             'promo_code' => 'nullable|string|max:50',
             'selected_item_ids' => 'required|array|min:1',
@@ -43,6 +44,13 @@ class ProgrammeReservationController extends Controller
 
         if ($departure->status !== 'open') {
             return response()->json(['message' => 'Ce départ n\'est plus ouvert aux réservations.'], 422);
+        }
+
+        $requestedDate = \Carbon\Carbon::parse($validated['requested_date'])->startOfDay();
+        $windowStart = \Carbon\Carbon::parse($departure->start_date)->startOfDay();
+        $windowEnd = $departure->end_date ? \Carbon\Carbon::parse($departure->end_date)->startOfDay() : null;
+        if ($requestedDate->lt($windowStart) || ($windowEnd && $requestedDate->gt($windowEnd))) {
+            return response()->json(['message' => 'La date choisie est en dehors de la période disponible pour ce programme.'], 422);
         }
 
         if ($departure->seatsRemaining() < $validated['participants_count']) {
@@ -98,6 +106,7 @@ class ProgrammeReservationController extends Controller
 
             $reservation = ProgrammeReservation::create([
                 'programme_departure_id' => $departure->id,
+                'requested_date' => $validated['requested_date'],
                 'user_id' => $user->id,
                 'participants_count' => $validated['participants_count'],
                 'total_price' => $totalToPay,

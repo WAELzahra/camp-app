@@ -8,6 +8,7 @@ class ProgrammeReservation extends Model
 {
     protected $fillable = [
         'programme_departure_id',
+        'requested_date',
         'user_id',
         'participants_count',
         'total_price',
@@ -23,6 +24,7 @@ class ProgrammeReservation extends Model
         'total_price' => 'float',
         'amount_now' => 'float',
         'amount_later' => 'float',
+        'requested_date' => 'date',
     ];
 
     public function departure()
