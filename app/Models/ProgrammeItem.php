@@ -99,4 +99,55 @@ class ProgrammeItem extends Model
             default => null,
         };
     }
+
+    public function coverImageUrl(): ?string
+    {
+        $listing = $this->listing();
+
+        return $listing ? self::resolveImage($this->item_type, $listing) : null;
+    }
+
+    public function subtitle(): ?string
+    {
+        $listing = $this->listing();
+
+        return $listing ? self::resolveSubtitle($this->item_type, $listing) : null;
+    }
+
+    /**
+     * A representative image for the listing, so an admin picking from
+     * search results (or a camper browsing a Programme) sees the same
+     * photo as on the listing's own public page.
+     */
+    public static function resolveImage(string $type, Model $listing): ?string
+    {
+        if ($type === 'centre') {
+            $campingCentre = CampingCentre::where('profile_centre_id', $listing->id)->first();
+            if (!$campingCentre) {
+                return null;
+            }
+            $cover = $campingCentre->photos()->where('is_cover', true)->first() ?? $campingCentre->photos()->first();
+
+            return $cover?->url ?? ($campingCentre->image ? storage_url($campingCentre->image) : null);
+        }
+
+        // Events / Materielles both expose a hasMany photos() with an is_cover flag.
+        $cover = $listing->photos->firstWhere('is_cover', true) ?? $listing->photos->first();
+
+        return $cover?->url;
+    }
+
+    /**
+     * A one-line description to give the admin/camper enough context without
+     * leaving the Programme page — falls back to null when the listing type
+     * genuinely has nothing usable (ProfileCentre has no description field).
+     */
+    public static function resolveSubtitle(string $type, Model $listing): ?string
+    {
+        return match ($type) {
+            'event', 'materiel' => $listing->description ? \Illuminate\Support\Str::limit($listing->description, 140) : null,
+            'centre' => $listing->effective_host_type ? ucfirst($listing->effective_host_type) : null,
+            default => null,
+        };
+    }
 }

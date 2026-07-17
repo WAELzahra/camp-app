@@ -40,6 +40,8 @@ class ProgrammeController extends Controller
                 'end_time' => $item->end_time,
                 'price' => $item->price,
                 'display_title' => $item->displayTitle(),
+                'image' => $item->coverImageUrl(),
+                'subtitle' => $item->subtitle(),
             ]),
             'base_price' => $programme->basePrice(),
         ]);

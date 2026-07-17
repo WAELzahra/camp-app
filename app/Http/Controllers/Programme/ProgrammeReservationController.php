@@ -11,6 +11,7 @@ use App\Models\WalletTransaction;
 use App\Services\CancellationPolicyService;
 use App\Services\CommissionService;
 use App\Services\ProgrammeLedgerService;
+use App\Services\ProgrammeNotifier;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -132,6 +133,15 @@ class ProgrammeReservationController extends Controller
             return $reservation;
         });
 
+        ProgrammeNotifier::notify(
+            $user->id,
+            'Demande de réservation reçue',
+            "Votre demande pour \"{$departure->programme->title}\" a bien été reçue et sera examinée selon la disponibilité réelle. Vous serez notifié dès confirmation.",
+            'status_update',
+            'medium',
+            "/programme-details/{$departure->programme->slug}"
+        );
+
         return response()->json(['reservation' => $reservation->load('shares')], 201);
     }
 
@@ -179,6 +189,14 @@ class ProgrammeReservationController extends Controller
 
             $reservation->update(['status' => 'cancelled']);
         });
+
+        ProgrammeNotifier::notify(
+            $user->id,
+            'Réservation annulée',
+            "Votre réservation pour \"{$reservation->departure->programme->title}\" a été annulée.",
+            'reservation_cancelled',
+            'medium'
+        );
 
         return response()->json(['message' => 'Réservation annulée.', 'reservation' => $reservation->fresh()]);
     }

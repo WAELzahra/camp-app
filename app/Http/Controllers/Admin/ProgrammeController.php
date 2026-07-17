@@ -192,7 +192,7 @@ class ProgrammeController extends Controller
         $results = match ($validated['type']) {
             'event' => Events::where('is_active', true)
                 ->when($q, fn ($query) => $query->where('title', 'like', "%{$q}%"))
-                ->with('group:id,first_name,last_name')
+                ->with(['group:id,first_name,last_name', 'photos'])
                 ->orderBy('title')
                 ->limit(20)
                 ->get()
@@ -201,8 +201,16 @@ class ProgrammeController extends Controller
                     'title' => $e->title,
                     'suggested_price' => (float) $e->price,
                     'owner_name' => $e->group ? trim("{$e->group->first_name} {$e->group->last_name}") : null,
+                    'image' => ProgrammeItem::resolveImage('event', $e),
                 ]),
-            'centre' => ProfileCentre::with('user:id,first_name,last_name')
+            // NB: ProfileCentre::user() is a hasOneThrough(users -> profiles) — eager-loading
+            // it with a plain 'user:id,first_name,last_name' column list makes both
+            // `users.id` and `profiles.id` collapse to an ambiguous unqualified `id` in the
+            // generated join, which MySQL rejects outright. Qualifying columns inside a
+            // closure avoids that.
+            'centre' => ProfileCentre::with(['user' => function ($query) {
+                    $query->select('users.id', 'users.first_name', 'users.last_name');
+                }])
                 ->when($q, fn ($query) => $query->where('name', 'like', "%{$q}%"))
                 ->orderBy('name')
                 ->limit(20)
@@ -212,10 +220,11 @@ class ProgrammeController extends Controller
                     'title' => $c->name,
                     'suggested_price' => (float) ($c->price_per_night ?? 0),
                     'owner_name' => $c->user ? trim("{$c->user->first_name} {$c->user->last_name}") : null,
+                    'image' => ProgrammeItem::resolveImage('centre', $c),
                 ]),
             'materiel' => Materielles::where('status', 'up')
                 ->when($q, fn ($query) => $query->where('nom', 'like', "%{$q}%"))
-                ->with('fournisseur:id,first_name,last_name')
+                ->with(['fournisseur:id,first_name,last_name', 'photos'])
                 ->orderBy('nom')
                 ->limit(20)
                 ->get()
@@ -224,6 +233,7 @@ class ProgrammeController extends Controller
                     'title' => $m->nom,
                     'suggested_price' => (float) ($m->tarif_nuit ?? $m->tarif_heure ?? $m->prix_vente ?? 0),
                     'owner_name' => $m->fournisseur ? trim("{$m->fournisseur->first_name} {$m->fournisseur->last_name}") : null,
+                    'image' => ProgrammeItem::resolveImage('materiel', $m),
                 ]),
         };
 
@@ -347,7 +357,7 @@ class ProgrammeController extends Controller
     // POST /admin/programmes/reservations/{id}/confirm
     public function confirmReservation(int $id)
     {
-        $reservation = ProgrammeReservation::findOrFail($id);
+        $reservation = ProgrammeReservation::with('departure.programme')->findOrFail($id);
 
         if ($reservation->status !== 'pending') {
             return response()->json(['message' => 'Seules les réservations en attente peuvent être confirmées.'], 422);
@@ -355,6 +365,27 @@ class ProgrammeController extends Controller
 
         $this->ledger->payoutShares($reservation);
         $reservation->update(['status' => 'confirmed']);
+
+        $programmeTitle = $reservation->departure->programme->title;
+
+        \App\Services\ProgrammeNotifier::notify(
+            $reservation->user_id,
+            'Réservation confirmée',
+            "Votre réservation pour \"{$programmeTitle}\" est confirmée !",
+            'reservation_confirmed',
+            'high',
+            "/programme-details/{$reservation->departure->programme->slug}"
+        );
+
+        foreach ($reservation->shares()->with('item')->get()->unique('owner_user_id') as $share) {
+            \App\Services\ProgrammeNotifier::notify(
+                $share->owner_user_id,
+                'Nouvelle réservation programme',
+                "Votre offre \"{$share->item?->displayTitle()}\" a été réservée via le programme \"{$programmeTitle}\".",
+                'reservation_confirmed',
+                'medium'
+            );
+        }
 
         return response()->json(['reservation' => $reservation->load('shares')]);
     }
@@ -426,6 +457,8 @@ class ProgrammeController extends Controller
         return array_merge($item->toArray(), [
             'display_title' => $item->displayTitle(),
             'owner_name' => optional(\App\Models\User::find($item->ownerUserId()))->first_name,
+            'image' => $item->coverImageUrl(),
+            'subtitle' => $item->subtitle(),
         ]);
     }
 
