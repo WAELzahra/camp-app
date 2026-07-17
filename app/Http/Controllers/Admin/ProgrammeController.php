@@ -13,6 +13,7 @@ use App\Models\ProfileCentre;
 use App\Services\ProgrammeLedgerService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class ProgrammeController extends Controller
@@ -39,11 +40,17 @@ class ProgrammeController extends Controller
         $validated = $request->validate([
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
-            'cover_image' => 'nullable|string|max:255',
+            'cover_image' => 'nullable|image|max:5120',
             'min_participants' => 'nullable|integer|min:1',
             'max_participants' => 'nullable|integer|min:1',
             'cancellation_policy_id' => 'nullable|exists:cancellation_policies,id',
         ]);
+
+        if ($request->hasFile('cover_image')) {
+            $validated['cover_image'] = $request->file('cover_image')->store('programmes', 'public');
+        } else {
+            unset($validated['cover_image']);
+        }
 
         $validated['slug'] = $this->uniqueSlug($validated['title']);
         $validated['created_by'] = $request->user()->id;
@@ -73,11 +80,20 @@ class ProgrammeController extends Controller
         $validated = $request->validate([
             'title' => 'sometimes|string|max:255',
             'description' => 'nullable|string',
-            'cover_image' => 'nullable|string|max:255',
+            'cover_image' => 'nullable|image|max:5120',
             'min_participants' => 'nullable|integer|min:1',
             'max_participants' => 'nullable|integer|min:1',
             'cancellation_policy_id' => 'nullable|exists:cancellation_policies,id',
         ]);
+
+        if ($request->hasFile('cover_image')) {
+            if ($programme->cover_image) {
+                Storage::disk('public')->delete($programme->cover_image);
+            }
+            $validated['cover_image'] = $request->file('cover_image')->store('programmes', 'public');
+        } else {
+            unset($validated['cover_image']);
+        }
 
         $programme->update($validated);
 
