@@ -213,8 +213,8 @@ class ProgrammeReservationController extends Controller
         $reservation = ProgrammeReservation::where('user_id', $request->user()->id)->findOrFail($id);
 
         return response()->json([
-            'payment_reference' => $reservation->payment_reference,
-            'payment_option' => $reservation->payment_option,
+            'reference' => $reservation->payment_reference,
+            'option' => $reservation->payment_option,
             'amount_now' => $reservation->amount_now,
             'amount_later' => $reservation->amount_later,
             'balance_due_at' => $reservation->balance_due_at,
