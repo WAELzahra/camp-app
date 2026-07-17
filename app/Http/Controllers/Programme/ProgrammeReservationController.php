@@ -31,9 +31,11 @@ class ProgrammeReservationController extends Controller
             'programme_departure_id' => 'required|exists:programme_departures,id',
             'participants_count' => 'required|integer|min:1',
             'promo_code' => 'nullable|string|max:50',
+            'selected_item_ids' => 'required|array|min:1',
+            'selected_item_ids.*' => 'integer',
         ]);
 
-        $departure = ProgrammeDeparture::with('programme')->findOrFail($validated['programme_departure_id']);
+        $departure = ProgrammeDeparture::with('programme.items')->findOrFail($validated['programme_departure_id']);
 
         if ($departure->programme_id !== $id || $departure->programme->status !== 'published') {
             return response()->json(['message' => 'Programme introuvable.'], 404);
@@ -47,7 +49,19 @@ class ProgrammeReservationController extends Controller
             return response()->json(['message' => 'Places restantes insuffisantes.'], 422);
         }
 
-        $basePrice = $departure->pricePerParticipant() * $validated['participants_count'];
+        $selectedItems = $departure->programme->items->whereIn('id', $validated['selected_item_ids']);
+        if ($selectedItems->count() !== count($validated['selected_item_ids'])) {
+            return response()->json(['message' => 'Sélection invalide.'], 422);
+        }
+
+        // A departure's flat price_override only applies to the full bundle —
+        // partial selections are always priced item by item.
+        $allItemsSelected = $selectedItems->count() === $departure->programme->items->count();
+        $pricePerParticipant = ($allItemsSelected && $departure->price_override !== null)
+            ? (float) $departure->price_override
+            : (float) $selectedItems->sum('price');
+
+        $basePrice = $pricePerParticipant * $validated['participants_count'];
 
         $promoCodeId = null;
         $discountAmount = 0;
@@ -72,7 +86,7 @@ class ProgrammeReservationController extends Controller
             return response()->json(['message' => "Solde wallet insuffisant. Disponible : {$balance->solde_disponible} TND, requis : {$totalToPay} TND."], 422);
         }
 
-        $reservation = DB::transaction(function () use ($departure, $validated, $user, $totalToPay, $promoCodeId, $balance) {
+        $reservation = DB::transaction(function () use ($departure, $validated, $user, $totalToPay, $promoCodeId, $balance, $selectedItems) {
             $departure->increment('capacity_booked', $validated['participants_count']);
             if ($departure->seatsRemaining() === 0) {
                 $departure->update(['status' => 'full']);
@@ -95,6 +109,8 @@ class ProgrammeReservationController extends Controller
                 'promo_code_id' => $promoCodeId,
             ]);
 
+            $reservation->selectedItems()->attach($selectedItems->pluck('id'));
+
             $balance->lockFunds($totalToPay);
             WalletTransaction::logDebit(
                 $user->id, 'reservation_payment', $totalToPay,
@@ -114,7 +130,7 @@ class ProgrammeReservationController extends Controller
     public function mine(Request $request)
     {
         $reservations = ProgrammeReservation::where('user_id', $request->user()->id)
-            ->with(['departure.programme'])
+            ->with(['departure.programme', 'selectedItems'])
             ->orderByDesc('created_at')
             ->get();
 

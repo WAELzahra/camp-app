@@ -44,4 +44,13 @@ class ProgrammeReservation extends Model
     {
         return $this->hasMany(ProgrammeReservationShare::class);
     }
+
+    /**
+     * The programme_items the camper actually kept at booking time — they
+     * can deselect items they don't want (e.g. skip the equipment rental).
+     */
+    public function selectedItems()
+    {
+        return $this->belongsToMany(ProgrammeItem::class, 'programme_reservation_items');
+    }
 }

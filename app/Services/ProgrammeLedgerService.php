@@ -18,15 +18,15 @@ use Illuminate\Support\Facades\DB;
 class ProgrammeLedgerService
 {
     /**
-     * Split a reservation's escrowed amount across every item in the booked
-     * departure's programme, proportional to each item's price and the
-     * actual amount collected (so shares always sum to what the camper
-     * paid, even after a promo code discount).
+     * Split a reservation's escrowed amount across the items the camper
+     * actually kept (see ProgrammeReservation::selectedItems — they may have
+     * deselected some), proportional to each item's price and the actual
+     * amount collected (so shares always sum to what the camper paid, even
+     * after a promo code discount).
      */
     public function createShares(ProgrammeReservation $reservation): void
     {
-        $departure = $reservation->departure()->with('programme.items')->first();
-        $items = $departure->programme->items;
+        $items = $reservation->selectedItems;
 
         $rawBase = (float) $items->sum('price') * $reservation->participants_count;
         $ratio = $rawBase > 0 ? $reservation->amount_now / $rawBase : 0;
