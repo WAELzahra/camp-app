@@ -1580,6 +1580,7 @@ Route::middleware(['auth', 'role:admin'])->prefix('admin')->name('admin.')->grou
 Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/admin-popups/active',           [PopupController::class, 'active']);
     Route::get('/admin-popups/welcome',          [PopupController::class, 'welcome']);
+    Route::get('/admin-popups/tutorial',         [PopupController::class, 'tutorial']);
     Route::post('/admin-popups/{popup}/dismiss', [PopupController::class, 'dismiss']);
 });
 

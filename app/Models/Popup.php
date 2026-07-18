@@ -11,7 +11,7 @@ class Popup extends Model
 
     protected $fillable = [
         'title', 'content', 'type', 'is_active',
-        'popup_kind', 'target_roles', 'icon', 'cta_label', 'cta_url',
+        'popup_kind', 'target_roles', 'icon', 'cta_label', 'cta_url', 'video_url',
     ];
 
     protected $casts = [
