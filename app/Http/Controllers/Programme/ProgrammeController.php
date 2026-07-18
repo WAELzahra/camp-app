@@ -51,6 +51,7 @@ class ProgrammeController extends Controller
                     'rating' => $item->rating(),
                     'slug' => $link['slug'],
                     'owner_user_id' => $link['owner_user_id'],
+                    'centre_profile_id' => $link['centre_profile_id'],
                 ];
             }),
             'base_price' => $programme->basePrice(),

@@ -167,12 +167,22 @@ class ProgrammeItem extends Model
     {
         $listing = $this->listing();
         if (!$listing) {
-            return ['slug' => null, 'owner_user_id' => null];
+            return ['slug' => null, 'owner_user_id' => null, 'centre_profile_id' => null];
         }
 
+        $slug = match ($this->item_type) {
+            'event', 'materiel' => $listing->slug,
+            // CampingCentre (not ProfileCentre) carries the slug the public
+            // /centre-details/:slug route expects; falls back to the raw
+            // profile_centre_id below when no CampingCentre row exists yet.
+            'centre' => CampingCentre::where('profile_centre_id', $listing->id)->value('slug'),
+            default => null,
+        };
+
         return [
-            'slug' => in_array($this->item_type, ['event', 'materiel']) ? $listing->slug : null,
+            'slug' => $slug,
             'owner_user_id' => $this->ownerUserId(),
+            'centre_profile_id' => $this->item_type === 'centre' ? $listing->id : null,
         ];
     }
 
