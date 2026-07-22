@@ -157,6 +157,7 @@ class CampingCentresController extends Controller
                         'id' => $centre->user->id,
                         'first_name' => $centre->user->first_name,
                         'last_name' => $centre->user->last_name,
+                        'avatar' => $buildUrl($centre->user->avatar),
                     ] : null,
                 ],
                 'available_services' => [],
