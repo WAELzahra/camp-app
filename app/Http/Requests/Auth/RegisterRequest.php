@@ -3,6 +3,8 @@
 namespace App\Http\Requests\Auth;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rules;
 
 class RegisterRequest extends FormRequest
@@ -15,6 +17,10 @@ class RegisterRequest extends FormRequest
     public function rules(): array
     {
         return [
+            // Cloudflare Turnstile (invisible CAPTCHA). Verified against Cloudflare's
+            // siteverify endpoint below — if TURNSTILE_SECRET_KEY isn't configured
+            // (e.g. local dev), the check is skipped rather than blocking signup.
+            'cf_turnstile_token' => ['required', 'string', $this->turnstileRule()],
             'first_name' => ['required', 'string', 'max:255'],
             'last_name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255', 'unique:users'],
@@ -48,5 +54,40 @@ class RegisterRequest extends FormRequest
             // Must explicitly accept all active legal documents at registration.
             'cgu_accepted'      => ['required', 'boolean', 'accepted'],
         ];
+    }
+
+    /**
+     * Verifies the Turnstile token against Cloudflare's siteverify endpoint.
+     * Fails the field (blocking registration) only when a secret is configured
+     * AND Cloudflare rejects the token — so local/staging envs without a
+     * TURNSTILE_SECRET_KEY set keep working, but production is protected the
+     * moment the key is added.
+     */
+    private function turnstileRule(): \Closure
+    {
+        return function (string $attribute, mixed $value, \Closure $fail): void {
+            $secret = config('services.turnstile.secret');
+            if (!$secret) {
+                return;
+            }
+
+            try {
+                $response = Http::asForm()->timeout(5)->post(
+                    'https://challenges.cloudflare.com/turnstile/v0/siteverify',
+                    [
+                        'secret'   => $secret,
+                        'response' => $value,
+                        'remoteip' => $this->ip(),
+                    ]
+                );
+
+                if (!$response->successful() || !$response->json('success')) {
+                    $fail("Vérification anti-robot échouée. Merci de réessayer.");
+                }
+            } catch (\Throwable $e) {
+                Log::warning('Turnstile verification request failed', ['error' => $e->getMessage()]);
+                $fail('Vérification anti-robot indisponible. Merci de réessayer.');
+            }
+        };
     }
 }

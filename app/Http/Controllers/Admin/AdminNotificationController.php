@@ -184,9 +184,7 @@ class AdminNotificationController extends Controller
             return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
         }
 
-        $request->validated();
-
-        $template = NotificationTemplate::create($request->all());
+        $template = NotificationTemplate::create($request->validated());
 
         return response()->json([
             'success' => true,
@@ -208,9 +206,7 @@ class AdminNotificationController extends Controller
 
         $template = NotificationTemplate::findOrFail($id);
 
-        $request->validated();
-
-        $template->update($request->all());
+        $template->update($request->validated());
 
         return response()->json([
             'success' => true,

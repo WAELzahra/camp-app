@@ -66,12 +66,12 @@ class Balance extends Model
      */
     public function releaseEscrow(float $montant): void
     {
-        DB::table('balances')
-            ->where('id', $this->id)
-            ->update([
-                'solde_en_attente'    => DB::raw("GREATEST(0, solde_en_attente - {$montant})"),
-                'dernier_mouvement_at' => now(),
-            ]);
+        // Bound parameters (not string interpolation) while keeping the update atomic
+        // at the DB level — GREATEST(0, col - ?) still avoids a read-modify-write race.
+        DB::update(
+            'UPDATE balances SET solde_en_attente = GREATEST(0, solde_en_attente - ?), dernier_mouvement_at = ? WHERE id = ?',
+            [$montant, now(), $this->id]
+        );
     }
 
     /**
@@ -80,13 +80,10 @@ class Balance extends Model
      */
     public function refundEscrow(float $montant): void
     {
-        DB::table('balances')
-            ->where('id', $this->id)
-            ->update([
-                'solde_en_attente'    => DB::raw("GREATEST(0, solde_en_attente - {$montant})"),
-                'solde_disponible'    => DB::raw("solde_disponible + {$montant}"),
-                'dernier_mouvement_at' => now(),
-            ]);
+        DB::update(
+            'UPDATE balances SET solde_en_attente = GREATEST(0, solde_en_attente - ?), solde_disponible = solde_disponible + ?, dernier_mouvement_at = ? WHERE id = ?',
+            [$montant, $montant, now(), $this->id]
+        );
     }
 
     /**

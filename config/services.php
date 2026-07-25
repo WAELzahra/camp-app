@@ -50,5 +50,8 @@ return [
     'callback_url' => env('KONNECT_CALLBACK_URL'),
 ],
 
+    'turnstile' => [
+        'secret' => env('TURNSTILE_SECRET_KEY'),
+    ],
 
 ];

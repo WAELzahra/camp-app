@@ -827,13 +827,16 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/events/{event}/participants', [EventParticipantController::class, 'index']);
     });
     
-    // Payments
+    // Payments — legacy Konnect checkout/webhook removed (SECURITY, 2026-07-25): the
+    // webhook trusted a client-supplied {payment_reference, status} with no signature
+    // check and sat behind auth:sanctum (a real gateway can't send a user session, so
+    // it could only ever be called by a logged-in camper — who could confirm any
+    // reservation for free just by knowing/guessing its konnect_reference UUID).
+    // Confirmed unreachable from the live app (Flouci/manual/wallet are the only
+    // payment paths surfaced in the frontend; /konnect/success and /konnect/fail
+    // pointed at a PaymentController::konnectCallback method that doesn't even exist).
     Route::prefix('payment')->group(function () {
-        Route::post('/event/{eventId}/payer', [PaymentController::class, 'initPayment']);
         Route::get('/confirm/{reservationId}', [PaymentController::class, 'confirmerPaiement']);
-        Route::get('/konnect/success', [PaymentController::class, 'konnectCallback'])->name('konnect.success');
-        Route::get('/konnect/fail', [PaymentController::class, 'konnectCallback'])->name('konnect.fail');
-        Route::post('/konnect/webhook', [PaymentController::class, 'webhookKonnect']);
     });
     
     Route::get('/reservation/{id}/imprimer', [PaymentController::class, 'imprimerTicket']);
@@ -1089,6 +1092,9 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     });
     // Dashboard/Utility
     Route::get('/activity/counts', [\App\Http\Controllers\Admin\AdminActivityController::class, 'counts']);
+
+    // Security log viewer (read-only) — storage/logs/security-*.log
+    Route::get('/security-logs', [\App\Http\Controllers\Admin\AdminSecurityLogController::class, 'index']);
 
     // Dashboard
     Route::post('/restock-expired', [ReservationMaterielleController::class, 'restockExpiredReservations']);
