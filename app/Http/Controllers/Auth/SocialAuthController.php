@@ -77,11 +77,15 @@ class SocialAuthController extends Controller
                 'provider' => $provider,
                 'provider_id' => $providerUser->getId(),
                 'email_verified_at' => now(),
-                // Always start INACTIVE. completeRegistration() activates campeurs (role_id=1)
-                // and leaves all other roles inactive pending admin approval.
-                // This prevents centre / supplier / guide accounts from being immediately
-                // active simply because they used social login.
-                'is_active' => false,
+                // Active by default, matching the role_id=1 (campeur) default set above — same as
+                // manual signup (RegisteredUserController), which activates campeurs immediately.
+                // BUG FIX (2026-07-26): this used to hard-code `false` here and rely on the user
+                // completing the separate role-selection modal (completeRegistration() below) to
+                // flip it to true. Any drop-off in that second step (closed tab, network error,
+                // dismissed modal) left a genuine campeur permanently stuck inactive. Non-campeur
+                // roles are still correctly re-set to inactive by completeRegistration() once the
+                // user actually picks one of those roles — this only changes the campeur default.
+                'is_active' => true,
                 'first_login' => true,
                 'nombre_signalement' => 0,
             ]);
