@@ -370,22 +370,37 @@ class CampingCentreController extends Controller
             $centre->update(['status' => (bool) $validated['disponibilite']]);
         }
 
-        // Bulk-update service prices and availability
+        // Bulk-update services (price/availability always; the richer fields
+        // only when the admin UI actually sent them, so partial payloads from
+        // older clients don't wipe out name/description/unit/etc).
         if (!empty($validated['services'])) {
             foreach ($validated['services'] as $svc) {
+                $serviceUpdate = [
+                    'price' => $svc['price'],
+                    'is_available' => $svc['is_available'],
+                ];
+                foreach (['name', 'description', 'unit', 'nbr_place', 'is_refundable'] as $field) {
+                    if (array_key_exists($field, $svc)) {
+                        $serviceUpdate[$field] = $svc[$field];
+                    }
+                }
+
                 \App\Models\ProfileCenterService::where('profile_center_id', $pc->id)
                     ->where('id', $svc['id'])
-                    ->update([
-                        'price' => $svc['price'],
-                        'is_available' => $svc['is_available'],
-                    ]);
+                    ->update($serviceUpdate);
             }
         }
 
         // Bulk-update equipment availability
         if (!empty($validated['equipment'])) {
             foreach ($validated['equipment'] as $eq) {
-                \App\Models\ProfileCenterEquipment::where('profile_center_id', $eq['id'])
+                // Scope by profile_center_id too (not just the row's own id) —
+                // otherwise this update isn't guaranteed to touch this centre's
+                // equipment at all, and on collision with another centre's
+                // row sharing the same numeric id it silently updates the
+                // wrong centre's equipment instead.
+                \App\Models\ProfileCenterEquipment::where('profile_center_id', $pc->id)
+                    ->where('id', $eq['id'])
                     ->update(['is_available' => $eq['is_available']]);
             }
         }

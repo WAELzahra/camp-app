@@ -1355,10 +1355,11 @@ class ProfileController extends Controller
                 'name' => 'required|string|max:255',
                 'description' => 'nullable|string',
                 'price' => 'required|numeric|min:0',
-                'unit' => 'required|string|max:50',
+                // Nullable/empty-string on purpose: "" means "no unit".
+                'unit' => 'nullable|string|max:50',
                 'is_available' => 'boolean',
                 'nbr_place' => 'nullable|integer|min:1',
-
+                'is_refundable' => 'boolean',
             ]);
 
             if ($validator->fails()) {
@@ -1391,6 +1392,7 @@ class ProfileController extends Controller
                 'is_standard' => false,
                 'unit' => $request->unit,
                 'nbr_place' => $request->nbr_place,
+                'is_refundable' => $request->has('is_refundable') ? (bool) $request->is_refundable : true,
             ];
 
             $service = ProfileCenterService::create($serviceData);
@@ -1727,7 +1729,10 @@ class ProfileController extends Controller
                 'price' => 'required|numeric|min:0',
                 'is_available' => 'boolean',
                 'is_standard' => 'boolean',
-                'unit' => 'required|string|max:50',
+                // Nullable/empty-string on purpose: "" means "no unit" (a
+                // plain flat price with no "per X" suffix), a valid choice
+                // from the services UI, not a missing value.
+                'unit' => 'nullable|string|max:50',
                 'nbr_place' => 'nullable|integer|min:1',
             ]);
 
