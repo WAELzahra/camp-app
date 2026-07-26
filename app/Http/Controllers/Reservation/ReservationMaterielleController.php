@@ -118,8 +118,9 @@ class ReservationMaterielleController extends Controller
             ], 422);
         }
 
-        // Manual payment gate
-        if ($paymentMethod === 'manual' && !ManualPaymentService::isEnabled()) {
+        // Manual payment gate — covers both online (Flouci) and bank-transfer
+        // payment; allowed as long as at least one of the two is enabled.
+        if ($paymentMethod === 'manual' && !ManualPaymentService::anyMethodEnabled()) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Le paiement manuel n\'est pas disponible pour le moment.',

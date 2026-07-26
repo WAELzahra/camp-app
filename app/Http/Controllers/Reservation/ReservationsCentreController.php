@@ -187,7 +187,9 @@ class ReservationsCentreController extends Controller
             // Escrow: check and lock camper funds (wallet only; manual skips wallet entirely)
             $paymentMethod = $request->input('payment_method', 'wallet');
 
-            if ($paymentMethod === 'manual' && !ManualPaymentService::isEnabled()) {
+            // "manual" covers both online (Flouci) and bank-transfer payment —
+            // allowed as long as at least one of the two is enabled.
+            if ($paymentMethod === 'manual' && !ManualPaymentService::anyMethodEnabled()) {
                 DB::rollBack();
 
                 return response()->json(['message' => 'Le paiement manuel n\'est pas disponible pour le moment.'], 422);

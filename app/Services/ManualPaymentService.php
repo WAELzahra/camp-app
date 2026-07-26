@@ -14,13 +14,31 @@ use App\Models\ProviderPaymentPreference;
  */
 class ManualPaymentService
 {
-    /** True when the admin has enabled the manual payment gateway. */
+    /** True when the admin has enabled online (Flouci) payment. */
     public static function isEnabled(): bool
     {
         return (bool) PlatformSetting::get('manual_payment_enabled', false);
     }
 
-    /** External Flouci link the camper should use for the bank transfer. */
+    /**
+     * True when the admin has enabled direct bank-transfer (virement) payment.
+     * Distinct from `isEnabled()` — Flouci is an online payment gateway,
+     * a bank transfer is a manual wire the admin verifies out-of-band. In
+     * Tunisia these are two different things a camper can choose between,
+     * not two names for the same flow.
+     */
+    public static function bankTransferEnabled(): bool
+    {
+        return (bool) PlatformSetting::get('bank_transfer_enabled', false);
+    }
+
+    /** True when at least one manual (non-wallet) payment method is available. */
+    public static function anyMethodEnabled(): bool
+    {
+        return self::isEnabled() || self::bankTransferEnabled();
+    }
+
+    /** External Flouci link for online payment. */
     public static function flouciLink(): string
     {
         return (string) PlatformSetting::get('payment_link_flouci', '');

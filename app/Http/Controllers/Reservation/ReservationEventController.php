@@ -522,7 +522,9 @@ class ReservationEventController extends Controller
             ], 422);
         }
 
-        if ($eventPaymentMethod === 'manual' && !ManualPaymentService::isEnabled()) {
+        // "manual" covers both online (Flouci) and bank-transfer payment —
+        // allowed as long as at least one of the two is enabled.
+        if ($eventPaymentMethod === 'manual' && !ManualPaymentService::anyMethodEnabled()) {
             return response()->json([
                 'success' => false,
                 'message' => 'Le paiement manuel n\'est pas disponible pour le moment.',

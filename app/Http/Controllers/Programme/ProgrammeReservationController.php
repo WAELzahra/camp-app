@@ -43,7 +43,9 @@ class ProgrammeReservationController extends Controller
 
         $paymentMethod = $validated['payment_method'] ?? 'wallet';
 
-        if ($paymentMethod === 'manual' && !ManualPaymentService::isEnabled()) {
+        // "manual" covers both online (Flouci) and bank-transfer payment —
+        // allowed as long as at least one of the two is enabled.
+        if ($paymentMethod === 'manual' && !ManualPaymentService::anyMethodEnabled()) {
             return response()->json(['message' => 'Le paiement manuel n\'est pas disponible actuellement.'], 422);
         }
 
