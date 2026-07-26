@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Boutique;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Boutique\StoreBoutiqueRequest;
 use App\Http\Requests\Boutique\UpdateBoutiqueRequest;
+use App\Http\Resources\PublicSupplierResource;
 use App\Models\Boutiques;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
@@ -17,6 +18,13 @@ class BoutiqueController extends Controller
     public function index()
     {
         $boutiques = Boutiques::with('fournisseur')->get();
+
+        $boutiques->each(function ($boutique) {
+            $boutique->setRelation(
+                'fournisseur',
+                $boutique->fournisseur ? (new PublicSupplierResource($boutique->fournisseur))->resolve(request()) : null
+            );
+        });
 
         return response()->json([
             'status' => 'success',
@@ -55,6 +63,13 @@ class BoutiqueController extends Controller
                 'status' => 'error',
                 'message' => 'No boutique found.',
             ], 404);
+        }
+
+        if ($boutique->fournisseur) {
+            $boutique->setRelation(
+                'fournisseur',
+                (new PublicSupplierResource($boutique->fournisseur))->resolve(request())
+            );
         }
 
         return response()->json([

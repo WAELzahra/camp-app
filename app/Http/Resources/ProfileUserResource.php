@@ -24,6 +24,9 @@ class ProfileUserResource extends BaseApiResource
             'role'         => $this->role?->name,
             'phone_number' => $this->phone_number,
             'ville'        => $this->ville,
+            // Derived boolean, safe to expose publicly — the raw email_verified_at
+            // timestamp itself is only included in the self-view branch below.
+            'is_verified'  => $this->email_verified_at !== null,
         ];
 
         if ($isSelf) {
