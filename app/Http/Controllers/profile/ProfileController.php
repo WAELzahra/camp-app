@@ -1344,7 +1344,9 @@ class ProfileController extends Controller
             $user = Auth::user();
             $center = ProfileCentre::findOrFail($centerId);
 
-            if ($center->profile->user_id !== $user->id) {
+            // Admins manage services on a center's behalf from the admin dashboard
+            // (no ownership relation to check there), everyone else must own the center.
+            if ($center->profile->user_id !== $user->id && $user->role_id !== 6) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Unauthorized access',
@@ -1715,7 +1717,9 @@ class ProfileController extends Controller
             $user = Auth::user();
             $center = ProfileCentre::findOrFail($centerId);
 
-            if ($center->profile->user_id !== $user->id) {
+            // Admins manage services on a center's behalf from the admin dashboard
+            // (no ownership relation to check there), everyone else must own the center.
+            if ($center->profile->user_id !== $user->id && $user->role_id !== 6) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Unauthorized access',
@@ -1839,7 +1843,9 @@ class ProfileController extends Controller
             $user = Auth::user();
             $center = ProfileCentre::findOrFail($centerId);
 
-            if ($center->profile->user_id !== $user->id) {
+            // Admins manage services on a center's behalf from the admin dashboard
+            // (no ownership relation to check there), everyone else must own the center.
+            if ($center->profile->user_id !== $user->id && $user->role_id !== 6) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Unauthorized access',
