@@ -388,6 +388,7 @@ class AdminPaymentReviewController extends Controller
             'id' => $r->id,
             'type' => $type,
             'payment_reference' => $r->payment_reference,
+            'transfer_reference' => $r->transfer_reference,
             'status' => $r->status,
             'payment_option' => $r->payment_option,
             'amount_now' => $r->amount_now,

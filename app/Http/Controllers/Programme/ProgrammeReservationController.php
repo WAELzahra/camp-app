@@ -236,14 +236,32 @@ class ProgrammeReservationController extends Controller
             return response()->json(['message' => "Cette réservation n'utilise pas le paiement manuel."], 422);
         }
 
+        // The camper's own bank transfer reference — required whenever bank
+        // transfer is a live payment option platform-wide (see
+        // ManualPaymentController::submitProof for the same rule applied to
+        // events/centres/materielles).
+        $validated = $request->validate([
+            'transfer_reference' => ManualPaymentService::bankTransferEnabled()
+                ? 'required|string|max:120'
+                : 'nullable|string|max:120',
+        ]);
+
         if (is_null($reservation->payment_confirmed_at) && in_array($reservation->status, ['pending_payment', 'paiement_invalide'])) {
-            $reservation->update(['status' => 'paiement_soumis', 'payment_submitted_at' => now()]);
+            $reservation->update([
+                'status' => 'paiement_soumis',
+                'payment_submitted_at' => now(),
+                ...(!empty($validated['transfer_reference']) ? ['transfer_reference' => $validated['transfer_reference']] : []),
+            ]);
 
             return response()->json(['message' => 'Paiement soumis pour vérification.', 'reservation' => $reservation->fresh()]);
         }
 
         if ((float) $reservation->amount_later > 0 && $reservation->status === 'confirmed') {
-            $reservation->update(['status' => 'solde_soumis', 'payment_submitted_at' => now()]);
+            $reservation->update([
+                'status' => 'solde_soumis',
+                'payment_submitted_at' => now(),
+                ...(!empty($validated['transfer_reference']) ? ['transfer_reference' => $validated['transfer_reference']] : []),
+            ]);
 
             return response()->json(['message' => 'Solde soumis pour vérification.', 'reservation' => $reservation->fresh()]);
         }

@@ -42,6 +42,7 @@ class Reservations_materielles extends Model
         'platform_fee_amount',
         'platform_fee_rate',
         'payment_reference',
+        'transfer_reference',
         'payment_option',
         'amount_now',
         'amount_later',

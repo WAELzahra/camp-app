@@ -30,6 +30,7 @@ protected $table = 'reservations_events';
         'group_skill_level',
         'trip_purpose',
         'payment_reference',
+        'transfer_reference',
         'payment_option',
         'amount_now',
         'amount_later',

@@ -17,6 +17,7 @@ class ProgrammeReservation extends Model
         'amount_now',
         'amount_later',
         'payment_reference',
+        'transfer_reference',
         'balance_due_at',
         'payment_submitted_at',
         'payment_confirmed_at',

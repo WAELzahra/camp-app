@@ -11,6 +11,7 @@ use App\Models\Reservations_events;
 use App\Models\Reservations_materielles;
 use App\Services\ManualPaymentService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 /**
@@ -24,7 +25,7 @@ class ManualPaymentController extends Controller
      * Camper declares they have completed the bank transfer.
      * type: events | centres | materielles
      */
-    public function submitProof(string $type, int $id): JsonResponse
+    public function submitProof(Request $request, string $type, int $id): JsonResponse
     {
         $reservation = $this->findOwn($type, $id);
         if (!$reservation) {
@@ -35,6 +36,17 @@ class ManualPaymentController extends Controller
             return response()->json(['message' => 'Cette réservation n\'utilise pas le paiement manuel.'], 422);
         }
 
+        // The camper's own bank transfer reference — required whenever bank
+        // transfer is a live payment option platform-wide, since that's the
+        // only proof-of-payment we can cross-check against incoming
+        // transfers. Not required when only online (Flouci) payment is
+        // enabled, since a Flouci payer has no bank reference to give.
+        $validated = $request->validate([
+            'transfer_reference' => ManualPaymentService::bankTransferEnabled()
+                ? 'required|string|max:120'
+                : 'nullable|string|max:120',
+        ]);
+
         // Initial payment: not yet confirmed by the admin. payment_confirmed_at guards
         // against re-submitting once the initial payment is already confirmed.
         // ('pending'/'en_attente_validation' are accepted only for legacy manual rows
@@ -43,6 +55,9 @@ class ManualPaymentController extends Controller
             && in_array($reservation->status, ['pending_payment', 'pending', 'en_attente_validation', 'paiement_invalide'])) {
             $reservation->status = 'paiement_soumis';
             $reservation->payment_submitted_at = now();
+            if (!empty($validated['transfer_reference'])) {
+                $reservation->transfer_reference = $validated['transfer_reference'];
+            }
             $reservation->save();
 
             return response()->json([
@@ -57,6 +72,9 @@ class ManualPaymentController extends Controller
             && in_array($reservation->status, ['confirmée_solde_en_attente', 'approved', 'confirmée', 'confirmed'])) {
             $reservation->status = 'solde_soumis';
             $reservation->payment_submitted_at = now();
+            if (!empty($validated['transfer_reference'])) {
+                $reservation->transfer_reference = $validated['transfer_reference'];
+            }
             $reservation->save();
 
             return response()->json([

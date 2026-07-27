@@ -34,6 +34,7 @@ class Reservations_centre extends Model
         'group_skill_level',
         'trip_purpose',
         'payment_reference',
+        'transfer_reference',
         'payment_option',
         'amount_now',
         'amount_later',

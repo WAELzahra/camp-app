@@ -27,6 +27,7 @@ use App\Models\ProfileGuide;
 use App\Models\ServiceCategory;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -644,6 +645,21 @@ class ProfileController extends Controller
 
             \Log::error('Profile update error: '.$e->getMessage());
             \Log::error('Stack trace: '.$e->getTraceAsString());
+
+            // File-validation failures (CIN/legal document/patente/certificat) are
+            // thrown as plain Exceptions above with a "X validation failed: {...}"
+            // message so the specific reason (wrong file type, too large, ...) isn't
+            // lost behind the generic 500 below — surface it as a 422 instead.
+            if (preg_match('/^(.+ validation failed): (.+)$/s', $e->getMessage(), $m)) {
+                $errors = json_decode($m[2], true) ?? [];
+                $firstError = is_array($errors) && count($errors) > 0 ? Arr::flatten($errors)[0] : $m[1];
+
+                return response()->json([
+                    'message' => $firstError,
+                    'errors' => $errors,
+                    'error' => 'validation_error',
+                ], 422);
+            }
 
             return response()->json([
                 'message' => 'Failed to update profile',
