@@ -73,14 +73,19 @@ class AdminEventsController extends Controller
         $byType    = Events::select('event_type', DB::raw('count(*) as total'))
                            ->groupBy('event_type')
                            ->pluck('total', 'event_type');
+        // Capacity is nullable for unlimited-spot events (see
+        // 2026_05_23_133922_make_events_optional_columns_nullable) — sum() already
+        // skips nulls, so this only reflects events with a fixed capacity.
+        $totalCapacity = (int) Events::sum('capacity');
 
         return response()->json([
             'success' => true,
             'data'    => [
-                'total'      => $total,
-                'active'     => $active,
-                'by_status'  => $byStatus,
-                'by_type'    => $byType,
+                'total'          => $total,
+                'active'         => $active,
+                'by_status'      => $byStatus,
+                'by_type'        => $byType,
+                'total_capacity' => $totalCapacity,
             ],
         ]);
     }

@@ -798,6 +798,15 @@ class AdminUserController extends Controller
                         return $users->count();
                     }),
                 'recent' => User::where('created_at', '>=', now()->subDays(7))->count(),
+                'new_this_month' => User::where('created_at', '>=', now()->startOfMonth())->count(),
+                'new_this_week' => User::where('created_at', '>=', now()->startOfWeek())->count(),
+                // Daily signup counts for the growth chart — only days with at
+                // least one signup are present, the frontend fills the gaps.
+                'signups_by_day' => User::selectRaw('DATE(created_at) as date, COUNT(*) as count')
+                    ->where('created_at', '>=', now()->subDays(13)->startOfDay())
+                    ->groupBy('date')
+                    ->orderBy('date')
+                    ->get(),
             ];
 
             return response()->json([
