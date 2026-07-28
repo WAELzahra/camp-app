@@ -191,6 +191,8 @@ class AdminUserController extends Controller
                 $userData['profile'] = array_merge($userData['profile'] ?? [], $profileExtra);
             }
 
+            $userData['stats'] = $this->getUserStats($user);
+
             return response()->json([
                 'success' => true,
                 'data' => $userData,
@@ -816,6 +818,58 @@ class AdminUserController extends Controller
     // ==================== MÉTHODES PRIVÉES ====================
 
     /**
+     * Compute role-relevant activity stats for the admin user detail page.
+     */
+    private function getUserStats($user): array
+    {
+        $stats = [
+            'account_age_days' => $user->created_at ? $user->created_at->diffInDays(now()) : 0,
+            'reports_count' => $user->nombre_signalement ?? 0,
+        ];
+
+        $roleName = $user->role ? strtolower($user->role->name) : null;
+
+        // A stats query failing (missing table, dropped relation, etc.) must never
+        // break the whole profile page — log it and return what we have instead.
+        try {
+            switch ($roleName) {
+                case 'campeur':
+                    $stats['equipment_reservations'] = $user->reservationsCamper()->count();
+                    // Not a User relation — the March 2026 favorites redesign replaced the
+                    // old polymorphic-by-string `favoris` table (dropped) with `favorites`
+                    // (favoritable_id/favoritable_type), queried directly via the Favorite model.
+                    $stats['favorites_count'] = \App\Models\Favorite::where('user_id', $user->id)->count();
+                    break;
+
+                case 'guide':
+                    // Guide activity is currently limited to the profile fields already
+                    // surfaced (experience, rate, work zone) — no bookings model yet.
+                    break;
+
+                case 'centre':
+                    $stats['photos_count'] = $user->campingCentre
+                        ? \App\Models\Photo::where('camping_centre_id', $user->campingCentre->id)->count()
+                        : 0;
+                    break;
+
+                case 'fournisseur':
+                    $stats['products_count'] = $user->materielles()->count();
+                    $stats['orders_received'] = $user->reservationsFournisseur()->count();
+                    break;
+
+                case 'organizer':
+                case 'groupe':
+                    $stats['events_count'] = $user->events()->count();
+                    break;
+            }
+        } catch (\Throwable $e) {
+            Log::error("getUserStats failed for user {$user->id} (role: {$roleName}): ".$e->getMessage());
+        }
+
+        return $stats;
+    }
+
+    /**
      * Formater l'utilisateur pour le frontend
      */
     private function formatUserForFrontend($user)
@@ -827,6 +881,12 @@ class AdminUserController extends Controller
                 'cover_image' => $user->profile->cover_image,
                 'type' => $user->profile->type,
                 'activities' => $user->profile->activities,
+                // city/address live on profiles (edited via the user's own profile
+                // settings), not on users.ville/adresse — those are legacy fields
+                // only ever set at registration time and never updated afterwards.
+                'city' => $user->profile->city,
+                'address' => $user->profile->address,
+                'is_public' => (bool) $user->profile->is_public,
                 'has_cin' => (bool) $user->profile->cin_path,
                 'cin_url' => $user->profile->cin_path ? url("/api/admin/users/{$user->id}/documents/cin") : null,
             ];
