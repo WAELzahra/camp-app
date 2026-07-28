@@ -287,7 +287,7 @@ Route::middleware('auth:sanctum')->get('/user/{id}/verification-status', functio
 });
 
 // -------------------- PAYMENT CALLBACKS (Public) --------------------
-Route::get('/flouci/callback', [PaymentController::class, 'callback']);
+Route::get('/clictopay/callback', [PaymentController::class, 'callback']);
 
 // -------------------- ROLES (Public) --------------------
 Route::get('/roles', function () {
@@ -441,7 +441,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/my/withdrawal-request', function (\Illuminate\Http\Request $request) {
         $data = $request->validate([
             'montant'          => 'required|numeric|min:1',
-            'methode'          => 'required|in:virement_bancaire,chèque,espèces,flouci',
+            'methode'          => 'required|in:virement_bancaire,chèque,espèces,clictopay',
             'details_paiement' => 'nullable|array',
         ]);
 
@@ -833,7 +833,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // check and sat behind auth:sanctum (a real gateway can't send a user session, so
     // it could only ever be called by a logged-in camper — who could confirm any
     // reservation for free just by knowing/guessing its konnect_reference UUID).
-    // Confirmed unreachable from the live app (Flouci/manual/wallet are the only
+    // Confirmed unreachable from the live app (ClicToPay/manual/wallet are the only
     // payment paths surfaced in the frontend; /konnect/success and /konnect/fail
     // pointed at a PaymentController::konnectCallback method that doesn't even exist).
     Route::prefix('payment')->group(function () {

@@ -118,7 +118,7 @@ class ReservationMaterielleController extends Controller
             ], 422);
         }
 
-        // Manual payment gate — covers both online (Flouci) and bank-transfer
+        // Manual payment gate — covers both online (ClicToPay) and bank-transfer
         // payment; allowed as long as at least one of the two is enabled.
         if ($paymentMethod === 'manual' && !ManualPaymentService::anyMethodEnabled()) {
             return response()->json([
@@ -359,7 +359,7 @@ class ReservationMaterielleController extends Controller
                     'amount_now' => $reservation->amount_now,
                     'amount_later' => $reservation->amount_later,
                     'balance_due_at' => $reservation->balance_due_at,
-                    'flouci_link' => ManualPaymentService::flouciLink(),
+                    'clictopay_link' => ManualPaymentService::clicToPayLink(),
                 ];
             } elseif ($paymentMethod === 'cash') {
                 $response['payment_info'] = [

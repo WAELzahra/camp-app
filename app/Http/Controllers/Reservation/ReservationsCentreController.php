@@ -187,7 +187,7 @@ class ReservationsCentreController extends Controller
             // Escrow: check and lock camper funds (wallet only; manual skips wallet entirely)
             $paymentMethod = $request->input('payment_method', 'wallet');
 
-            // "manual" covers both online (Flouci) and bank-transfer payment —
+            // "manual" covers both online (ClicToPay) and bank-transfer payment —
             // allowed as long as at least one of the two is enabled.
             if ($paymentMethod === 'manual' && !ManualPaymentService::anyMethodEnabled()) {
                 DB::rollBack();
@@ -337,7 +337,7 @@ class ReservationsCentreController extends Controller
                     'amount_now' => $reservationCentre->amount_now,
                     'amount_later' => $reservationCentre->amount_later,
                     'balance_due_at' => $reservationCentre->balance_due_at,
-                    'flouci_link' => ManualPaymentService::flouciLink(),
+                    'clictopay_link' => ManualPaymentService::clicToPayLink(),
                 ];
             } elseif ($paymentMethod === 'cash') {
                 $resp['payment_info'] = [

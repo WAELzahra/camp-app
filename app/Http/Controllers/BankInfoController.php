@@ -18,7 +18,7 @@ class BankInfoController extends Controller
         'bank_name' => null,
         'account_holder' => null,
         'iban' => null,
-        'flouci_phone' => null,
+        'clictopay_phone' => null,
         'card_last4' => null,
     ];
 

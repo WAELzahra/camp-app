@@ -16,7 +16,7 @@ class WalletRechargeController extends Controller
 {
     /**
      * POST /my/wallet/recharge
-     * Creates a pending recharge request and returns the payment reference + Flouci link.
+     * Creates a pending recharge request and returns the payment reference + ClicToPay link.
      */
     public function initiate(InitiateWalletRechargeRequest $request): JsonResponse
     {
@@ -41,7 +41,7 @@ class WalletRechargeController extends Controller
                 'amount' => $req->amount,
                 'payment_reference' => $req->payment_reference,
                 'status' => $req->status,
-                'flouci_link' => ManualPaymentService::flouciLink(),
+                'clictopay_link' => ManualPaymentService::clicToPayLink(),
             ],
         ], 201);
     }

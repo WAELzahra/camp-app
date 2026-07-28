@@ -43,7 +43,7 @@ class ProgrammeReservationController extends Controller
 
         $paymentMethod = $validated['payment_method'] ?? 'wallet';
 
-        // "manual" covers both online (Flouci) and bank-transfer payment —
+        // "manual" covers both online (ClicToPay) and bank-transfer payment —
         // allowed as long as at least one of the two is enabled.
         if ($paymentMethod === 'manual' && !ManualPaymentService::anyMethodEnabled()) {
             return response()->json(['message' => 'Le paiement manuel n\'est pas disponible actuellement.'], 422);
@@ -202,7 +202,7 @@ class ProgrammeReservationController extends Controller
                 'amount_now' => $amountNow,
                 'amount_later' => $amountLater,
                 'balance_due_at' => $balanceDueAt,
-                'flouci_link' => ManualPaymentService::flouciLink(),
+                'clictopay_link' => ManualPaymentService::clicToPayLink(),
             ];
         }
 
@@ -221,7 +221,7 @@ class ProgrammeReservationController extends Controller
             'amount_later' => $reservation->amount_later,
             'balance_due_at' => $reservation->balance_due_at,
             'status' => $reservation->status,
-            'flouci_link' => ManualPaymentService::flouciLink(),
+            'clictopay_link' => ManualPaymentService::clicToPayLink(),
         ]);
     }
 

@@ -14,7 +14,7 @@ class AdminSettingsController extends Controller
 {
     /** Keys managed by the payment endpoint (non-sensitive subset exposed to public) */
     private const PAYMENT_KEYS = [
-        'payment_link_flouci',
+        'payment_link_clictopay',
         'manual_payment_enabled',
         'deposit_min_percentage',
         'deposit_max_percentage',
@@ -31,7 +31,7 @@ class AdminSettingsController extends Controller
     ];
 
     private const PAYMENT_DEFAULTS = [
-        'payment_link_flouci' => '',
+        'payment_link_clictopay' => '',
         'manual_payment_enabled' => false,
         'deposit_min_percentage' => 20,
         'deposit_max_percentage' => 80,
@@ -48,7 +48,7 @@ class AdminSettingsController extends Controller
     /**
      * Keys exposed publicly. Booking modals need the deposit rules; the wallet
      * recharge screen needs the bank-account details so campers can transfer.
-     * The Flouci link stays admin-only (returned with the recharge request instead).
+     * The ClicToPay link stays admin-only (returned with the recharge request instead).
      */
     private const PAYMENT_PUBLIC_KEYS = [
         'manual_payment_enabled',
@@ -77,8 +77,7 @@ class AdminSettingsController extends Controller
         'withdrawal_processing_days',
         'withdrawal_allowed_days',
         'withdrawal_enabled',
-        'gateway_konnect_enabled',
-        'gateway_flouci_enabled',
+        'gateway_clictopay_enabled',
     ];
 
     /** Default values when a key is missing from the DB */
@@ -94,8 +93,7 @@ class AdminSettingsController extends Controller
         'withdrawal_processing_days' => 3,
         'withdrawal_allowed_days' => [1, 4],
         'withdrawal_enabled' => true,
-        'gateway_konnect_enabled' => true,
-        'gateway_flouci_enabled' => false,
+        'gateway_clictopay_enabled' => true,
     ];
 
     /**
@@ -135,7 +133,7 @@ class AdminSettingsController extends Controller
         // Ensure platform name
         $data['platform_name'] = PlatformSetting::get('platform_name', 'TunisiaCamp');
 
-        // Payment settings needed by booking modals (flouci link excluded — admin-only)
+        // Payment settings needed by booking modals (clictopay link excluded — admin-only)
         foreach (self::PAYMENT_PUBLIC_KEYS as $key) {
             $raw = PlatformSetting::get($key);
             $data[$key] = $raw ?? self::PAYMENT_DEFAULTS[$key] ?? null;
@@ -146,7 +144,7 @@ class AdminSettingsController extends Controller
 
     /**
      * GET /admin/settings/payment
-     * Full payment settings including the Flouci link (admin-only).
+     * Full payment settings including the ClicToPay link (admin-only).
      */
     public function getPaymentSettings(): JsonResponse
     {

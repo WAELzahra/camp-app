@@ -522,7 +522,7 @@ class ReservationEventController extends Controller
             ], 422);
         }
 
-        // "manual" covers both online (Flouci) and bank-transfer payment —
+        // "manual" covers both online (ClicToPay) and bank-transfer payment —
         // allowed as long as at least one of the two is enabled.
         if ($eventPaymentMethod === 'manual' && !ManualPaymentService::anyMethodEnabled()) {
             return response()->json([
@@ -779,7 +779,7 @@ class ReservationEventController extends Controller
                 'option' => $reservation->payment_option,
                 'amount_now' => $reservation->amount_now,
                 'amount_later' => $reservation->amount_later,
-                'flouci_link' => ManualPaymentService::flouciLink(),
+                'clictopay_link' => ManualPaymentService::clicToPayLink(),
             ];
         } elseif ($eventPaymentMethod === 'cash') {
             $paymentResp['payment_info'] = [

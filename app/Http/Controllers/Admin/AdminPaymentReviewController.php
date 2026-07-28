@@ -152,7 +152,7 @@ class AdminPaymentReviewController extends Controller
             $reservationTypeKey = match ($type) { 'events' => 'event', 'centres' => 'centre', default => 'materielle' };
             \App\Services\Payments\ReservationLedgerService::recordGatewayPayment(
                 (int) $reservation->user_id, (int) $reservation->id, $reservationTypeKey,
-                $tranche, $isCash ? 'cash' : 'flouci',
+                $tranche, $isCash ? 'cash' : 'clictopay',
                 ($reservation->payment_reference ?? 'RES-' . $reservation->id) . ($wasBalance ? '-SOLDE' : '')
             );
 

@@ -39,8 +39,8 @@ class ManualPaymentController extends Controller
         // The camper's own bank transfer reference — required whenever bank
         // transfer is a live payment option platform-wide, since that's the
         // only proof-of-payment we can cross-check against incoming
-        // transfers. Not required when only online (Flouci) payment is
-        // enabled, since a Flouci payer has no bank reference to give.
+        // transfers. Not required when only online (ClicToPay) payment is
+        // enabled, since a ClicToPay payer has no bank reference to give.
         $validated = $request->validate([
             'transfer_reference' => ManualPaymentService::bankTransferEnabled()
                 ? 'required|string|max:120'
@@ -91,7 +91,7 @@ class ManualPaymentController extends Controller
 
     /**
      * GET /my/reservations/{type}/{id}/payment-info
-     * Returns payment reference, Flouci link, and amounts for the payment screen.
+     * Returns payment reference, ClicToPay link, and amounts for the payment screen.
      */
     public function paymentInfo(string $type, int $id): JsonResponse
     {
@@ -115,7 +115,7 @@ class ManualPaymentController extends Controller
             'amount_now' => $isBalanceStep ? $reservation->amount_later : $reservation->amount_now,
             'amount_later' => $isBalanceStep ? 0 : $reservation->amount_later,
             'balance_due_at' => $reservation->balance_due_at,
-            'flouci_link' => ManualPaymentService::flouciLink(),
+            'clictopay_link' => ManualPaymentService::clicToPayLink(),
             'status' => $reservation->status,
             'is_balance_step' => $isBalanceStep,
         ]);

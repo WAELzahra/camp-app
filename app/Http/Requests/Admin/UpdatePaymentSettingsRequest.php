@@ -15,7 +15,7 @@ class UpdatePaymentSettingsRequest extends FormRequest
     {
         return [
             'password' => 'required|string',
-            'payment_link_flouci' => 'sometimes|nullable|string|max:2000',
+            'payment_link_clictopay' => 'sometimes|nullable|string|max:2000',
             'manual_payment_enabled' => 'sometimes|boolean',
             'deposit_min_percentage' => 'sometimes|integer|min:1|max:99',
             'deposit_max_percentage' => 'sometimes|integer|min:1|max:99',

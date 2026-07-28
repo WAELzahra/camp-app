@@ -13,7 +13,7 @@ class UserBankInfo extends Model
         'bank_name',
         'account_holder',
         'iban',
-        'flouci_phone',
+        'clictopay_phone',
         'card_last4',
     ];
 

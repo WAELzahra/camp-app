@@ -17,7 +17,7 @@ class UpdateBankInfoRequest extends FormRequest
             'bank_name' => 'nullable|string|max:255',
             'account_holder' => 'nullable|string|max:255',
             'iban' => 'nullable|string|max:60',
-            'flouci_phone' => 'nullable|string|max:30',
+            'clictopay_phone' => 'nullable|string|max:30',
             'card_last4' => 'nullable|string|max:4',
         ];
     }

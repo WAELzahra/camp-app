@@ -22,9 +22,6 @@ class Payments extends Model
         'event_id',                 //  Événement lié
         'commission',               //  Commission prélevée
         'net_revenue',              // Revenu net (montant - commission)
-        'konnect_session_id',       //  Session ID Konnect
-        'konnect_payment_id',       //  ID de paiement Konnect
-        'konnect_payment_url',      // URL de redirection Konnect
     ];
 
     /**

@@ -29,7 +29,7 @@ class ReservationLedgerService
         int $reservationId,
         string $reservationType,   // centre | event | materielle
         float $amount,
-        string $gateway,           // flouci | clictopay | bank_transfer | reservation_credit
+        string $gateway,           // clictopay | bank_transfer | reservation_credit | cash
         ?string $reference = null,
     ): void {
         if ($amount <= 0) {

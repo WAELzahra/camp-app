@@ -53,9 +53,9 @@ class LegalDocumentSeeder extends Seeder
                 'type'           => 'mentions_legales',
                 'version'        => '1.0',
                 'effective_date' => '2026-06-27',
-                'content_fr'     => "Tunisia Camp est une plateforme de mise en relation entre campeurs et prestataires en Tunisie. Le Credit de Reservation constitue une avance sur services — non un instrument de monnaie electronique (Loi 2016-48). Paiements traites par Flouci et ClicToPay/BH Bank.",
-                'content_en'     => "Tunisia Camp is a platform connecting campers and providers in Tunisia. Reservation Credit constitutes a service advance — not an electronic money instrument (Law 2016-48). Payments processed by Flouci and ClicToPay/BH Bank.",
-                'content_ar'     => "Tunisia Camp منصة ربط بين المخيمين والمزودين في تونس. رصيد الحجز دفعة مسبقة على الخدمات وليس اداة نقود الكترونية (القانون 2016-48). تتم المدفوعات عبر Flouci وClicToPay/بنك الاسكان.",
+                'content_fr'     => "Tunisia Camp est une plateforme de mise en relation entre campeurs et prestataires en Tunisie. Le Credit de Reservation constitue une avance sur services — non un instrument de monnaie electronique (Loi 2016-48). Paiements traites par ClicToPay/BH Bank.",
+                'content_en'     => "Tunisia Camp is a platform connecting campers and providers in Tunisia. Reservation Credit constitutes a service advance — not an electronic money instrument (Law 2016-48). Payments processed by ClicToPay/BH Bank.",
+                'content_ar'     => "Tunisia Camp منصة ربط بين المخيمين والمزودين في تونس. رصيد الحجز دفعة مسبقة على الخدمات وليس اداة نقود الكترونية (القانون 2016-48). تتم المدفوعات عبر ClicToPay/بنك الاسكان.",
             ],
             [
                 'type'           => 'confidentialite',
@@ -110,8 +110,8 @@ class LegalDocumentSeeder extends Seeder
     {
         return "CONDITIONS GENERALES DE VENTE — Tunisia Camp v1.0 (27/06/2026)\n\n"
             . "1. CHAMP D'APPLICATION\nS'applique a toute reservation via Tunisia Camp : sejours, locations de materiel, evenements.\n\n"
-            . "2. PRIX ET PAIEMENT\nPrix en DT (TND) TTC. Paiement via Flouci, ClicToPay/BH Bank ou Credit de Reservation. Commission de service prelevee par Tunisia Camp.\n\n"
-            . "3. PAIEMENT VIA CREDIT DE RESERVATION\nConstitue une avance sur services. Paiements traites par Flouci et ClicToPay/BH Bank.\n\n"
+            . "2. PRIX ET PAIEMENT\nPrix en DT (TND) TTC. Paiement via ClicToPay/BH Bank ou Credit de Reservation. Commission de service prelevee par Tunisia Camp.\n\n"
+            . "3. PAIEMENT VIA CREDIT DE RESERVATION\nConstitue une avance sur services. Paiements traites par ClicToPay/BH Bank.\n\n"
             . "4. CONFIRMATION ET ANNULATION\nReservation confirmee a reception du paiement. Conditions d'annulation definies par la politique du prestataire.\n\n"
             . "5. RESPONSABILITE\nLe prestataire est seul responsable de la prestation. Tunisia Camp est un intermediaire.\n\n"
             . "6. LITIGES\nContact : contact@tunisiacamp.tn — tribunaux tunisiens competents.";
@@ -121,8 +121,8 @@ class LegalDocumentSeeder extends Seeder
     {
         return "GENERAL TERMS OF SALE — Tunisia Camp v1.0 (27/06/2026)\n\n"
             . "1. SCOPE\nApplies to all bookings via Tunisia Camp: stays, equipment rentals, events.\n\n"
-            . "2. PRICES AND PAYMENT\nPrices in TND inclusive of taxes. Payment via Flouci, ClicToPay/BH Bank or Reservation Credit. Service commission charged by Tunisia Camp.\n\n"
-            . "3. RESERVATION CREDIT PAYMENT\nConstitutes a service advance. Payments processed by Flouci and ClicToPay/BH Bank.\n\n"
+            . "2. PRICES AND PAYMENT\nPrices in TND inclusive of taxes. Payment via ClicToPay/BH Bank or Reservation Credit. Service commission charged by Tunisia Camp.\n\n"
+            . "3. RESERVATION CREDIT PAYMENT\nConstitutes a service advance. Payments processed by ClicToPay/BH Bank.\n\n"
             . "4. CONFIRMATION AND CANCELLATION\nBooking confirmed on payment receipt. Cancellation conditions set by provider policy.\n\n"
             . "5. LIABILITY\nProvider is solely responsible for service delivery. Tunisia Camp is an intermediary.\n\n"
             . "6. DISPUTES\nContact: contact@tunisiacamp.tn — Tunisian courts have jurisdiction.";
@@ -132,7 +132,7 @@ class LegalDocumentSeeder extends Seeder
     {
         return "الشروط العامة للبيع — Tunisia Camp الاصدار 1.0 (27/06/2026)\n\n"
             . "1. النطاق\nتسري على كل حجز عبر Tunisia Camp: الاقامة والتاجير والفعاليات.\n\n"
-            . "2. الاسعار والدفع\nبالدينار التونسي شاملة الضرائب. الدفع عبر Flouci او ClicToPay/بنك الاسكان او رصيد الحجز.\n\n"
+            . "2. الاسعار والدفع\nبالدينار التونسي شاملة الضرائب. الدفع عبر ClicToPay/بنك الاسكان او رصيد الحجز.\n\n"
             . "3. الدفع عبر رصيد الحجز\nيعد دفعة مسبقة على الخدمات.\n\n"
             . "4. التاكيد والالغاء\nيتم تاكيد الحجز عند استلام الدفع. شروط الالغاء محددة بسياسة المزود.\n\n"
             . "5. المسؤولية\nالمزود مسؤول وحده عن الخدمة. Tunisia Camp وسيط فحسب.\n\n"

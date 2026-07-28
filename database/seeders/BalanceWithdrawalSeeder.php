@@ -58,13 +58,13 @@ class BalanceWithdrawalSeeder extends Seeder
             // user_idx, montant, status, methode, days_ago
             [0,  500.00, 'complété',   'virement_bancaire', 20],
             [0,  350.00, 'en_attente', 'virement_bancaire',  2],
-            [1,  200.00, 'approuvé',   'flouci',             5],
+            [1,  200.00, 'approuvé',   'clictopay',         5],
             [2,  700.00, 'complété',   'virement_bancaire', 30],
             [2,  200.00, 'en_attente', 'chèque',             1],
             [3,  180.00, 'rejeté',     'virement_bancaire', 10],
             [4,  660.00, 'complété',   'virement_bancaire', 25],
             [4,  400.00, 'en_cours',   'virement_bancaire',  3],
-            [6,  229.50, 'en_attente', 'flouci',             1],
+            [6,  229.50, 'en_attente', 'clictopay',         1],
         ];
 
         foreach ($withdrawalsData as [$idx, $montant, $status, $methode, $daysAgo]) {
@@ -80,7 +80,7 @@ class BalanceWithdrawalSeeder extends Seeder
                     'banque'        => 'STB Bank',
                     'rib'           => 'TN59 0801 0000 ' . rand(1000, 9999) . ' ' . rand(1000, 9999) . ' ' . rand(10, 99),
                     'beneficiaire'  => $users[$idx]->first_name . ' ' . $users[$idx]->last_name,
-                ] : ($methode === 'flouci' ? [
+                ] : ($methode === 'clictopay' ? [
                     'telephone' => '+216 9' . rand(1000000, 9999999),
                 ] : null),
                 'admin_note'       => in_array($status, ['complété', 'approuvé']) ? 'Virement effectué — traité par admin.' : (

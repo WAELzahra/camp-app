@@ -50,7 +50,6 @@ class AdminPaymentController extends Controller
             $s = $request->search;
             $query->where(function ($q) use ($s) {
                 $q->where('description', 'like', "%{$s}%")
-                    ->orWhere('konnect_payment_id', 'like', "%{$s}%")
                     ->orWhereHas('user', fn ($u) => $u
                         ->where('first_name', 'like', "%{$s}%")
                         ->orWhere('last_name', 'like', "%{$s}%")
@@ -90,7 +89,6 @@ class AdminPaymentController extends Controller
                 'status' => $payment->status,
                 'commission' => $payment->commission,
                 'net_revenue' => $payment->net_revenue,
-                'konnect_session_id' => $payment->konnect_session_id,
                 'created_at' => $payment->created_at,
                 'updated_at' => $payment->updated_at,
                 'user' => $payment->user ? [
@@ -284,7 +282,7 @@ class AdminPaymentController extends Controller
                 return; // nothing more to do for wallet-centre refunds
             }
 
-            // ── Standard Konnect payment refund ───────────────────────────────
+            // ── Standard ClicToPay payment refund ─────────────────────────────
             if ($refund->payment_id) {
                 $payment = Payments::find($refund->payment_id);
                 if ($payment) {

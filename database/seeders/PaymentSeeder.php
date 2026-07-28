@@ -18,24 +18,24 @@ class PaymentSeeder extends Seeder
         \DB::statement('SET FOREIGN_KEY_CHECKS=1');
 
         $paymentsData = [
-            // event_id, user_id, reservation_id, montant, status, description, konnect_payment_id, days_ago
-            [1, 3,  1, 250.00, 'paid',             'Réservation Camping Saharien - Douz',         'KNX-20250101-001', 30],
-            [1, 9,  2, 250.00, 'paid',             'Réservation Camping Saharien - Douz',         'KNX-20250102-002', 28],
-            [2, 3,  4, 180.00, 'paid',             'Réservation Trek Montagne Kasserine',         'KNX-20250103-003', 25],
-            [2, 9,  5, 180.00, 'pending',          'Réservation Trek Montagne Kasserine',         null,               20],
-            [3, 8,  8, 320.00, 'paid',             'Réservation Aventure Ain Draham',             'KNX-20250105-005', 18],
-            [3, 10, 9, 320.00, 'failed',           'Réservation Aventure Ain Draham',             null,               15],
-            [4, 3,  4, 150.00, 'paid',             'Réservation Randonnée Zaghouan',              'KNX-20250107-007', 12],
-            [4, 9,  5, 150.00, 'refunded_total',   'Réservation Randonnée Zaghouan - Annulée',   'KNX-20250108-008', 10],
-            [5, 8,  8, 400.00, 'paid',             'Réservation Camp Plage Bizerte',              'KNX-20250109-009',  8],
-            [5, 10, 9, 400.00, 'refunded_partial', 'Réservation Camp Plage Bizerte - Partiel',   'KNX-20250110-010',  6],
-            [6, 3,  1, 290.00, 'paid',             'Réservation Expedition Tataouine',            'KNX-20250111-011',  4],
-            [6, 9,  2, 290.00, 'pending',          'Réservation Expedition Tataouine',            null,                2],
+            // event_id, user_id, reservation_id, montant, status, description, days_ago
+            [1, 3,  1, 250.00, 'paid',             'Réservation Camping Saharien - Douz',        30],
+            [1, 9,  2, 250.00, 'paid',             'Réservation Camping Saharien - Douz',        28],
+            [2, 3,  4, 180.00, 'paid',             'Réservation Trek Montagne Kasserine',        25],
+            [2, 9,  5, 180.00, 'pending',          'Réservation Trek Montagne Kasserine',        20],
+            [3, 8,  8, 320.00, 'paid',             'Réservation Aventure Ain Draham',            18],
+            [3, 10, 9, 320.00, 'failed',           'Réservation Aventure Ain Draham',            15],
+            [4, 3,  4, 150.00, 'paid',             'Réservation Randonnée Zaghouan',              12],
+            [4, 9,  5, 150.00, 'refunded_total',   'Réservation Randonnée Zaghouan - Annulée',   10],
+            [5, 8,  8, 400.00, 'paid',             'Réservation Camp Plage Bizerte',               8],
+            [5, 10, 9, 400.00, 'refunded_partial', 'Réservation Camp Plage Bizerte - Partiel',    6],
+            [6, 3,  1, 290.00, 'paid',             'Réservation Expedition Tataouine',             4],
+            [6, 9,  2, 290.00, 'pending',          'Réservation Expedition Tataouine',             2],
         ];
 
         $createdPayments = [];
         foreach ($paymentsData as $data) {
-            [$eventId, $userId, $reservationId, $montant, $status, $description, $konnectId, $daysAgo] = $data;
+            [$eventId, $userId, $reservationId, $montant, $status, $description, $daysAgo] = $data;
 
             $commission  = round($montant * 0.10, 2);
             $netRevenue  = round($montant - $commission, 2);
@@ -48,8 +48,6 @@ class PaymentSeeder extends Seeder
                 'status'             => $status,
                 'commission'         => $commission,
                 'net_revenue'        => $netRevenue,
-                'konnect_payment_id' => $konnectId,
-                'konnect_session_id' => $konnectId ? 'SES-' . substr($konnectId, -6) : null,
                 'created_at'         => now()->subDays($daysAgo),
                 'updated_at'         => now()->subDays($daysAgo),
             ]);

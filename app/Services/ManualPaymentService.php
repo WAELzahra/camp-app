@@ -6,7 +6,7 @@ use App\Models\PlatformSetting;
 use App\Models\ProviderPaymentPreference;
 
 /**
- * Encapsulates manual (Flouci bank-transfer) payment business logic.
+ * Encapsulates manual (ClicToPay bank-transfer) payment business logic.
  *
  * - Wallet payments continue to use the existing wallet/escrow flow.
  * - Manual payments skip wallet checks entirely; the admin confirms the
@@ -14,7 +14,7 @@ use App\Models\ProviderPaymentPreference;
  */
 class ManualPaymentService
 {
-    /** True when the admin has enabled online (Flouci) payment. */
+    /** True when the admin has enabled online (ClicToPay) payment. */
     public static function isEnabled(): bool
     {
         return (bool) PlatformSetting::get('manual_payment_enabled', false);
@@ -22,7 +22,7 @@ class ManualPaymentService
 
     /**
      * True when the admin has enabled direct bank-transfer (virement) payment.
-     * Distinct from `isEnabled()` — Flouci is an online payment gateway,
+     * Distinct from `isEnabled()` — ClicToPay is an online payment gateway,
      * a bank transfer is a manual wire the admin verifies out-of-band. In
      * Tunisia these are two different things a camper can choose between,
      * not two names for the same flow.
@@ -38,10 +38,10 @@ class ManualPaymentService
         return self::isEnabled() || self::bankTransferEnabled();
     }
 
-    /** External Flouci link for online payment. */
-    public static function flouciLink(): string
+    /** External ClicToPay link for online payment. */
+    public static function clicToPayLink(): string
     {
-        return (string) PlatformSetting::get('payment_link_flouci', '');
+        return (string) PlatformSetting::get('payment_link_clictopay', '');
     }
 
     /**

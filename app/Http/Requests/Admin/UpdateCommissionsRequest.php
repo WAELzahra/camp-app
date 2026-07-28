@@ -27,8 +27,7 @@ class UpdateCommissionsRequest extends FormRequest
             'withdrawal_allowed_days' => 'sometimes|array',
             'withdrawal_allowed_days.*' => 'integer|min:1|max:7',
             'withdrawal_enabled' => 'sometimes|boolean',
-            'gateway_konnect_enabled' => 'sometimes|boolean',
-            'gateway_flouci_enabled' => 'sometimes|boolean',
+            'gateway_clictopay_enabled' => 'sometimes|boolean',
         ];
     }
 }
