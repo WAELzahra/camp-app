@@ -127,6 +127,13 @@ class ReservationMaterielleController extends Controller
             ], 422);
         }
 
+        if ($paymentMethod === 'cash' && !\App\Services\CashPaymentService::isEnabled()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Le paiement en espèces n\'est pas disponible pour le moment.',
+            ], 422);
+        }
+
         $user = Auth::user();
         $isRental = $validated['type_reservation'] === 'location';
 
@@ -214,8 +221,8 @@ class ReservationMaterielleController extends Controller
         $platformFeeAmt = round($montantTotal * $serviceFeeRate / (1 + $serviceFeeRate), 2);
         $platformFeeRate = round($serviceFeeRate * 100, 2);
 
-        // Manual payments skip the wallet — the bank transfer is verified externally by admin
-        if ($paymentMethod !== 'manual' && $montantTotal > 0) {
+        // Only wallet payments touch the camper's balance — manual and cash both skip it.
+        if ($paymentMethod === 'wallet' && $montantTotal > 0) {
             $camperBalance = Balance::forUser($user->id);
             if ($camperBalance->solde_disponible < $montantTotal) {
                 return response()->json([
@@ -246,7 +253,7 @@ class ReservationMaterielleController extends Controller
         DB::beginTransaction();
         try {
             // Lock funds in escrow immediately — wallet payments only
-            if ($paymentMethod !== 'manual' && $montantTotal > 0) {
+            if ($paymentMethod === 'wallet' && $montantTotal > 0) {
                 Balance::forUser($user->id)->lockFunds($montantTotal);
                 WalletTransaction::logDebit(
                     $user->id, 'reservation_payment', $montantTotal,
@@ -282,17 +289,19 @@ class ReservationMaterielleController extends Controller
                 'adresse_livraison' => $validated['adresse_livraison'] ?? null,
                 'frais_livraison' => $validated['frais_livraison'] ?? 0,
                 'cin_camper' => $isRental ? $user->profile->cin_path : null,
-                // Manual payments stay hidden from the supplier until the admin confirms
-                // the transfer; only then does the reservation enter the review queue.
+                // Manual and cash payments stay hidden from the supplier until the admin
+                // confirms the transfer, or the supplier accepts (for cash), respectively;
+                // both still land in the same 'pending' review queue as wallet payments.
                 'status' => $paymentMethod === 'manual' ? 'pending_payment' : 'pending',
                 'promo_code_id' => $promoCodeId,
                 'discount_amount' => $discountAmount,
                 'payment_method' => $paymentMethod,
                 'platform_fee_amount' => $montantTotal > 0 ? $platformFeeAmt : null,
                 'platform_fee_rate' => $montantTotal > 0 ? $platformFeeRate : null,
-                'payment_option' => $paymentMethod === 'manual' ? ($manualAmounts['payment_option'] ?? 'full') : null,
-                'amount_now' => $paymentMethod === 'manual' ? ($manualAmounts['amount_now'] ?? $montantTotal) : null,
-                'amount_later' => $paymentMethod === 'manual' ? ($manualAmounts['amount_later'] ?? 0) : null,
+                // Cash is always paid in full on pickup/delivery — no deposit/balance split.
+                'payment_option' => $paymentMethod === 'manual' ? ($manualAmounts['payment_option'] ?? 'full') : ($paymentMethod === 'cash' ? 'full' : null),
+                'amount_now' => $paymentMethod === 'manual' ? ($manualAmounts['amount_now'] ?? $montantTotal) : ($paymentMethod === 'cash' ? $montantTotal : null),
+                'amount_later' => $paymentMethod === 'manual' ? ($manualAmounts['amount_later'] ?? 0) : ($paymentMethod === 'cash' ? 0 : null),
                 'balance_due_at' => $balanceDueAt,
             ]);
 
@@ -301,13 +310,13 @@ class ReservationMaterielleController extends Controller
             \App\Services\Kyc\KycTriggerService::triggerForCamper($user);
 
             // Set the payment reference now that we have the ID
-            if ($paymentMethod === 'manual') {
+            if ($paymentMethod === 'manual' || $paymentMethod === 'cash') {
                 $reservation->payment_reference = PaymentReferenceService::forReservation($reservation->id);
                 $reservation->save();
             }
 
             // Update wallet transaction reference with real reservation ID
-            if ($paymentMethod !== 'manual' && $montantTotal > 0) {
+            if ($paymentMethod === 'wallet' && $montantTotal > 0) {
                 WalletTransaction::where('user_id', $user->id)
                     ->where('type', 'debit')
                     ->where('category', 'reservation_payment')
@@ -351,6 +360,11 @@ class ReservationMaterielleController extends Controller
                     'amount_later' => $reservation->amount_later,
                     'balance_due_at' => $reservation->balance_due_at,
                     'flouci_link' => ManualPaymentService::flouciLink(),
+                ];
+            } elseif ($paymentMethod === 'cash') {
+                $response['payment_info'] = [
+                    'reference' => $reservation->payment_reference,
+                    'amount_now' => $reservation->amount_now,
                 ];
             }
 
@@ -508,6 +522,43 @@ class ReservationMaterielleController extends Controller
             'message' => 'Reservation confirmed. PIN has been sent to the camper by email.',
             'reservation' => $reservation,
         ]);
+    }
+
+    /**
+     * Supplier/fournisseur (or admin, on their behalf) reports that cash was
+     * collected on pickup/delivery. Reuses 'paiement_soumis' — the same status
+     * manual bank transfers use — so AdminPaymentReviewController::confirm()
+     * treats it generically (see resolveConfirmedStatus() / recordCashCollection()).
+     */
+    public function markCashReceived(int $id)
+    {
+        $reservation = Reservations_materielles::findOrFail($id);
+
+        $user = Auth::user();
+        $isOwner = $reservation->fournisseur_id == $user->id;
+        $isAdmin = $user->role_id === 6;
+        if (!$isOwner && !$isAdmin) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        if ($reservation->payment_method !== 'cash') {
+            return response()->json(['message' => 'This reservation is not a cash payment.'], 422);
+        }
+
+        // 'paiement_invalide' is allowed too — that's what a rejected cash report
+        // reverts to (AdminPaymentReviewController::reject()), so it can be resubmitted.
+        if (!in_array($reservation->status, ['confirmed', 'paiement_invalide'], true)) {
+            return response()->json(['message' => 'Cash can only be reported once the reservation is confirmed.'], 422);
+        }
+
+        $reservation->status = 'paiement_soumis';
+        $reservation->payment_submitted_at = now();
+        $reservation->save();
+
+        return response()->json([
+            'message' => 'Réception du paiement en espèces enregistrée. En attente de confirmation admin.',
+            'reservation' => $reservation,
+        ], 200);
     }
 
     public function reject(int $id)

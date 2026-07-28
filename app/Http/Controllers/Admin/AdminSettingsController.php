@@ -26,6 +26,8 @@ class AdminSettingsController extends Controller
         'bank_account_rib',
         'bank_account_iban',
         'bank_account_instructions',
+        // Cash-at-centre (provider collects in person, admin confirms)
+        'cash_payment_enabled',
     ];
 
     private const PAYMENT_DEFAULTS = [
@@ -40,6 +42,7 @@ class AdminSettingsController extends Controller
         'bank_account_rib' => '',
         'bank_account_iban' => '',
         'bank_account_instructions' => '',
+        'cash_payment_enabled' => false,
     ];
 
     /**
@@ -58,6 +61,7 @@ class AdminSettingsController extends Controller
         'bank_account_rib',
         'bank_account_iban',
         'bank_account_instructions',
+        'cash_payment_enabled',
     ];
 
     /** Keys managed by the commissions endpoint */

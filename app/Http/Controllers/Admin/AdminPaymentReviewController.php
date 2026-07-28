@@ -45,23 +45,25 @@ class AdminPaymentReviewController extends Controller
     {
         $statuses = ['paiement_soumis', 'solde_soumis'];
 
+        // 'cash' included here alongside 'manual' — both need admin review before
+        // the money movement is finalized. Programmes stay 'manual'-only (Phase 2).
         $events = Reservations_events::with(['user', 'group'])
             ->whereIn('status', $statuses)
-            ->where('payment_method', 'manual')
+            ->whereIn('payment_method', ['manual', 'cash'])
             ->latest('payment_submitted_at')
             ->get()
             ->map(fn ($r) => $this->formatRow($r, 'events'));
 
         $centres = Reservations_centre::with(['user'])
             ->whereIn('status', $statuses)
-            ->where('payment_method', 'manual')
+            ->whereIn('payment_method', ['manual', 'cash'])
             ->latest('payment_submitted_at')
             ->get()
             ->map(fn ($r) => $this->formatRow($r, 'centres'));
 
         $materielles = Reservations_materielles::with(['user', 'materielle'])
             ->whereIn('status', $statuses)
-            ->where('payment_method', 'manual')
+            ->whereIn('payment_method', ['manual', 'cash'])
             ->latest('payment_submitted_at')
             ->get()
             ->map(fn ($r) => $this->formatRow($r, 'materielles'));
@@ -113,72 +115,98 @@ class AdminPaymentReviewController extends Controller
             return $this->confirmProgrammePayment($id);
         }
 
-        $reservation = $this->findAny($type, $id);
-        if (!$reservation) {
-            return response()->json(['message' => 'Réservation introuvable.'], 404);
+        // The entire read-check-mutate sequence runs inside one locked transaction:
+        // lockForUpdate() blocks a second concurrent confirm() on the same reservation
+        // until this one commits, so it re-reads the now-updated status and correctly
+        // 422s instead of re-running recordCashCollection()/creditManualTranche() and
+        // double-booking the provider's debt or credit.
+        $outcome = DB::transaction(function () use ($type, $id) {
+            $reservation = $this->findAny($type, $id, lock: true);
+            if (!$reservation) {
+                return ['error' => 404, 'message' => 'Réservation introuvable.'];
+            }
+
+            if (!in_array($reservation->status, ['paiement_soumis', 'solde_soumis'])) {
+                return ['error' => 422, 'message' => 'Aucun paiement en attente de validation pour cette réservation.'];
+            }
+
+            $wasBalance = ($reservation->status === 'solde_soumis');
+            $isCash = ($reservation->payment_method === 'cash');
+            $newStatus = $this->resolveConfirmedStatus($reservation, $type);
+
+            // Amount actually received with THIS confirmation (before mutating fields)
+            $grossTotal = (float) ($reservation->total_price ?? $reservation->montant_total ?? (($reservation->amount_now ?? 0) + ($reservation->amount_later ?? 0)));
+            $tranche = $wasBalance
+                ? (float) ($reservation->amount_later ?? 0)
+                : ($reservation->payment_option === 'deposit' ? (float) ($reservation->amount_now ?? $grossTotal) : $grossTotal);
+
+            $reservation->status = $newStatus;
+            $reservation->payment_confirmed_at = now();
+            $reservation->confirmed_by = Auth::id();
+            if ($wasBalance) {
+                $reservation->amount_later = 0; // balance settled in full
+            }
+            $reservation->save();
+
+            // ── Money traceability (Task A-04) ──────────────────────────────────
+            $reservationTypeKey = match ($type) { 'events' => 'event', 'centres' => 'centre', default => 'materielle' };
+            \App\Services\Payments\ReservationLedgerService::recordGatewayPayment(
+                (int) $reservation->user_id, (int) $reservation->id, $reservationTypeKey,
+                $tranche, $isCash ? 'cash' : 'flouci',
+                ($reservation->payment_reference ?? 'RES-' . $reservation->id) . ($wasBalance ? '-SOLDE' : '')
+            );
+
+            if (($isCash || $wasBalance) && $tranche > 0) {
+                [$providerId, $commissionKey, $refType] = match ($type) {
+                    'events'  => [(int) $reservation->group_id, 'group', 'event_reservation'],
+                    'centres' => [(int) $reservation->centre_id, 'center', 'centre_reservation'],
+                    default   => [(int) $reservation->fournisseur_id,
+                                  (\App\Models\User::find($reservation->fournisseur_id)?->role_id === 4 ? 'supplier' : 'camper'),
+                                  'materiel_reservation'],
+                };
+
+                if ($isCash) {
+                    // Cash never touched the platform — book what the provider now owes
+                    // us (their commission + the camper's fee) instead of crediting them.
+                    \App\Services\Payments\ReservationLedgerService::recordCashCollection(
+                        $providerId, $commissionKey, $grossTotal, (float) ($reservation->platform_fee_amount ?? 0)
+                    );
+                } else {
+                    // Balance settlement: the provider already accepted the reservation, so
+                    // the remaining tranche is earned NOW — credit it (fee was charged on tranche 1).
+                    \App\Services\Payments\ReservationLedgerService::creditManualTranche(
+                        $refType, (int) $reservation->id, $providerId, $commissionKey, (int) $reservation->user_id,
+                        $grossTotal, (float) ($reservation->platform_fee_amount ?? 0), $tranche, false,
+                        "Solde réservation #{$reservation->id} (paiement manuel)"
+                    );
+                }
+            }
+
+            $notifTitle = $isCash ? 'Paiement en espèces confirmé ✓' : ($wasBalance ? 'Solde confirmé ✓' : 'Paiement confirmé ✓');
+            $notifBody = $isCash
+                ? "Votre paiement en espèces ({$reservation->payment_reference}) a été confirmé. Votre réservation est entièrement payée."
+                : ($wasBalance
+                    ? "Votre solde restant ({$reservation->payment_reference}) a été validé. Votre réservation est entièrement payée."
+                    : "Votre paiement ({$reservation->payment_reference}) a été validé. Votre réservation est en attente de confirmation par le prestataire.");
+
+            return [
+                'success' => true,
+                'newStatus' => $newStatus,
+                'userId' => (int) $reservation->user_id,
+                'notifTitle' => $notifTitle,
+                'notifBody' => $notifBody,
+            ];
+        });
+
+        if (isset($outcome['error'])) {
+            return response()->json(['message' => $outcome['message']], $outcome['error']);
         }
 
-        if (!in_array($reservation->status, ['paiement_soumis', 'solde_soumis'])) {
-            return response()->json([
-                'message' => 'Aucun paiement en attente de validation pour cette réservation.',
-            ], 422);
-        }
-
-        $wasBalance = ($reservation->status === 'solde_soumis');
-        $newStatus = $this->resolveConfirmedStatus($reservation, $type);
-
-        // Amount actually received with THIS confirmation (before mutating fields)
-        $grossTotal = (float) ($reservation->total_price ?? $reservation->montant_total ?? (($reservation->amount_now ?? 0) + ($reservation->amount_later ?? 0)));
-        $tranche = $wasBalance
-            ? (float) ($reservation->amount_later ?? 0)
-            : ($reservation->payment_option === 'deposit' ? (float) ($reservation->amount_now ?? $grossTotal) : $grossTotal);
-
-        $reservation->status = $newStatus;
-        $reservation->payment_confirmed_at = now();
-        $reservation->confirmed_by = Auth::id();
-        if ($wasBalance) {
-            $reservation->amount_later = 0; // balance settled in full
-        }
-        $reservation->save();
-
-        // ── Money traceability (Task A-04) ──────────────────────────────────
-        $reservationTypeKey = match ($type) { 'events' => 'event', 'centres' => 'centre', default => 'materielle' };
-        \App\Services\Payments\ReservationLedgerService::recordGatewayPayment(
-            (int) $reservation->user_id, (int) $reservation->id, $reservationTypeKey,
-            $tranche, 'flouci',
-            ($reservation->payment_reference ?? 'RES-' . $reservation->id) . ($wasBalance ? '-SOLDE' : '')
-        );
-
-        // Balance settlement: the provider already accepted the reservation, so
-        // the remaining tranche is earned NOW — credit it (fee was charged on tranche 1).
-        if ($wasBalance && $tranche > 0) {
-            [$providerId, $commissionKey, $refType] = match ($type) {
-                'events'  => [(int) $reservation->group_id, 'group', 'event_reservation'],
-                'centres' => [(int) $reservation->centre_id, 'center', 'centre_reservation'],
-                default   => [(int) $reservation->fournisseur_id,
-                              (\App\Models\User::find($reservation->fournisseur_id)?->role_id === 4 ? 'supplier' : 'camper'),
-                              'materiel_reservation'],
-            };
-
-            \Illuminate\Support\Facades\DB::transaction(fn () => \App\Services\Payments\ReservationLedgerService::creditManualTranche(
-                $refType, (int) $reservation->id, $providerId, $commissionKey, (int) $reservation->user_id,
-                $grossTotal, (float) ($reservation->platform_fee_amount ?? 0), $tranche, false,
-                "Solde réservation #{$reservation->id} (paiement manuel)"
-            ));
-        }
-
-        $this->notifyUser(
-            $reservation->user_id,
-            $wasBalance ? 'Solde confirmé ✓' : 'Paiement confirmé ✓',
-            $wasBalance
-                ? "Votre solde restant ({$reservation->payment_reference}) a été validé. Votre réservation est entièrement payée."
-                : "Votre paiement ({$reservation->payment_reference}) a été validé. Votre réservation est en attente de confirmation par le prestataire.",
-            'high'
-        );
+        $this->notifyUser($outcome['userId'], $outcome['notifTitle'], $outcome['notifBody'], 'high');
 
         return response()->json([
             'message' => 'Paiement confirmé.',
-            'status' => $newStatus,
+            'status' => $outcome['newStatus'],
             'id' => $id,
             'type' => $type,
         ]);
@@ -206,8 +234,10 @@ class AdminPaymentReviewController extends Controller
         }
 
         // A rejected balance reverts to the host-accepted state (balance still owed) so
-        // the camper can resubmit; a rejected initial payment becomes paiement_invalide.
+        // the camper can resubmit; a rejected initial payment becomes paiement_invalide
+        // (the provider/admin can call markCashReceived() again from that status for cash).
         $wasBalance = ($reservation->status === 'solde_soumis');
+        $isCash = ($reservation->payment_method === 'cash');
         $reservation->status = $wasBalance
             ? match ($type) {
                 'events' => 'confirmée', 'centres' => 'approved', default => 'confirmed'
@@ -215,14 +245,14 @@ class AdminPaymentReviewController extends Controller
         : 'paiement_invalide';
         $reservation->save();
 
-        $this->notifyUser(
-            $reservation->user_id,
-            $wasBalance ? 'Solde non validé' : 'Virement non trouvé',
-            $wasBalance
+        $notifTitle = $isCash ? 'Paiement en espèces non confirmé' : ($wasBalance ? 'Solde non validé' : 'Virement non trouvé');
+        $notifBody = $isCash
+            ? "Nous n'avons pas pu confirmer votre paiement en espèces ({$reservation->payment_reference}). Merci de vérifier avec le prestataire et de le signaler à nouveau."
+            : ($wasBalance
                 ? "Nous n'avons pas pu vérifier votre virement de solde ({$reservation->payment_reference}). Veuillez vérifier et soumettre à nouveau."
-                : "Nous n'avons pas pu vérifier votre virement ({$reservation->payment_reference}). Veuillez vérifier la référence et soumettre à nouveau.",
-            'high'
-        );
+                : "Nous n'avons pas pu vérifier votre virement ({$reservation->payment_reference}). Veuillez vérifier la référence et soumettre à nouveau.");
+
+        $this->notifyUser($reservation->user_id, $notifTitle, $notifBody, 'high');
 
         return response()->json([
             'message' => 'Paiement rejeté. Le camper est notifié de soumettre à nouveau.',
@@ -372,12 +402,12 @@ class AdminPaymentReviewController extends Controller
         }
     }
 
-    private function findAny(string $type, int $id): mixed
+    private function findAny(string $type, int $id, bool $lock = false): mixed
     {
         return match ($type) {
-            'events' => Reservations_events::find($id),
-            'centres' => Reservations_centre::find($id),
-            'materielles' => Reservations_materielles::find($id),
+            'events' => $lock ? Reservations_events::whereKey($id)->lockForUpdate()->first() : Reservations_events::find($id),
+            'centres' => $lock ? Reservations_centre::whereKey($id)->lockForUpdate()->first() : Reservations_centre::find($id),
+            'materielles' => $lock ? Reservations_materielles::whereKey($id)->lockForUpdate()->first() : Reservations_materielles::find($id),
             default => null,
         };
     }
@@ -387,6 +417,7 @@ class AdminPaymentReviewController extends Controller
         return [
             'id' => $r->id,
             'type' => $type,
+            'payment_method' => $r->payment_method,
             'payment_reference' => $r->payment_reference,
             'transfer_reference' => $r->transfer_reference,
             'status' => $r->status,
@@ -401,17 +432,21 @@ class AdminPaymentReviewController extends Controller
     }
 
     /**
-     * Determine the next status after the admin confirms a manual payment.
+     * Determine the next status after the admin confirms a manual (or cash) payment.
      *
      * - Balance payment (solde_soumis): the host already accepted, so restore the
      *   host-accepted state — now fully paid (amount_later is zeroed by the caller).
-     * - Initial payment (paiement_soumis), full OR deposit: the reservation enters
-     *   the host's review queue. If it was a deposit, amount_later stays > 0 and the
-     *   balance is collected after the host accepts.
+     * - Cash: unlike manual, the host already accepted the reservation BEFORE any
+     *   money changed hands (see ReservationsCentreController::markCashReceived()),
+     *   so this confirmation must NOT route back into the host queue — it lands in
+     *   the same terminal "accepted and settled" status as a balance payment.
+     * - Initial MANUAL payment, full OR deposit: the reservation enters the host's
+     *   review queue for the first time. If it was a deposit, amount_later stays > 0
+     *   and the balance is collected after the host accepts.
      */
     private function resolveConfirmedStatus(mixed $r, string $type): string
     {
-        if ($r->status === 'solde_soumis') {
+        if ($r->status === 'solde_soumis' || $r->payment_method === 'cash') {
             return match ($type) {
                 'events' => 'confirmée',
                 'centres' => 'approved',

@@ -6,8 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\AdjustBalanceRequest;
 use App\Http\Requests\Admin\AdminPasswordRequest;
 use App\Http\Requests\Admin\RejectRefundRequest;
+use App\Http\Requests\Admin\SettleDebtRequest;
 use App\Http\Requests\Admin\UpdatePaymentStatusRequest;
 use App\Http\Requests\Admin\WithdrawalActionRequest;
+use App\Models\AdminWalletTransaction;
 use App\Models\Balance;
 use App\Models\Payments;
 use App\Models\RefundRequest;
@@ -360,8 +362,10 @@ class AdminPaymentController extends Controller
 
     public function balances(Request $request)
     {
+        $hasDebtFilter = $request->boolean('has_debt');
+
         $query = Balance::with('user:id,first_name,last_name,email,avatar,role_id')
-            ->orderByDesc('solde_disponible');
+            ->when($hasDebtFilter, fn ($q) => $q->orderByDesc('solde_du_plateforme'), fn ($q) => $q->orderByDesc('solde_disponible'));
 
         if ($request->filled('search')) {
             $s = $request->search;
@@ -373,6 +377,10 @@ class AdminPaymentController extends Controller
 
         if ($request->filled('min_solde')) {
             $query->where('solde_disponible', '>=', $request->min_solde);
+        }
+
+        if ($hasDebtFilter) {
+            $query->where('solde_du_plateforme', '>', 0);
         }
 
         $balances = $query->paginate($request->get('per_page', 15));
@@ -430,6 +438,67 @@ class AdminPaymentController extends Controller
         ]);
     }
 
+    /**
+     * Manually mark a provider's platform debt (cash-at-centre commission owed) as
+     * settled — the admin collected it from the provider outside the app (in person,
+     * bank transfer, etc.). The alternative path is the automatic withdrawal offset
+     * in approveWithdrawal() above; this is for providers who never request a payout.
+     */
+    public function settleDebt(SettleDebtRequest $request, $userId)
+    {
+        if (!$this->checkPassword($request)) {
+            return response()->json(['success' => false, 'message' => 'Mot de passe incorrect.'], 403);
+        }
+
+        // Ensure the row exists before the locked transaction (firstOrCreate can't
+        // run inside a lockForUpdate() query).
+        Balance::forUser($userId);
+
+        // Locked so a concurrent settleDebt()/approveWithdrawal() offset on the same
+        // provider can't both read the same stale debt and double-log recognized
+        // revenue — the DB-side GREATEST(0,...) floor alone doesn't prevent that,
+        // it only protects the balance column itself from going negative.
+        $outcome = DB::transaction(function () use ($userId, $request) {
+            $balance = Balance::where('user_id', $userId)->lockForUpdate()->first();
+            $debt = (float) $balance->solde_du_plateforme;
+
+            if ($debt <= 0) {
+                return ['error' => true];
+            }
+
+            $amount = $request->filled('montant') ? min((float) $request->montant, $debt) : $debt;
+            $balance->debiterDette($amount);
+
+            // Recognized as platform revenue only now — at actual collection time,
+            // not when the cash was originally handed over at the centre.
+            AdminWalletTransaction::log(
+                'commission', $amount,
+                'debt_settlement', (int) $userId,
+                "Dette réglée manuellement (paiements en espèces) — prestataire #{$userId}",
+                (int) $userId
+            );
+
+            return ['amount' => $amount];
+        });
+
+        if (isset($outcome['error'])) {
+            return response()->json(['success' => false, 'message' => 'Aucune dette en cours pour ce prestataire.'], 400);
+        }
+
+        \Log::info('Provider platform debt manually settled', [
+            'user_id' => (int) $userId,
+            'amount' => $outcome['amount'],
+            'note' => $request->note,
+            'settled_by' => \Illuminate\Support\Facades\Auth::id(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Dette réglée.',
+            'data' => Balance::forUser($userId)->fresh(['user:id,first_name,last_name,email']),
+        ]);
+    }
+
     /* ══════════════════════════════════════════════════════════════
      *  WITHDRAWALS
      * ══════════════════════════════════════════════════════════════ */
@@ -469,9 +538,16 @@ class AdminPaymentController extends Controller
             return response()->json(['success' => false, 'message' => 'Cette demande a déjà été traitée.'], 400);
         }
 
+        // Ensure the row exists before the locked transaction (firstOrCreate can't
+        // run inside a lockForUpdate() query).
+        Balance::forUser($withdrawal->user_id);
+
         DB::transaction(function () use ($withdrawal, $request) {
-            // Débiter la balance
-            $balance = Balance::forUser($withdrawal->user_id);
+            // Locked so a concurrent settleDebt()/approveWithdrawal() on the same
+            // provider can't both read the same stale debt and double-log recognized
+            // revenue — the DB-side GREATEST(0,...) floor alone doesn't prevent that,
+            // it only protects the balance column itself from going negative.
+            $balance = Balance::where('user_id', $withdrawal->user_id)->lockForUpdate()->first();
 
             if ($balance->solde_disponible < $withdrawal->montant) {
                 abort(422, 'Solde insuffisant pour effectuer ce retrait.');
@@ -480,9 +556,35 @@ class AdminPaymentController extends Controller
             $balance->debiter($withdrawal->montant);
             $balance->increment('total_retire', $withdrawal->montant);
 
+            // Auto-offset: this provider may owe the platform commission from
+            // cash-at-centre payments (Balance::solde_du_plateforme). The withdrawal
+            // itself still debits solde_disponible in full — the offset only reduces
+            // what the admin actually wires out, tracked via admin_note since the
+            // real transfer happens outside the app (there's no gateway send here).
+            $adminNote = $request->admin_note;
+            $debt = (float) $balance->solde_du_plateforme;
+            if ($debt > 0) {
+                $offset = min($debt, (float) $withdrawal->montant);
+                $balance->debiterDette($offset);
+
+                // Recognized as platform revenue only now — at actual collection
+                // time (offset against the payout), not when the cash was
+                // originally handed over at the centre.
+                AdminWalletTransaction::log(
+                    'commission', $offset,
+                    'debt_settlement', (int) $withdrawal->user_id,
+                    "Dette compensée via retrait #{$withdrawal->id} (paiements en espèces)",
+                    (int) $withdrawal->user_id
+                );
+
+                $netPaid = round((float) $withdrawal->montant - $offset, 2);
+                $offsetNote = "Compensation dette plateforme : {$offset} TND déduits. Montant net à verser : {$netPaid} TND.";
+                $adminNote = $adminNote ? "{$adminNote}\n\n{$offsetNote}" : $offsetNote;
+            }
+
             $withdrawal->update([
                 'status' => 'approuvé',
-                'admin_note' => $request->admin_note,
+                'admin_note' => $adminNote,
                 'processed_by' => auth()->id(),
                 'processed_at' => now(),
             ]);

@@ -26,6 +26,7 @@ class UpdatePaymentSettingsRequest extends FormRequest
             'bank_account_rib' => 'sometimes|nullable|string|max:60',
             'bank_account_iban' => 'sometimes|nullable|string|max:60',
             'bank_account_instructions' => 'sometimes|nullable|string|max:1000',
+            'cash_payment_enabled' => 'sometimes|boolean',
         ];
     }
 }

@@ -11,6 +11,7 @@ class Balance extends Model
         'user_id',
         'solde_disponible',
         'solde_en_attente',
+        'solde_du_plateforme',
         'total_encaisse',
         'total_retire',
         'total_rembourse',
@@ -20,6 +21,7 @@ class Balance extends Model
     protected $casts = [
         'solde_disponible'   => 'decimal:2',
         'solde_en_attente'   => 'decimal:2',
+        'solde_du_plateforme' => 'decimal:2',
         'total_encaisse'     => 'decimal:2',
         'total_retire'       => 'decimal:2',
         'total_rembourse'    => 'decimal:2',
@@ -83,6 +85,30 @@ class Balance extends Model
         DB::update(
             'UPDATE balances SET solde_en_attente = GREATEST(0, solde_en_attente - ?), solde_disponible = solde_disponible + ?, dernier_mouvement_at = ? WHERE id = ?',
             [$montant, $montant, now(), $this->id]
+        );
+    }
+
+    /**
+     * Increments the amount this provider owes the platform — used for cash-at-centre
+     * payments, where the provider collected the full amount directly and now owes the
+     * platform its commission + the camper's service fee that never passed through us.
+     */
+    public function crediterDette(float $montant): void
+    {
+        $this->increment('solde_du_plateforme', $montant);
+        $this->update(['dernier_mouvement_at' => now()]);
+    }
+
+    /**
+     * Reduces the amount owed to the platform — either an admin settling it manually
+     * (cash collected from the provider directly) or an automatic offset against a
+     * withdrawal payout. Floored at 0 via GREATEST(), same pattern as releaseEscrow().
+     */
+    public function debiterDette(float $montant): void
+    {
+        DB::update(
+            'UPDATE balances SET solde_du_plateforme = GREATEST(0, solde_du_plateforme - ?), dernier_mouvement_at = ? WHERE id = ?',
+            [$montant, now(), $this->id]
         );
     }
 

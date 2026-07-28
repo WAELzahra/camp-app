@@ -25,7 +25,7 @@ class StoreCentreReservationRequest extends FormRequest
             'note' => 'nullable|string',
             'group_skill_level' => 'nullable|in:beginner,intermediate,advanced,mixed',
             'trip_purpose' => 'nullable|string|max:255',
-            'payment_method' => 'nullable|in:card,wallet,manual',
+            'payment_method' => 'nullable|in:card,wallet,manual,cash',
             'payment_option' => 'nullable|in:full,deposit',
             'promo_code' => 'nullable|string|max:50',
             'service_items' => 'required|array|min:1',
@@ -50,5 +50,34 @@ class StoreCentreReservationRequest extends FormRequest
             'service_items.*.profile_center_service_id.required' => 'Service ID is required for each item.',
             'service_items.*.quantity.required' => 'Quantity is required for each service.',
         ];
+    }
+
+    /**
+     * Cash-at-centre only makes sense for a near-term stay: it skips the usual
+     * payment-before-review flow (host accepts first, cash changes hands on
+     * arrival), so a booking made weeks out with no payment on file would be
+     * cancellable with nothing to enforce. Capped to a 48h window server-side —
+     * client-side gating alone is bypassable via a direct API call.
+     */
+    public function withValidator(\Illuminate\Validation\Validator $validator): void
+    {
+        $validator->after(function (\Illuminate\Validation\Validator $validator) {
+            if ($this->input('payment_method') !== 'cash') {
+                return;
+            }
+
+            $dateDebut = $this->input('date_debut');
+            if (!$dateDebut) {
+                return; // date_debut's own `required` rule already fails this request
+            }
+
+            if (!\App\Services\CashPaymentService::isDateEligible($dateDebut)) {
+                $windowHours = \App\Services\CashPaymentService::ELIGIBILITY_WINDOW_HOURS;
+                $validator->errors()->add(
+                    'payment_method',
+                    "Le paiement en espèces n'est disponible qu'à partir d'aujourd'hui et jusqu'à {$windowHours}h à l'avance."
+                );
+            }
+        });
     }
 }

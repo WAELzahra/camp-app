@@ -149,4 +149,49 @@ class ReservationLedgerService
             );
         }
     }
+
+    /**
+     * Record a CASH-AT-CENTRE payment: the provider collected the full amount
+     * directly from the camper, so — unlike creditManualTranche() — we never
+     * credit their solde_disponible (they already physically hold the money).
+     * Instead we book what they now owe the platform (their commission + the
+     * camper's platform fee, neither of which ever passed through us) onto
+     * Balance::solde_du_plateforme, settled later via a withdrawal offset or
+     * an admin marking it collected (see AdminPaymentController).
+     *
+     * Deliberately does NOT log anything to admin_wallet_transactions here —
+     * the platform hasn't actually received this money yet, only a debt claim
+     * against the provider. Logging 'commission'/'platform_fee' at this point
+     * would count uncollected cash as recognized revenue. That entry is made
+     * at actual settlement time instead (Balance::debiterDette() call sites in
+     * AdminPaymentController — manual settleDebt() or the withdrawal offset).
+     *
+     * Cash is always paid in full on arrival — no deposit/balance split — so
+     * this is always a single, whole-amount call, not tranche-based.
+     *
+     * Idempotency relies on the caller's own status guard (confirm() only runs
+     * this from status paiement_soumis/solde_soumis, and immediately advances
+     * the reservation past it) — same protection creditManualTranche's "was
+     * this already processed" case implicitly relies on for its first tranche.
+     */
+    public static function recordCashCollection(
+        int $providerId,
+        string $commissionKey,
+        float $grossFull,
+        float $platformFee,
+    ): void {
+        if ($grossFull <= 0 || $providerId <= 0) {
+            return;
+        }
+
+        $baseFull = max(0, round($grossFull - $platformFee, 2));
+        $calc     = CommissionService::calculateForUser($commissionKey, $baseFull, $providerId);
+        $commission = round($calc['commission'], 2);
+        $fee        = round($platformFee, 2);
+        $owed       = round($commission + $fee, 2);
+
+        if ($owed > 0) {
+            Balance::forUser($providerId)->crediterDette($owed);
+        }
+    }
 }

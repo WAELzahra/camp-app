@@ -195,6 +195,12 @@ class ReservationsCentreController extends Controller
                 return response()->json(['message' => 'Le paiement manuel n\'est pas disponible pour le moment.'], 422);
             }
 
+            if ($paymentMethod === 'cash' && !\App\Services\CashPaymentService::isEnabled()) {
+                DB::rollBack();
+
+                return response()->json(['message' => 'Le paiement en espèces n\'est pas disponible pour le moment.'], 422);
+            }
+
             if ($paymentMethod === 'wallet' && $totalWithFee > 0) {
                 $camperBal = Balance::forUser($userId);
                 if ($camperBal->solde_disponible < $totalWithFee) {
@@ -253,13 +259,14 @@ class ReservationsCentreController extends Controller
                 'discount_amount' => $discountAmount,
                 'platform_fee_rate' => $platformFeeRate,
                 'platform_fee_amount' => $platformFeeAmt,
-                'payment_option' => $paymentMethod === 'manual' ? ($manualAmounts['payment_option'] ?? 'full') : null,
-                'amount_now' => $paymentMethod === 'manual' ? ($manualAmounts['amount_now'] ?? $totalWithFee) : null,
-                'amount_later' => $paymentMethod === 'manual' ? ($manualAmounts['amount_later'] ?? 0) : null,
+                // Cash is always paid in full on arrival — no deposit/balance split.
+                'payment_option' => $paymentMethod === 'manual' ? ($manualAmounts['payment_option'] ?? 'full') : ($paymentMethod === 'cash' ? 'full' : null),
+                'amount_now' => $paymentMethod === 'manual' ? ($manualAmounts['amount_now'] ?? $totalWithFee) : ($paymentMethod === 'cash' ? $totalWithFee : null),
+                'amount_later' => $paymentMethod === 'manual' ? ($manualAmounts['amount_later'] ?? 0) : ($paymentMethod === 'cash' ? 0 : null),
                 'balance_due_at' => $balanceDueAt,
             ]);
 
-            if ($paymentMethod === 'manual') {
+            if ($paymentMethod === 'manual' || $paymentMethod === 'cash') {
                 $reservationCentre->payment_reference = PaymentReferenceService::forReservation($reservationCentre->id);
                 $reservationCentre->save();
             }
@@ -331,6 +338,11 @@ class ReservationsCentreController extends Controller
                     'amount_later' => $reservationCentre->amount_later,
                     'balance_due_at' => $reservationCentre->balance_due_at,
                     'flouci_link' => ManualPaymentService::flouciLink(),
+                ];
+            } elseif ($paymentMethod === 'cash') {
+                $resp['payment_info'] = [
+                    'reference' => $reservationCentre->payment_reference,
+                    'amount_now' => $reservationCentre->amount_now,
                 ];
             }
 
@@ -524,6 +536,18 @@ class ReservationsCentreController extends Controller
             return response()->json([
                 'message' => 'Unauthorized to cancel this reservation.',
             ], 403);
+        }
+
+        // Block self-service cancellation while a cash payment is awaiting admin
+        // review: the centre already physically holds the camper's cash at this
+        // point (markCashReceived() only reaches paiement_soumis after that), so
+        // cancelling here would let the centre keep it without ever owing the
+        // platform commission — that debt is only booked inside the admin's
+        // confirm() call. Must go through admin confirm/reject instead.
+        if ($reservation->payment_method === 'cash' && $reservation->status === 'paiement_soumis') {
+            return response()->json([
+                'message' => 'Ce paiement en espèces est en attente de validation par l\'administrateur et ne peut pas être annulé pour le moment.',
+            ], 422);
         }
 
         // Determine who is canceling
@@ -933,6 +957,44 @@ class ReservationsCentreController extends Controller
 
         return response()->json([
             'message' => 'Reservation approved and email sent',
+            'reservation' => $reservation,
+        ], 200);
+    }
+
+    /**
+     * Provider (or admin, on their behalf) reports that cash was collected
+     * on arrival. Reuses 'paiement_soumis' — the same status manual bank
+     * transfers use — so AdminPaymentReviewController::confirm() can treat
+     * it generically; it only needs to know payment_method to route the
+     * money correctly (see resolveConfirmedStatus() / recordCashCollection()).
+     */
+    public function markCashReceived(int $id)
+    {
+        $reservation = Reservations_centre::findOrFail($id);
+
+        $user = Auth::user();
+        $isOwner = $reservation->centre_id == $user->id;
+        $isAdmin = $user->role_id === 6;
+        if (!$isOwner && !$isAdmin) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        if ($reservation->payment_method !== 'cash') {
+            return response()->json(['message' => 'This reservation is not a cash payment.'], 422);
+        }
+
+        // 'paiement_invalide' is allowed too — that's what a rejected cash report
+        // reverts to (AdminPaymentReviewController::reject()), so it can be resubmitted.
+        if (!in_array($reservation->status, ['approved', 'paiement_invalide'], true)) {
+            return response()->json(['message' => 'Cash can only be reported once the reservation is approved.'], 422);
+        }
+
+        $reservation->status = 'paiement_soumis';
+        $reservation->payment_submitted_at = now();
+        $reservation->save();
+
+        return response()->json([
+            'message' => 'Réception du paiement en espèces enregistrée. En attente de confirmation admin.',
             'reservation' => $reservation,
         ], 200);
     }

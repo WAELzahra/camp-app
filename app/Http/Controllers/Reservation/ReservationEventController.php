@@ -531,6 +531,13 @@ class ReservationEventController extends Controller
             ], 422);
         }
 
+        if ($eventPaymentMethod === 'cash' && !\App\Services\CashPaymentService::isEnabled()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Le paiement en espèces n\'est pas disponible pour le moment.',
+            ], 422);
+        }
+
         $event = Events::findOrFail($request->event_id);
 
         $resolvedName = $request->name
@@ -618,8 +625,8 @@ class ReservationEventController extends Controller
         $platformFeeAmt = $feeData['fee_amount'];
         $platformFeeRate = round($feeData['fee_rate'] * 100, 2);
 
-        // ── Check balance upfront (wallet only; manual skips wallet) ────────────
-        if ($eventPaymentMethod !== 'manual' && $totalToPay > 0) {
+        // ── Check balance upfront (wallet only; manual and cash both skip it) ───
+        if ($eventPaymentMethod === 'wallet' && $totalToPay > 0) {
             $camperBalance = Balance::forUser($user->id);
             if ($camperBalance->solde_disponible < $totalToPay) {
                 return response()->json([
@@ -686,9 +693,10 @@ class ReservationEventController extends Controller
                 'platform_fee_rate' => $platformFeeRate,
                 'group_skill_level' => $request->input('group_skill_level'),
                 'trip_purpose' => $request->input('trip_purpose'),
-                'payment_option' => $eventPaymentMethod === 'manual' ? ($manualAmounts['payment_option'] ?? 'full') : null,
-                'amount_now' => $eventPaymentMethod === 'manual' ? ($manualAmounts['amount_now'] ?? $totalToPay) : null,
-                'amount_later' => $eventPaymentMethod === 'manual' ? ($manualAmounts['amount_later'] ?? 0) : null,
+                // Cash is always paid in full at the event — no deposit/balance split.
+                'payment_option' => $eventPaymentMethod === 'manual' ? ($manualAmounts['payment_option'] ?? 'full') : ($eventPaymentMethod === 'cash' ? 'full' : null),
+                'amount_now' => $eventPaymentMethod === 'manual' ? ($manualAmounts['amount_now'] ?? $totalToPay) : ($eventPaymentMethod === 'cash' ? $totalToPay : null),
+                'amount_later' => $eventPaymentMethod === 'manual' ? ($manualAmounts['amount_later'] ?? 0) : ($eventPaymentMethod === 'cash' ? 0 : null),
                 'balance_due_at' => $balanceDueAt,
             ]);
 
@@ -723,7 +731,7 @@ class ReservationEventController extends Controller
             }
 
             // Escrow: lock funds immediately (wallet only)
-            if ($eventPaymentMethod !== 'manual' && $totalToPay > 0) {
+            if ($eventPaymentMethod === 'wallet' && $totalToPay > 0) {
                 Balance::forUser($user->id)->lockFunds($totalToPay);
                 WalletTransaction::logDebit(
                     $user->id, 'reservation_payment', $totalToPay,
@@ -736,7 +744,7 @@ class ReservationEventController extends Controller
             }
 
             // Set payment reference after we have the ID
-            if ($eventPaymentMethod === 'manual') {
+            if ($eventPaymentMethod === 'manual' || $eventPaymentMethod === 'cash') {
                 $reservation->payment_reference = PaymentReferenceService::forReservation($reservation->id);
                 $reservation->save();
             }
@@ -773,16 +781,66 @@ class ReservationEventController extends Controller
                 'amount_later' => $reservation->amount_later,
                 'flouci_link' => ManualPaymentService::flouciLink(),
             ];
+        } elseif ($eventPaymentMethod === 'cash') {
+            $paymentResp['payment_info'] = [
+                'reference' => $reservation->payment_reference,
+                'amount_now' => $reservation->amount_now,
+            ];
         }
+
+        $creationMessage = match ($eventPaymentMethod) {
+            'manual' => 'Réservation créée. Veuillez effectuer le paiement via le lien fourni.',
+            'cash' => 'Réservation créée. Le paiement en espèces se fera une fois la réservation acceptée.',
+            default => 'Réservation confirmée et paiement effectué via wallet.',
+        };
 
         return response()->json([
             'success' => true,
-            'message' => $eventPaymentMethod === 'manual'
-                ? 'Réservation créée. Veuillez effectuer le paiement via le lien fourni.'
-                : 'Réservation confirmée et paiement effectué via wallet.',
+            'message' => $creationMessage,
             'reservation' => $reservation->load('materials.materielle', 'services.service'),
             'payment' => $paymentResp,
         ], 201);
+    }
+
+    /**
+     * Provider (organizer/group, or admin on their behalf) reports that cash was
+     * collected at the event. Reuses 'paiement_soumis' — the same status manual
+     * bank transfers use — so AdminPaymentReviewController::confirm() treats it
+     * generically (see resolveConfirmedStatus() / recordCashCollection()).
+     *
+     * Requires status 'confirmée' — the organizer-accepted state used by the
+     * admin panel's approval path and checked by cancelReservation() above (the
+     * dedicated updateStatus() endpoint is unreachable from the current frontend
+     * and writes a different spelling ('confirmé'); this endpoint intentionally
+     * does not rely on it).
+     */
+    public function markCashReceived(int $id)
+    {
+        $reservation = Reservations_events::findOrFail($id);
+
+        $user = Auth::user();
+        $isOwner = $reservation->group_id == $user->id;
+        $isAdmin = $user->role_id === 6;
+        if (!$isOwner && !$isAdmin) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        if ($reservation->payment_method !== 'cash') {
+            return response()->json(['message' => 'This reservation is not a cash payment.'], 422);
+        }
+
+        if (!in_array($reservation->status, ['confirmée', 'paiement_invalide'], true)) {
+            return response()->json(['message' => 'Cash can only be reported once the reservation is confirmed.'], 422);
+        }
+
+        $reservation->status = 'paiement_soumis';
+        $reservation->payment_submitted_at = now();
+        $reservation->save();
+
+        return response()->json([
+            'message' => 'Réception du paiement en espèces enregistrée. En attente de confirmation admin.',
+            'reservation' => $reservation,
+        ], 200);
     }
 
     /**
@@ -1064,6 +1122,15 @@ class ReservationEventController extends Controller
 
         if ($reservation->group_id !== Auth::id()) {
             return response()->json(['message' => 'Non autorisé.'], 403);
+        }
+
+        // Block self-service cancellation while a cash payment is awaiting admin
+        // review: the organizer already physically holds the camper's cash at this
+        // point (markCashReceived() only reaches paiement_soumis after that), so
+        // cancelling here would let them keep it without ever owing the platform
+        // commission — that debt is only booked inside the admin's confirm() call.
+        if ($reservation->payment_method === 'cash' && $reservation->status === 'paiement_soumis') {
+            return response()->json(['message' => 'Ce paiement en espèces est en attente de validation par l\'administrateur et ne peut pas être annulé pour le moment.'], 422);
         }
 
         $event = Events::findOrFail($reservation->event_id);

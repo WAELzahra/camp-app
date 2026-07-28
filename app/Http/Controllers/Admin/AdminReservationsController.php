@@ -528,6 +528,22 @@ class AdminReservationsController extends Controller
             ], 403);
         }
 
+        // A cash payment awaiting review (status paiement_soumis, set by the
+        // provider's markCashReceived()) must go through AdminPaymentReviewController
+        // ::confirm()/reject() — that's the only place that books the provider's
+        // commission debt (ReservationLedgerService::recordCashCollection()). This
+        // generic status update has no such logic, so cancelling/rejecting a
+        // reservation from here while cash is pending review would let the provider
+        // keep cash they already collected without ever owing the platform. Applies
+        // uniformly across center/events/materielle — all three use the same status
+        // string for "cash reported, awaiting admin confirmation".
+        if ($reservation->payment_method === 'cash' && $reservation->status === 'paiement_soumis') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Ce paiement en espèces est en attente de validation. Utilisez Paiements → Confirmer/Rejeter plutôt que la modification directe.',
+            ], 422);
+        }
+
         $validator = $this->getValidatorForType($request, $type, $reservation);
 
         if ($validator->fails()) {

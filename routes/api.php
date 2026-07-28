@@ -820,6 +820,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/event/{id}', [ReservationEventController::class, 'show']);
         Route::put('/{id}', [ReservationEventController::class, 'updateReservation']);
         Route::patch('/{id}/status', [ReservationEventController::class, 'updateStatus']);
+        Route::patch('/event/{id}/cash-received', [ReservationEventController::class, 'markCashReceived']);
         Route::delete('/{id}', [ReservationEventController::class, 'destroy']);
         Route::post('/events/{event}/participants/manual', [ReservationEventController::class, 'addManualParticipant']);
         Route::get('/events/{eventId}/participants/search', [ReservationEventController::class, 'search']);
@@ -966,6 +967,7 @@ Route::middleware(['auth:sanctum', 'can.publish', 'require.active'])->prefix('an
     Route::patch('/{id}/unarchive', [AnnonceController::class, 'unarchive']);
 });
 Route::patch('reservation/materiel/{id}/confirm', [ReservationMaterielleController::class, 'confirm']);
+Route::patch('reservation/materiel/{id}/cash-received', [ReservationMaterielleController::class, 'markCashReceived']);
 
 // Fournisseur Routes
 // Equipment Management - Both Suppliers AND Campers
@@ -1048,6 +1050,11 @@ Route::middleware(['auth:sanctum'])->prefix('reservation')->group(function () {
     Route::middleware(['campeur'])->group(function () {
         Route::patch('/centre/{id}/reject-modification', [ReservationsCentreController::class, 'rejectModification']);
     });
+
+    // Provider reports cash received (or admin, on their behalf) — no role
+    // middleware here since either actor is valid; the controller itself
+    // checks reservation ownership OR admin (see markCashReceived()).
+    Route::patch('/centre/{id}/cash-received', [ReservationsCentreController::class, 'markCashReceived']);
 
     // Center modifies a pending reservation — requires approved account
     Route::middleware(['centre', 'require.active'])->group(function () {
@@ -1318,6 +1325,7 @@ Route::prefix('annonces')->group(function () {
     Route::prefix('balances')->group(function () {
         Route::get('/',                      [AdminPaymentController::class, 'balances']);
         Route::post('/adjust/{userId}',      [AdminPaymentController::class, 'adjustBalance']);
+        Route::post('/settle-debt/{userId}', [AdminPaymentController::class, 'settleDebt']);
     });
 
     // -------------------- WITHDRAWAL REQUESTS --------------------

@@ -122,8 +122,14 @@ class UnifiedReservationController extends Controller
     private function getEventReservationsAsOwner($userId)
     {
         $reservations = \App\Models\Reservations_events::where('group_id', $userId)
-            // Hide manual reservations from the organizer until the admin confirms payment.
-            ->whereNotIn('status', ['pending_payment', 'paiement_soumis', 'paiement_invalide'])
+            // Hide MANUAL reservations from the organizer until the admin confirms payment —
+            // they've never seen these yet. CASH reservations are exempt: paiement_soumis for
+            // cash means the organizer already accepted it AND reported the cash themselves
+            // (markCashReceived()), so hiding it now would make their own action disappear.
+            ->where(function ($q) {
+                $q->where('payment_method', 'cash')
+                    ->orWhereNotIn('status', ['pending_payment', 'paiement_soumis', 'paiement_invalide']);
+            })
             ->with(['event', 'user', 'services.service'])
             ->get();
         $txMap = $this->batchLoadWalletTx('event_reservation', $reservations->pluck('id'));
@@ -148,8 +154,14 @@ class UnifiedReservationController extends Controller
     private function getMaterielReservationsAsSupplier($userId)
     {
         $reservations = \App\Models\Reservations_materielles::where('fournisseur_id', $userId)
-            // Hide manual reservations from the supplier until the admin confirms payment.
-            ->whereNotIn('status', ['pending_payment', 'paiement_soumis', 'paiement_invalide'])
+            // Hide MANUAL reservations from the supplier until the admin confirms payment —
+            // they've never seen these yet. CASH reservations are exempt: paiement_soumis for
+            // cash means the supplier already confirmed it AND reported the cash themselves
+            // (markCashReceived()), so hiding it now would make their own action disappear.
+            ->where(function ($q) {
+                $q->where('payment_method', 'cash')
+                    ->orWhereNotIn('status', ['pending_payment', 'paiement_soumis', 'paiement_invalide']);
+            })
             ->with(['materielle', 'user', 'fournisseur'])
             ->get();
         $txMap = $this->batchLoadWalletTx('materiel_reservation', $reservations->pluck('id'));
@@ -174,8 +186,14 @@ class UnifiedReservationController extends Controller
     private function getCentreReservationsAsOwner($userId)
     {
         $reservations = \App\Models\Reservations_centre::where('centre_id', $userId)
-            // Hide manual reservations from the centre until the admin confirms payment.
-            ->whereNotIn('status', ['pending_payment', 'paiement_soumis', 'paiement_invalide'])
+            // Hide MANUAL reservations from the centre until the admin confirms payment —
+            // they've never seen these yet. CASH reservations are exempt: paiement_soumis for
+            // cash means the centre already accepted it AND reported the cash themselves
+            // (markCashReceived()), so hiding it now would make their own action disappear.
+            ->where(function ($q) {
+                $q->where('payment_method', 'cash')
+                    ->orWhereNotIn('status', ['pending_payment', 'paiement_soumis', 'paiement_invalide']);
+            })
             ->with(['serviceItems', 'user', 'centre'])
             ->get();
         $txMap = $this->batchLoadWalletTx('centre_reservation', $reservations->pluck('id'));
