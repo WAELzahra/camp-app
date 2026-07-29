@@ -28,7 +28,7 @@ class OrganizerSupplierController extends Controller
         $organizer = Auth::user();
 
         $links = OrganizerSupplierLink::where('organizer_id', $organizer->id)
-            ->with(['supplier:id,first_name,last_name,email,avatar,phone_number'])
+            ->with(['supplier:id,uuid,first_name,last_name,email,avatar,phone_number'])
             ->when($request->status, fn ($q) => $q->where('status', $request->status))
             ->orderByDesc('created_at')
             ->get()
@@ -54,7 +54,7 @@ class OrganizerSupplierController extends Controller
         $links = OrganizerSupplierLink::where('organizer_id', $organizer->id)
             ->where('status', 'accepted')
             ->with([
-                'supplier:id,first_name,last_name,email,avatar',
+                'supplier:id,uuid,first_name,last_name,email,avatar',
                 'supplier.materielles' => fn ($q) => $q->where('status', 'up')
                     ->where('is_rentable', true)
                     ->with('photos', 'category'),
@@ -72,7 +72,11 @@ class OrganizerSupplierController extends Controller
         $request->validated();
 
         $organizer = Auth::user();
+        // Only exclude suppliers currently accepted — a cancelled/rejected link must
+        // not permanently hide that supplier from search, since requestLink() below
+        // is designed to re-activate a past (non-accepted) link when found again.
         $existingIds = OrganizerSupplierLink::where('organizer_id', $organizer->id)
+            ->where('status', 'accepted')
             ->pluck('supplier_id');
 
         $suppliers = User::where('role_id', 4) // fournisseur
@@ -83,7 +87,10 @@ class OrganizerSupplierController extends Controller
                     ->orWhere('first_name', 'like', "%{$request->q}%")
                     ->orWhere('last_name', 'like', "%{$request->q}%");
             })
-            ->select('id', 'first_name', 'last_name', 'email', 'avatar')
+            // 'id' stays in the select (Eloquent needs the PK), but User::$hidden
+            // strips it from the JSON response regardless — 'uuid' is the field
+            // the frontend can actually see and must send back in requestLink().
+            ->select('id', 'uuid', 'first_name', 'last_name', 'email', 'avatar')
             ->limit(15)
             ->get();
 
@@ -98,7 +105,7 @@ class OrganizerSupplierController extends Controller
         $request->validated();
 
         $organizer = Auth::user();
-        $supplier = User::findOrFail($request->supplier_id);
+        $supplier = User::where('uuid', $request->supplier_uuid)->firstOrFail();
 
         if ($supplier->role_id !== 4) {
             return response()->json(['success' => false, 'message' => 'This user is not a supplier.'], 422);
@@ -209,17 +216,20 @@ class OrganizerSupplierController extends Controller
 
     /**
      * Get materials available from a specific accepted supplier.
+     * Route param is the supplier's uuid — User.id is hidden from API output
+     * (see User::$hidden), so the frontend never has a numeric id to send.
      */
-    public function supplierMaterials($supplierId)
+    public function supplierMaterials($supplierUuid)
     {
         $organizer = Auth::user();
+        $supplier = User::where('uuid', $supplierUuid)->firstOrFail();
 
         $link = OrganizerSupplierLink::where('organizer_id', $organizer->id)
-            ->where('supplier_id', $supplierId)
+            ->where('supplier_id', $supplier->id)
             ->where('status', 'accepted')
             ->firstOrFail();
 
-        $materials = Materielles::where('fournisseur_id', $supplierId)
+        $materials = Materielles::where('fournisseur_id', $supplier->id)
             ->where('status', 'up')
             ->where('is_rentable', true)
             ->where('quantite_dispo', '>', 0)

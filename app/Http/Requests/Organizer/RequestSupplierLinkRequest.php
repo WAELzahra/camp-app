@@ -14,7 +14,10 @@ class RequestSupplierLinkRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'supplier_id' => 'required|exists:users,id',
+            // User.id is hidden from all API output (see User::$hidden — API
+            // clients only ever see uuid), so the frontend can never actually
+            // supply a numeric id here. Look up by uuid instead.
+            'supplier_uuid' => 'required|uuid|exists:users,uuid',
         ];
     }
 }
