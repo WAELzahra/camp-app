@@ -749,6 +749,18 @@ class ReservationEventController extends Controller
                 $reservation->save();
             }
 
+            // Bank-transfer campers must give their transfer reference up front —
+            // there is no "come back later and submit it" step, so a reservation
+            // never exists in a state where the spot is held but no reference was
+            // ever given (see ManualPaymentController::submitProof for the mirrored
+            // status transition this replicates for the initial-payment case).
+            if ($eventPaymentMethod === 'manual' && $request->filled('transfer_reference')) {
+                $reservation->transfer_reference = $request->input('transfer_reference');
+                $reservation->payment_submitted_at = now();
+                $reservation->status = 'paiement_soumis';
+                $reservation->save();
+            }
+
             DB::commit();
         } catch (\Throwable $e) {
             DB::rollBack();
@@ -780,6 +792,7 @@ class ReservationEventController extends Controller
                 'amount_now' => $reservation->amount_now,
                 'amount_later' => $reservation->amount_later,
                 'clictopay_link' => ManualPaymentService::clicToPayLink(),
+                'transfer_reference_submitted' => (bool) $reservation->transfer_reference,
             ];
         } elseif ($eventPaymentMethod === 'cash') {
             $paymentResp['payment_info'] = [

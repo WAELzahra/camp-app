@@ -27,6 +27,7 @@ class StoreCentreReservationRequest extends FormRequest
             'trip_purpose' => 'nullable|string|max:255',
             'payment_method' => 'nullable|in:card,wallet,manual,cash',
             'payment_option' => 'nullable|in:full,deposit',
+            'transfer_reference' => 'nullable|string|max:120',
             'promo_code' => 'nullable|string|max:50',
             'service_items' => 'required|array|min:1',
             'service_items.*.profile_center_service_id' => 'required|exists:profile_center_services,id',
@@ -62,6 +63,16 @@ class StoreCentreReservationRequest extends FormRequest
     public function withValidator(\Illuminate\Validation\Validator $validator): void
     {
         $validator->after(function (\Illuminate\Validation\Validator $validator) {
+            if ($this->input('payment_method') === 'manual'
+                && \App\Services\ManualPaymentService::bankTransferEnabled()
+                && !\App\Services\ManualPaymentService::isEnabled()
+                && !$this->filled('transfer_reference')) {
+                $validator->errors()->add(
+                    'transfer_reference',
+                    'La référence de votre virement bancaire est requise pour confirmer la réservation.'
+                );
+            }
+
             if ($this->input('payment_method') !== 'cash') {
                 return;
             }

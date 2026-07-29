@@ -39,6 +39,7 @@ class ProgrammeReservationController extends Controller
             'selected_item_ids.*' => 'integer',
             'payment_method' => 'nullable|in:wallet,manual',
             'payment_option' => 'nullable|in:full,deposit',
+            'transfer_reference' => 'nullable|string|max:120',
         ]);
 
         $paymentMethod = $validated['payment_method'] ?? 'wallet';
@@ -47,6 +48,20 @@ class ProgrammeReservationController extends Controller
         // allowed as long as at least one of the two is enabled.
         if ($paymentMethod === 'manual' && !ManualPaymentService::anyMethodEnabled()) {
             return response()->json(['message' => 'Le paiement manuel n\'est pas disponible actuellement.'], 422);
+        }
+
+        // Bank-transfer campers must give their transfer reference up front —
+        // there is no "come back later and submit it" step, so a reservation
+        // never exists in a state where the seat is held but no reference was
+        // ever given.
+        if ($paymentMethod === 'manual'
+            && ManualPaymentService::bankTransferEnabled()
+            && !ManualPaymentService::isEnabled()
+            && empty($validated['transfer_reference'])) {
+            return response()->json([
+                'message' => 'La référence de votre virement bancaire est requise pour confirmer la réservation.',
+                'errors' => ['transfer_reference' => ['La référence de votre virement bancaire est requise pour confirmer la réservation.']],
+            ], 422);
         }
 
         $departure = ProgrammeDeparture::with('programme.items')->findOrFail($validated['programme_departure_id']);
@@ -168,6 +183,11 @@ class ProgrammeReservationController extends Controller
 
             if ($paymentMethod === 'manual') {
                 $reservation->payment_reference = PaymentReferenceService::forReservation($reservation->id);
+                if (!empty($validated['transfer_reference'])) {
+                    $reservation->transfer_reference = $validated['transfer_reference'];
+                    $reservation->payment_submitted_at = now();
+                    $reservation->status = 'paiement_soumis';
+                }
                 $reservation->save();
             } else {
                 Balance::forUser($user->id)->lockFunds($totalToPay);
@@ -203,6 +223,7 @@ class ProgrammeReservationController extends Controller
                 'amount_later' => $amountLater,
                 'balance_due_at' => $balanceDueAt,
                 'clictopay_link' => ManualPaymentService::clicToPayLink(),
+                'transfer_reference_submitted' => (bool) $reservation->transfer_reference,
             ];
         }
 

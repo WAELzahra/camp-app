@@ -315,6 +315,18 @@ class ReservationMaterielleController extends Controller
                 $reservation->save();
             }
 
+            // Bank-transfer campers must give their transfer reference up front —
+            // there is no "come back later and submit it" step, so a reservation
+            // never exists in a state where the stock is held but no reference was
+            // ever given (see ManualPaymentController::submitProof for the mirrored
+            // status transition this replicates for the initial-payment case).
+            if ($paymentMethod === 'manual' && $request->filled('transfer_reference')) {
+                $reservation->transfer_reference = $request->input('transfer_reference');
+                $reservation->payment_submitted_at = now();
+                $reservation->status = 'paiement_soumis';
+                $reservation->save();
+            }
+
             // Update wallet transaction reference with real reservation ID
             if ($paymentMethod === 'wallet' && $montantTotal > 0) {
                 WalletTransaction::where('user_id', $user->id)
@@ -360,6 +372,7 @@ class ReservationMaterielleController extends Controller
                     'amount_later' => $reservation->amount_later,
                     'balance_due_at' => $reservation->balance_due_at,
                     'clictopay_link' => ManualPaymentService::clicToPayLink(),
+                    'transfer_reference_submitted' => (bool) $reservation->transfer_reference,
                 ];
             } elseif ($paymentMethod === 'cash') {
                 $response['payment_info'] = [

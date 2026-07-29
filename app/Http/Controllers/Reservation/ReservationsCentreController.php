@@ -271,6 +271,18 @@ class ReservationsCentreController extends Controller
                 $reservationCentre->save();
             }
 
+            // Bank-transfer campers must give their transfer reference up front —
+            // there is no "come back later and submit it" step, so a reservation
+            // never exists in a state where the spot is held but no reference was
+            // ever given (see ManualPaymentController::submitProof for the mirrored
+            // status transition this replicates for the initial-payment case).
+            if ($paymentMethod === 'manual' && $request->filled('transfer_reference')) {
+                $reservationCentre->transfer_reference = $request->input('transfer_reference');
+                $reservationCentre->payment_submitted_at = now();
+                $reservationCentre->status = 'paiement_soumis';
+                $reservationCentre->save();
+            }
+
             // Lock funds in escrow immediately (wallet only)
             if ($paymentMethod === 'wallet' && $totalWithFee > 0) {
                 Balance::forUser($userId)->lockFunds($totalWithFee);
@@ -338,6 +350,7 @@ class ReservationsCentreController extends Controller
                     'amount_later' => $reservationCentre->amount_later,
                     'balance_due_at' => $reservationCentre->balance_due_at,
                     'clictopay_link' => ManualPaymentService::clicToPayLink(),
+                    'transfer_reference_submitted' => (bool) $reservationCentre->transfer_reference,
                 ];
             } elseif ($paymentMethod === 'cash') {
                 $resp['payment_info'] = [
