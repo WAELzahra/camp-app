@@ -687,6 +687,43 @@ class EventController extends Controller
             $query->where('status', $status);
         }
 
+        // Participants must not see each other's identities, contact info, or
+        // the organizer's private commission/revenue figures — only the
+        // organizer gets the full enriched list below. Everyone else gets a
+        // redacted list (their own row stays intact so "my reservation"
+        // lookups on the frontend keep working; other rows carry only an id).
+        $currentUserId = Auth::id();
+        $isOrganizer = $currentUserId && (int) $event->group_id === (int) $currentUserId;
+
+        if (!$isOrganizer) {
+            $participants = $query->get();
+
+            $redacted = $participants->map(function ($p) use ($currentUserId) {
+                $isSelf = $currentUserId && (int) $p->user_id === (int) $currentUserId;
+
+                if ($isSelf) {
+                    return [
+                        'id' => $p->id,
+                        'user_id' => $p->user_id,
+                        'status' => $p->status,
+                        'nbr_place' => $p->nbr_place,
+                        'created_at' => $p->created_at,
+                        'is_me' => true,
+                    ];
+                }
+
+                return [
+                    'id' => $p->id,
+                    'is_me' => false,
+                ];
+            });
+
+            return response()->json([
+                'success' => true,
+                'data' => $redacted,
+            ]);
+        }
+
         $participants = $query->with('services')->get();
 
         // Enrich each participant with commission fields using the group's custom rate

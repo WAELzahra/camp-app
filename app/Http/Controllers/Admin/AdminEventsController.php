@@ -116,10 +116,12 @@ class AdminEventsController extends Controller
             'group_id'                 => 'required|exists:users,id',
             'title'                    => 'required|string|max:255',
             'description'              => 'nullable|string',
-            'event_type'               => 'required|in:camping,hiking,voyage',
-            'start_date'               => 'required|date',
-            'end_date'                 => 'required|date|after_or_equal:start_date',
-            'capacity'                 => 'required|integer|min:1',
+            // See update() below for why 'custom' and the nullable dates/
+            // capacity matter — same fix applies here for event creation.
+            'event_type'               => 'required|in:camping,hiking,voyage,custom',
+            'start_date'               => 'nullable|date|required_unless:event_type,custom',
+            'end_date'                 => 'nullable|date|after_or_equal:start_date|required_unless:event_type,custom',
+            'capacity'                 => 'nullable|integer|min:1|required_unless:event_type,custom',
             'price'                    => 'required|numeric|min:0',
             'status'                   => 'sometimes|in:pending,scheduled,ongoing,finished,canceled,postponed,full',
             'address'                  => 'nullable|string',
@@ -139,7 +141,12 @@ class AdminEventsController extends Controller
             'estimated_arrival_time'   => 'nullable|date_format:H:i',
             'bus_company'              => 'nullable|string',
             'bus_number'               => 'nullable|string',
+            // Each stop is { city, arrival_time, departure_time } — matches
+            // the organizer-facing StoreEventRequest/UpdateEventRequest rules.
             'city_stops'               => 'nullable|array',
+            'city_stops.*.city'            => 'required|string',
+            'city_stops.*.arrival_time'    => 'nullable|date_format:H:i',
+            'city_stops.*.departure_time'  => 'nullable|date_format:H:i',
         ]);
 
         if ($validator->fails()) {
@@ -151,7 +158,9 @@ class AdminEventsController extends Controller
             $data = $validator->validated();
 
             $data['status']          = $data['status'] ?? 'pending';
-            $data['remaining_spots'] = $data['capacity'];
+            // Custom events may omit capacity entirely (unlimited) — $data
+            // won't even have the key in that case, so index it defensively.
+            $data['remaining_spots'] = $data['capacity'] ?? null;
             $data['is_active']       = $data['is_active'] ?? false;
 
             $event = Events::create($data);
@@ -185,14 +194,34 @@ class AdminEventsController extends Controller
         }
 
         $validator = Validator::make($request->all(), [
+            // group_id/remaining_spots/is_active were missing entirely — the
+            // edit modal lets admins change the organizer group, remaining
+            // spots, and active toggle, but none of it was ever validated,
+            // so Validator::validated() silently dropped those fields and
+            // the "successful" save never actually persisted them.
+            'group_id'                 => 'sometimes|exists:users,id',
             'title'                    => 'sometimes|string|max:255',
             'description'              => 'nullable|string',
-            'event_type'               => 'sometimes|in:camping,hiking,voyage',
-            'start_date'               => 'sometimes|date',
-            'end_date'                 => 'sometimes|date|after_or_equal:start_date',
-            'capacity'                 => 'sometimes|integer|min:1',
+            // 'custom' was added to the events.event_type column (see
+            // 2026_05_23_133247_add_custom_to_event_type_enum.php) but never
+            // added here — every edit of a custom event 422'd on this alone.
+            'event_type'               => 'sometimes|in:camping,hiking,voyage,custom',
+            // start_date/end_date/capacity were made nullable at the DB level
+            // specifically so custom events can omit them (see
+            // 2026_05_23_133922_make_events_optional_columns_nullable.php),
+            // but these rules never got the matching `nullable`, so any
+            // custom event (which the frontend sends with these as null)
+            // also 422'd here.
+            // requiredUnless keys off event_type in *this* request — safe
+            // because the admin edit modal always sends the full event_type
+            // alongside these fields (never a bare partial patch of just one).
+            'start_date'               => 'nullable|date|required_unless:event_type,custom',
+            'end_date'                 => 'nullable|date|after_or_equal:start_date|required_unless:event_type,custom',
+            'capacity'                 => 'nullable|integer|min:1|required_unless:event_type,custom',
+            'remaining_spots'          => 'sometimes|nullable|integer|min:0',
             'price'                    => 'sometimes|numeric|min:0',
             'status'                   => 'sometimes|in:pending,scheduled,ongoing,finished,canceled,postponed,full',
+            'is_active'                => 'sometimes|boolean',
             'address'                  => 'nullable|string',
             'tags'                     => 'nullable|array',
             'camping_duration'         => 'nullable|integer|min:1',
@@ -208,6 +237,9 @@ class AdminEventsController extends Controller
             'bus_company'              => 'nullable|string',
             'bus_number'               => 'nullable|string',
             'city_stops'               => 'nullable|array',
+            'city_stops.*.city'            => 'required|string',
+            'city_stops.*.arrival_time'    => 'nullable|date_format:H:i',
+            'city_stops.*.departure_time'  => 'nullable|date_format:H:i',
         ]);
 
         if ($validator->fails()) {
