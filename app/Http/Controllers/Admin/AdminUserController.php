@@ -9,14 +9,25 @@ use App\Http\Requests\Admin\UploadUserDocumentRequest;
 use App\Http\Requests\Admin\UploadUserPhotosRequest;
 use App\Mail\AccountStatusChanged;
 use App\Mail\PasswordResetEmail;
+use App\Models\Balance;
 use App\Models\CentreClaim;
+use App\Models\Conversation;
+use App\Models\Events;
 use App\Models\Feedbacks;
+use App\Models\Materielles;
 use App\Models\Profile;
+use App\Models\ProgrammeReservation;
+use App\Models\Programme;
+use App\Models\Reservations_centre;
+use App\Models\Reservations_events;
+use App\Models\Reservations_materielles;
 use App\Models\Role;
 use App\Models\User;
+use App\Models\WalletTransaction;
 use App\Services\CentreClaimApprovalService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
@@ -709,7 +720,31 @@ class AdminUserController extends Controller
     }
 
     /**
-     * Supprimer un utilisateur
+     * Statuses meaning "the provider has already been paid for this booking" —
+     * same rationale as AdminReservationsController::DISBURSED_STATUSES. Force
+     * the admin to cancel/reject these first rather than silently wiping an
+     * active, paid booking (and its camper's money) as a side effect of
+     * deleting an unrelated organizer/centre/supplier account.
+     */
+    private const USER_DELETE_DISBURSED_STATUSES = [
+        'center' => ['approved', 'confirmée_solde_en_attente', 'solde_soumis', 'entièrement_payée'],
+        'events' => ['confirmée', 'confirmée_solde_en_attente', 'solde_soumis', 'entièrement_payée'],
+        'materielle' => ['confirmed', 'paid', 'retrieved', 'returned', 'disputed', 'confirmée_solde_en_attente', 'solde_soumis', 'entièrement_payée'],
+    ];
+
+    private const USER_DELETE_RELEASED_STATUSES = [
+        'center' => ['rejected', 'canceled', 'annulée_solde_impayé'],
+        'events' => ['refusée', 'annulée_par_utilisateur', 'annulée_par_organisateur', 'annulée_solde_impayé'],
+        'materielle' => ['rejected', 'canceled', 'cancelled_by_camper', 'cancelled_by_fournisseur', 'annulée_solde_impayé'],
+    ];
+
+    /**
+     * Supprimer un utilisateur — and everything genuinely tied to their account:
+     * their own reservations (as camper), every reservation against listings
+     * they own (as organizer/centre/supplier — these cascade-delete at the DB
+     * level the moment the user row goes, which would otherwise silently strand
+     * OTHER campers' escrowed wallet funds and held capacity with no record of
+     * what happened), their programme bookings, and conversations they started.
      */
     public function destroy($id)
     {
@@ -722,6 +757,90 @@ class AdminUserController extends Controller
                     'message' => 'Vous ne pouvez pas supprimer votre propre compte',
                 ], 403);
             }
+
+            $balance = Balance::where('user_id', $user->id)->first();
+            if ($balance && ((float) $balance->solde_disponible > 0 || (float) $balance->solde_en_attente > 0 || (float) $balance->solde_du_plateforme > 0)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Ce compte a un solde wallet non nul (disponible: {$balance->solde_disponible} TND, en attente: {$balance->solde_en_attente} TND, dû à la plateforme: {$balance->solde_du_plateforme} TND). Réglez ce solde (retrait, remboursement) avant de supprimer le compte.",
+                ], 422);
+            }
+
+            // Every reservation this deletion would touch, directly or via cascade:
+            // their own bookings (as camper) plus every booking against listings
+            // they own (as organizer/centre/supplier).
+            $affected = [
+                ...Reservations_centre::where('user_id', $user->id)->orWhere('centre_id', $user->id)->get()->map(fn ($r) => ['type' => 'center', 'r' => $r]),
+                ...Reservations_events::whereIn('event_id', Events::where('group_id', $user->id)->pluck('id'))
+                    ->orWhere('user_id', $user->id)->get()->map(fn ($r) => ['type' => 'events', 'r' => $r]),
+                ...Reservations_materielles::whereIn('materielle_id', Materielles::where('fournisseur_id', $user->id)->pluck('id'))
+                    ->orWhere('user_id', $user->id)->get()->map(fn ($r) => ['type' => 'materielle', 'r' => $r]),
+            ];
+
+            foreach ($affected as $a) {
+                if (in_array($a['r']->status, self::USER_DELETE_DISBURSED_STATUSES[$a['type']] ?? [], true)) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => "Ce compte a une réservation active déjà payée (#{$a['r']->id}, {$a['type']}). Annulez-la ou refusez-la d'abord pour déclencher le remboursement correct avant de supprimer le compte.",
+                    ], 422);
+                }
+            }
+
+            $activeProgrammeReservations = ProgrammeReservation::where('user_id', $user->id)->get();
+            foreach ($activeProgrammeReservations as $pr) {
+                if (!in_array($pr->status, ['cancelled', 'completed'], true)) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => "Ce compte a une réservation de programme active (#{$pr->id}). Annulez-la d'abord.",
+                    ], 422);
+                }
+            }
+
+            // Shares this user owns in OTHER campers' programme bookings (e.g. as a
+            // supplier/organizer getting a cut) — that's someone else's active
+            // accounting record, not this account's own data. Too risky to guess
+            // at; block rather than silently deleting another user's revenue split.
+            $foreignShares = DB::table('programme_reservation_shares')
+                ->join('programme_reservations', 'programme_reservations.id', '=', 'programme_reservation_shares.programme_reservation_id')
+                ->where('programme_reservation_shares.owner_user_id', $user->id)
+                ->where('programme_reservations.user_id', '!=', $user->id)
+                ->count();
+            if ($foreignShares > 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Ce compte détient {$foreignShares} part(s) de revenu sur des réservations de programme d'autres utilisateurs. Contactez le support technique avant de supprimer ce compte.",
+                ], 422);
+            }
+
+            if (Programme::where('created_by', $user->id)->exists()) {
+                $hasReservations = ProgrammeReservation::whereIn(
+                    'programme_departure_id',
+                    DB::table('programme_departures')->whereIn('programme_id', Programme::where('created_by', $user->id)->pluck('id'))->pluck('id')
+                )->exists();
+                if ($hasReservations) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Ce compte a créé un ou plusieurs programmes ayant des réservations actives. Ils doivent être traités avant de supprimer ce compte.',
+                    ], 422);
+                }
+            }
+
+            // Nothing left that blocks deletion — release whatever's still held
+            // (escrow + capacity) for every affected reservation before the
+            // cascade physically removes the rows.
+            foreach ($affected as $a) {
+                if (!in_array($a['r']->status, self::USER_DELETE_RELEASED_STATUSES[$a['type']] ?? [], true)) {
+                    $this->releaseReservationHold($a['r'], $a['type']);
+                }
+            }
+            foreach ($activeProgrammeReservations as $pr) {
+                if ($pr->payment_method === 'wallet' && (float) ($pr->total_price ?? 0) > 0 && $pr->user_id) {
+                    Balance::forUser($pr->user_id)->refundEscrow((float) $pr->total_price);
+                }
+            }
+
+            // Conversations this user started — cascades to participants/messages.
+            Conversation::where('created_by', $user->id)->delete();
 
             // Supprimer les fichiers physiques
             $this->deleteAllUserDocuments($user);
@@ -747,8 +866,54 @@ class AdminUserController extends Controller
 
             return response()->json([
                 'success' => false,
-                'message' => 'Erreur lors de la suppression',
+                'message' => 'Erreur lors de la suppression : '.$e->getMessage(),
             ], 500);
+        }
+    }
+
+    /**
+     * Releases any wallet escrow still held for this reservation and restores
+     * whatever capacity/stock it was holding — mirrors
+     * AdminReservationsController::releaseHeldFundsAndCapacity for the same reason:
+     * deleting the row must never silently strand a camper's money or a listing's
+     * capacity with no reservation left to release it against.
+     */
+    private function releaseReservationHold($reservation, string $type): void
+    {
+        $grossAmount = (float) ($reservation->total_price ?? $reservation->montant_total ?? 0);
+
+        if ($reservation->payment_method === 'wallet' && $reservation->user_id) {
+            $referenceType = match ($type) {
+                'center' => 'centre_reservation',
+                'events' => 'event_reservation',
+                default => 'materiel_reservation',
+            };
+
+            $escrowTx = WalletTransaction::where('user_id', $reservation->user_id)
+                ->where('type', 'debit')
+                ->where('category', 'reservation_payment')
+                ->where('reference_type', $referenceType)
+                ->where('reference_id', $reservation->id)
+                ->first();
+            $escrowAmt = $escrowTx ? (float) $escrowTx->amount_gross : $grossAmount;
+
+            if ($escrowAmt > 0) {
+                Balance::forUser($reservation->user_id)->refundEscrow($escrowAmt);
+                WalletTransaction::logCredit(
+                    $reservation->user_id, 'refund_in', $escrowAmt, 0, 0, $escrowAmt,
+                    $referenceType, $reservation->id,
+                    "Remboursement — compte supprimé par l'administrateur (réservation #{$reservation->id})"
+                );
+            }
+        }
+
+        if ($type === 'events') {
+            $event = Events::find($reservation->event_id);
+            if ($event && $event->remaining_spots !== null) {
+                $event->increment('remaining_spots', $reservation->nbr_place);
+            }
+        } elseif ($type === 'materielle') {
+            Materielles::find($reservation->materielle_id)?->increment('quantite_dispo', $reservation->quantite);
         }
     }
 

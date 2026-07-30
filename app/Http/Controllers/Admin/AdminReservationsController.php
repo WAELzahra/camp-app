@@ -746,6 +746,14 @@ class AdminReservationsController extends Controller
                             $reservation->status = $this->getCanceledStatus($request->type);
                             break;
                         case 'delete':
+                            if (in_array($reservation->status, self::DISBURSED_STATUSES[$request->type] ?? [], true)) {
+                                $results['failed'][] = ['id' => $id, 'reason' => 'Déjà payée au prestataire — annulez-la d\'abord.'];
+
+                                continue 2;
+                            }
+                            if (!in_array($reservation->status, self::ALREADY_RELEASED_STATUSES[$request->type] ?? [], true)) {
+                                $this->releaseHeldFundsAndCapacity($reservation, $request->type);
+                            }
                             $reservation->delete();
                             $results['success'][] = ['id' => $id, 'action' => 'deleted'];
 
@@ -800,6 +808,32 @@ class AdminReservationsController extends Controller
     /**
      * Supprime une réservation
      */
+    /**
+     * Statuses where this reservation's money has already been paid out to the
+     * provider (or the platform already booked a debt against it) — hard-deleting
+     * these would silently erase the record of a booking the provider was already
+     * paid for, with no clawback. Blocked; the admin must cancel/reject it first
+     * so the real fee/refund logic (CancellationPolicyService, etc.) actually runs.
+     */
+    private const DISBURSED_STATUSES = [
+        'center' => ['approved', 'confirmée_solde_en_attente', 'solde_soumis', 'entièrement_payée'],
+        'events' => ['confirmée', 'confirmée_solde_en_attente', 'solde_soumis', 'entièrement_payée'],
+        'materielle' => ['confirmed', 'paid', 'retrieved', 'returned', 'disputed', 'confirmée_solde_en_attente', 'solde_soumis', 'entièrement_payée'],
+        'guides' => [],
+    ];
+
+    /**
+     * Statuses where capacity/stock and any escrowed funds were already released
+     * by the normal cancel/reject flow before reaching this status — nothing left
+     * to restore when hard-deleting from here.
+     */
+    private const ALREADY_RELEASED_STATUSES = [
+        'center' => ['rejected', 'canceled', 'annulée_solde_impayé'],
+        'events' => ['refusée', 'annulée_par_utilisateur', 'annulée_par_organisateur', 'annulée_solde_impayé'],
+        'materielle' => ['rejected', 'canceled', 'cancelled_by_camper', 'cancelled_by_fournisseur', 'annulée_solde_impayé'],
+        'guides' => [],
+    ];
+
     public function destroy($type, $id)
     {
         if (!array_key_exists($type, self::RESERVATION_TYPES)) {
@@ -821,8 +855,15 @@ class AdminReservationsController extends Controller
                 ], 403);
             }
 
-            if ($type === 'events' && in_array($reservation->status, ['confirmée', 'en_attente_validation'])) {
-                $this->restoreEventPlaces($reservation);
+            if (in_array($reservation->status, self::DISBURSED_STATUSES[$type] ?? [], true)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cette réservation a déjà été payée au prestataire. Annulez-la ou refusez-la (ce qui déclenche le remboursement correct) avant de la supprimer.',
+                ], 422);
+            }
+
+            if (!in_array($reservation->status, self::ALREADY_RELEASED_STATUSES[$type] ?? [], true)) {
+                $this->releaseHeldFundsAndCapacity($reservation, $type);
             }
 
             $reservation->delete();
@@ -833,10 +874,61 @@ class AdminReservationsController extends Controller
             ]);
 
         } catch (\Exception $e) {
+            \Log::error("Admin reservation delete failed ({$type} #{$id}): ".$e->getMessage());
+
             return response()->json([
                 'success' => false,
-                'message' => 'Réservation non trouvée',
-            ], 404);
+                'message' => 'Erreur lors de la suppression : '.$e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Releases any wallet funds still held in escrow for this reservation (never
+     * making it to the provider) and restores whatever capacity/stock it was
+     * still holding — called before a hard delete so neither is silently lost.
+     */
+    private function releaseHeldFundsAndCapacity($reservation, string $type): void
+    {
+        $grossAmount = (float) ($reservation->total_price ?? $reservation->montant_total ?? 0);
+
+        if ($reservation->payment_method === 'wallet' && $reservation->user_id) {
+            $referenceType = match ($type) {
+                'center' => 'centre_reservation',
+                'events' => 'event_reservation',
+                default => 'materiel_reservation',
+            };
+
+            // reservations_events has no total_price/montant_total column at all
+            // (unlike center/materielle) — the WalletTransaction is the only
+            // reliable source of the real escrowed amount for that type, so it's
+            // looked up first; $grossAmount is only a fallback for legacy rows
+            // that predate this transaction logging.
+            $escrowTx = WalletTransaction::where('user_id', $reservation->user_id)
+                ->where('type', 'debit')
+                ->where('category', 'reservation_payment')
+                ->where('reference_type', $referenceType)
+                ->where('reference_id', $reservation->id)
+                ->first();
+            $escrowAmt = $escrowTx ? (float) $escrowTx->amount_gross : $grossAmount;
+
+            if ($escrowAmt > 0) {
+                Balance::forUser($reservation->user_id)->refundEscrow($escrowAmt);
+                WalletTransaction::logCredit(
+                    $reservation->user_id, 'refund_in', $escrowAmt, 0, 0, $escrowAmt,
+                    $referenceType, $reservation->id,
+                    "Remboursement — réservation supprimée par l'administrateur #{$reservation->id}"
+                );
+            }
+        }
+
+        if ($type === 'events') {
+            $event = Events::find($reservation->event_id);
+            if ($event && $event->remaining_spots !== null) {
+                $event->increment('remaining_spots', $reservation->nbr_place);
+            }
+        } elseif ($type === 'materielle') {
+            Materielles::find($reservation->materielle_id)?->increment('quantite_dispo', $reservation->quantite);
         }
     }
 
@@ -1059,20 +1151,21 @@ class AdminReservationsController extends Controller
         $event = Events::findOrFail($reservation->event_id);
         $diff = $newPlaces - $reservation->nbr_place;
 
-        if ($diff > 0 && $event->nbr_place_restante < $diff) {
+        if ($diff > 0 && $event->remaining_spots !== null && $event->remaining_spots < $diff) {
             throw new \Exception('Pas assez de places disponibles');
         }
 
-        $event->nbr_place_restante -= $diff;
-        $event->save();
+        if ($event->remaining_spots !== null) {
+            $event->remaining_spots -= $diff;
+            $event->save();
+        }
     }
 
     private function restoreEventPlaces($reservation)
     {
         $event = Events::find($reservation->event_id);
-        if ($event) {
-            $event->nbr_place_restante += $reservation->nbr_place;
-            $event->save();
+        if ($event && $event->remaining_spots !== null) {
+            $event->increment('remaining_spots', $reservation->nbr_place);
         }
     }
 
