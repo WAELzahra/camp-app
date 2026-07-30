@@ -35,10 +35,6 @@ Saisissez le **code à 6 chiffres** suivant sur le site TunisiaCamp :
 </p>
 @endcomponent
 
-@component('mail::button', ['url' => $frontendUrl, 'color' => 'primary'])
-Saisir mon code
-@endcomponent
-
 ---
 
 ## Ce que vous pouvez faire sur TunisiaCamp
