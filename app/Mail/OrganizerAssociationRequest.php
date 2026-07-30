@@ -29,7 +29,7 @@ class OrganizerAssociationRequest extends Mailable implements ShouldQueue
             ($this->link->organizer->last_name ?? '')
         ) ?: ($this->link->organizer->email ?? 'An organizer');
 
-        return $this->subject("Association request from {$organizerName} — TunisiaCamp")
+        return $this->subject("Demande d'association de {$organizerName} — TunisiaCamp")
             ->markdown('emails.organizer-association-request');
     }
 }

@@ -1,55 +1,58 @@
 @component('mail::message')
-# Reservation Canceled
+# Réservation annulée
 
-Dear {{ $userName }},
+Bonjour {{ $userName }},
 
-Your reservation for **{{ $eventTitle }}** has been successfully canceled. Please review the details below.
+Votre réservation pour **{{ $eventTitle }}** a bien été annulée. Voici le récapitulatif.
 
-**Cancellation Reference:** #{{ str_pad($reservationId, 6, '0', STR_PAD_LEFT) }}
-**Canceled At:** {{ $canceledAt }}
-
----
-
-## Reservation Summary
-
-**Event:** {{ $eventTitle }}
-**Dates:** {{ \Carbon\Carbon::parse($eventStartDate)->format('F j, Y') }} – {{ \Carbon\Carbon::parse($eventEndDate)->format('F j, Y') }}
-**Spots Reserved:** {{ $nbrPlace }}
-**Total Paid:** **{{ number_format($totalPrice, 2) }} TND**
+**Référence d'annulation :** #{{ str_pad($reservationId, 6, '0', STR_PAD_LEFT) }}
+**Annulée le :** {{ $canceledAt }}
 
 ---
 
-## Refund Breakdown
+## Récapitulatif de la réservation
 
-| Description | Amount |
-|---|---|
-| Original Payment | {{ number_format($totalPrice, 2) }} TND |
-| Cancellation Fee ({{ $cancellationFeePercent }}%) | - {{ number_format($cancellationFee, 2) }} TND |
-| Processing Fee ({{ $processingFeePercent }}%) | - {{ number_format($processingFee, 2) }} TND |
-| **Estimated Refund** | **{{ number_format($refundAmount, 2) }} TND** |
-
-> ⚠️ Refund amounts are estimates and will be processed within **7–14 business days** to your original payment method.
+**Événement :** {{ $eventTitle }}
+**Dates :** {{ \Carbon\Carbon::parse($eventStartDate)->locale('fr')->translatedFormat('d F Y') }} – {{ \Carbon\Carbon::parse($eventEndDate)->locale('fr')->translatedFormat('d F Y') }}
+**Places réservées :** {{ $nbrPlace }}
+**Montant payé :** **{{ number_format($totalPrice, 2) }} TND**
 
 ---
 
-## What Happens Next?
+## Remboursement
 
-1. Our team will review your cancellation request
-2. A refund of approximately **{{ number_format($refundAmount, 2) }} TND** will be initiated
-3. You'll receive a separate confirmation once the refund is processed
-
-If you have any questions, please contact us at **support@tunisiacamp.com**.
-
-@component('mail::button', ['url' => config('app.frontend_url') . '/events', 'color' => 'success'])
-Browse Other Events
+@if($refundAmount !== null)
+@component('mail::panel')
+**Montant remboursé sur votre wallet TunisiaCamp :** {{ number_format($refundAmount, 2) }} TND
+@if($feeLabel)
+**Motif :** {{ $feeLabel }}
+@endif
+@if($platformFee > 0)
+**Dont frais d'annulation plateforme :** {{ number_format($platformFee, 2) }} TND
+@endif
 @endcomponent
 
-Sincerely,
+Ce montant a déjà été crédité sur votre solde TunisiaCamp et est disponible immédiatement.
+@elseif($paymentMethod === 'wallet')
+Aucun montant n'était dû sur cette réservation, aucun remboursement n'a donc été nécessaire.
+@else
+Cette réservation n'a pas été payée via votre wallet TunisiaCamp. Si un virement bancaire a déjà été effectué, notre équipe support vous contactera séparément au sujet de votre remboursement.
+@endif
 
-**TunisiaCamp Team**
+@component('mail::button', ['url' => config('app.frontend_url') . '/events', 'color' => 'success'])
+Découvrir d'autres événements
+@endcomponent
+
+---
+
+Pour toute question, contactez-nous à [{{ $supportEmail }}](mailto:{{ $supportEmail }}).
+
+Cordialement,
+
+**L'équipe TunisiaCamp**
 
 @component('mail::subcopy')
-This is an automated message. Do not reply directly to this email.
-For support: support@tunisiacamp.com · Cancellation ID: #{{ str_pad($reservationId, 6, '0', STR_PAD_LEFT) }} · {{ now()->format('Y-m-d H:i') }}
+Ceci est un message automatique, merci de ne pas y répondre directement.
+Support : {{ $supportEmail }} · Réservation n° {{ str_pad($reservationId, 6, '0', STR_PAD_LEFT) }} · {{ now()->locale('fr')->translatedFormat('d/m/Y H:i') }}
 @endcomponent
 @endcomponent

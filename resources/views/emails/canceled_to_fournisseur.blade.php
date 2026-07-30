@@ -1,26 +1,26 @@
 @component('mail::message')
-# Reservation Canceled 🚫
+# Réservation annulée
 
-Hi,
+Bonjour,
 
-A reservation has been **canceled** on your Tunisia Camp shop.
+Une réservation a été **annulée** sur votre boutique TunisiaCamp.
 
 @component('mail::panel')
-**Item:** {{ $reservation->materielle->nom ?? 'N/A' }}
-**Type:** {{ $reservation->type_reservation === 'location' ? 'Rental' : 'Purchase' }}
-**Quantity:** {{ $reservation->quantite }}
-**Amount:** {{ number_format($reservation->montant_total, 2) }} TND
+**Article :** {{ $reservation->materielle->nom ?? 'N/A' }}
+**Type :** {{ $reservation->type_reservation === 'location' ? 'Location' : 'Achat' }}
+**Quantité :** {{ $reservation->quantite }}
+**Montant :** {{ number_format($reservation->montant_total, 2) }} TND
 @if($reservation->type_reservation === 'location')
-**Period:** {{ \Carbon\Carbon::parse($reservation->date_debut)->format('d/m/Y') }} → {{ \Carbon\Carbon::parse($reservation->date_fin)->format('d/m/Y') }}
+**Période :** {{ \Carbon\Carbon::parse($reservation->date_debut)->locale('fr')->translatedFormat('d/m/Y') }} → {{ \Carbon\Carbon::parse($reservation->date_fin)->locale('fr')->translatedFormat('d/m/Y') }}
 @endif
 @endcomponent
 
-Stock has been automatically restored.
+Le stock a été automatiquement restauré.
 
 @component('mail::button', ['url' => config('app.frontend_url', 'http://localhost:5173'), 'color' => 'primary'])
-View My Reservations
+Voir mes réservations
 @endcomponent
 
-Best regards,
-**The Tunisia Camp Team**
+Cordialement,
+**L'équipe TunisiaCamp**
 @endcomponent

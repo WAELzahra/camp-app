@@ -1,29 +1,33 @@
 @component('mail::message')
-# Reservation Cancelled ❌
+# Réservation annulée
 
-Hi **{{ $reservation->name ?? 'Participant' }}**,
+Bonjour **{{ $reservation->name ?? 'cher participant' }}**,
 
-Unfortunately, the event organiser has cancelled your reservation for **{{ $event->title ?? 'the event' }}**.
+Malheureusement, l'organisateur de l'événement a annulé votre réservation pour **{{ $event->title ?? 'l\'événement' }}**.
 
 @component('mail::panel')
-**Reservation ID:** #{{ str_pad($reservation->id, 6, '0', STR_PAD_LEFT) }}
-**Event:** {{ $event->title ?? 'N/A' }}
-**Event Date:** {{ \Carbon\Carbon::parse($event->start_date ?? $event->date_debut ?? now())->format('d/m/Y') }}
-**Spots:** {{ $reservation->nbr_place }}
+**N° de réservation :** #{{ str_pad($reservation->id, 6, '0', STR_PAD_LEFT) }}
+**Événement :** {{ $event->title ?? 'N/A' }}
+**Date de l'événement :** {{ \Carbon\Carbon::parse($event->start_date ?? $event->date_debut ?? now())->locale('fr')->translatedFormat('d/m/Y') }}
+**Places :** {{ $reservation->nbr_place }}
 @endcomponent
 
-If you believe this is a mistake or have questions, please contact TunisiaCamp support.
+@if($refundAmount !== null)
+Cette annulation étant à l'initiative de l'organisateur, vous avez été **intégralement remboursé** : **{{ number_format($refundAmount, 2) }} TND** ont été crédités sur votre wallet TunisiaCamp, disponibles immédiatement.
+@endif
+
+Si vous pensez qu'il s'agit d'une erreur ou avez des questions, contactez le support TunisiaCamp à [{{ $supportEmail }}](mailto:{{ $supportEmail }}).
 
 @component('mail::button', ['url' => $frontendUrl . '/events', 'color' => 'primary'])
-Browse Other Events
+Découvrir d'autres événements
 @endcomponent
 
-We apologise for the inconvenience.
+Nous nous excusons pour la gêne occasionnée.
 
-Best regards,
-**The TunisiaCamp Team**
+Cordialement,
+**L'équipe TunisiaCamp**
 
 @component('mail::subcopy')
-This is an automated message. Reservation ID: {{ $reservation->id }} · {{ now()->format('Y-m-d H:i') }}
+Ceci est un message automatique. Réservation n° {{ $reservation->id }} · {{ now()->locale('fr')->translatedFormat('d/m/Y H:i') }}
 @endcomponent
 @endcomponent

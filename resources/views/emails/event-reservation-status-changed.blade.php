@@ -1,46 +1,58 @@
 @component('mail::message')
 @php
 $statusLabels = [
-    'confirmé'               => ['label' => 'Confirmed ✅',  'color' => 'success'],
-    'refusé'                 => ['label' => 'Rejected ❌',   'color' => 'error'],
-    'en_attente'             => ['label' => 'Pending ⏳',    'color' => 'primary'],
-    'annulé'                 => ['label' => 'Cancelled ⚠️', 'color' => 'error'],
-    'en_attente_paiement'    => ['label' => 'Awaiting Payment 💳', 'color' => 'primary'],
-    'annulée_par_utilisateur'=> ['label' => 'Cancelled by You', 'color' => 'error'],
+    'en_attente_paiement'        => 'En attente de paiement',
+    'confirmée'                  => 'Confirmée',
+    'en_attente_validation'      => 'En attente de validation',
+    'refusée'                    => 'Refusée',
+    'annulée_par_utilisateur'    => 'Annulée par vous',
+    'annulée_par_organisateur'   => 'Annulée par l\'organisateur',
+    'remboursement_en_attente'   => 'Remboursement en attente',
+    'remboursée_partielle'       => 'Remboursée partiellement',
+    'remboursée_totale'          => 'Remboursée intégralement',
+    'paiement_soumis'            => 'Paiement soumis — vérification en cours',
+    'paiement_invalide'          => 'Paiement invalide',
+    'confirmée_solde_en_attente' => 'Confirmée — solde restant dû',
+    'solde_soumis'               => 'Solde soumis — vérification en cours',
+    'entièrement_payée'          => 'Entièrement payée',
+    'annulée_solde_impayé'       => 'Annulée — solde impayé',
+    'modified'                   => 'Modifiée',
+    'pending'                    => 'En attente',
+    'pending_payment'            => 'En attente de paiement',
 ];
-$info = $statusLabels[$reservation->status] ?? ['label' => ucfirst($reservation->status), 'color' => 'primary'];
+$statusLabel = $statusLabels[$reservation->status] ?? ucfirst($reservation->status);
 @endphp
 
-# Reservation Status Updated
+# Statut de réservation mis à jour
 
-Hi **{{ $reservation->name ?? 'Participant' }}**,
+Bonjour **{{ $reservation->name ?? 'cher participant' }}**,
 
-The status of your reservation for **{{ $event->title ?? 'the event' }}** has been updated.
+Le statut de votre réservation pour **{{ $event->title ?? 'l\'événement' }}** a été mis à jour.
 
 @component('mail::panel')
-**Reservation ID:** #{{ str_pad($reservation->id, 6, '0', STR_PAD_LEFT) }}
-**Event:** {{ $event->title ?? 'N/A' }}
-**Event Date:** {{ \Carbon\Carbon::parse($event->start_date ?? $event->date_debut ?? now())->format('d/m/Y') }}
-**Spots:** {{ $reservation->nbr_place }}
-**New Status:** {{ $info['label'] }}
+**N° de réservation :** #{{ str_pad($reservation->id, 6, '0', STR_PAD_LEFT) }}
+**Événement :** {{ $event->title ?? 'N/A' }}
+**Date de l'événement :** {{ \Carbon\Carbon::parse($event->start_date ?? $event->date_debut ?? now())->locale('fr')->translatedFormat('d/m/Y') }}
+**Places :** {{ $reservation->nbr_place }}
+**Nouveau statut :** {{ $statusLabel }}
 @endcomponent
 
-@if($reservation->status === 'confirmé')
-Your spot is confirmed! We look forward to seeing you at the event.
-@elseif($reservation->status === 'refusé')
-Unfortunately your reservation was not accepted. You may browse other events on TunisiaCamp.
-@elseif($reservation->status === 'en_attente_paiement')
-Please complete your payment to secure your spot.
+@if($reservation->status === 'confirmée')
+Votre place est confirmée ! Nous avons hâte de vous voir à l'événement.
+@elseif($reservation->status === 'refusée')
+Malheureusement, votre réservation n'a pas été acceptée. Vous pouvez consulter d'autres événements sur TunisiaCamp.
+@elseif(in_array($reservation->status, ['en_attente_paiement', 'pending_payment']))
+Merci de compléter votre paiement pour sécuriser votre place.
 @endif
 
 @component('mail::button', ['url' => $frontendUrl . '/profile/reservations', 'color' => 'primary'])
-View My Reservations
+Voir mes réservations
 @endcomponent
 
-Best regards,
-**The TunisiaCamp Team**
+Cordialement,
+**L'équipe TunisiaCamp**
 
 @component('mail::subcopy')
-This is an automated message. Reservation ID: {{ $reservation->id }} · {{ now()->format('Y-m-d H:i') }}
+Ceci est un message automatique. Réservation n° {{ $reservation->id }} · {{ now()->locale('fr')->translatedFormat('d/m/Y H:i') }}
 @endcomponent
 @endcomponent

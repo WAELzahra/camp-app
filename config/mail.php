@@ -125,6 +125,18 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Support Contact Address
+    |--------------------------------------------------------------------------
+    |
+    | The address shown to campers/providers as "need help? contact us" in
+    | transactional emails (verification, reservation disputes, etc.).
+    |
+    */
+
+    'support_email' => env('MAIL_SUPPORT_EMAIL', 'support.tunisiacamp@gmail.com'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Markdown Mail Settings
     |--------------------------------------------------------------------------
     |

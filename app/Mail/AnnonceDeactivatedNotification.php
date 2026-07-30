@@ -25,6 +25,6 @@ class AnnonceDeactivatedNotification extends Mailable implements ShouldQueue
     public function build()
     {
         return $this->subject('Votre annonce a été désactivée')
-            ->view('emails.annonce_deactivated');
+            ->markdown('emails.annonce_deactivated');
     }
 }

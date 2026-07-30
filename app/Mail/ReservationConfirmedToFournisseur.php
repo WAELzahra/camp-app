@@ -16,7 +16,7 @@ class ReservationConfirmedToFournisseur extends Mailable implements ShouldQueue
 
     public function build()
     {
-        return $this->subject('✅ Réservation confirmée')
-            ->view('emails.reservation_materielle_confirmed');
+        return $this->subject('Réservation confirmée')
+            ->markdown('emails.reservation_materielle_confirmed');
     }
 }

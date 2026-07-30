@@ -24,11 +24,12 @@ class EmailVerificationCodeMail extends Mailable implements ShouldQueue
 
     public function build()
     {
-        return $this->subject('Welcome to CampConnect! Verify Your Email')
+        return $this->subject('Bienvenue sur TunisiaCamp ! Vérifiez votre adresse e-mail')
             ->markdown('emails.verification-code')
             ->with([
                 'code' => $this->verificationCode,
                 'user' => $this->user,
+                'supportEmail' => config('mail.support_email'),
             ]);
     }
 }

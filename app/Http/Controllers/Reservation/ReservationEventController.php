@@ -162,6 +162,14 @@ class ReservationEventController extends Controller
         $isLate = $feeCalc ? ($feeCalc['hours_remaining'] < 24) : false;
 
         // ── Wallet refund ────────────────────────────────────────────────────────
+        // Populated per-branch below with what was ACTUALLY refunded — the email
+        // must show this real figure, not the pre-fee $refundAmount from the
+        // policy preview above (which never accounts for the platform fee, and
+        // doesn't apply at all in the pre-validation full-refund branch).
+        $emailActualRefund = null;
+        $emailPlatformFee = 0.0;
+        $emailFeeLabel = null;
+
         if ($reservation->payment_method === 'wallet' && $reservation->status === 'en_attente_validation') {
             // Funds were escrowed at creation — full refund of event + services + materials + platform fee
             $materialsTotal = EventReservationMaterial::where('event_reservation_id', $reservation->id)->sum('montant_total');
@@ -176,6 +184,8 @@ class ReservationEventController extends Controller
                     $event->group_id
                 );
                 DB::commit();
+                $emailActualRefund = $totalPaid;
+                $emailFeeLabel = 'Remboursement intégral (réservation pas encore validée par l\'organisateur)';
             } catch (\Throwable $e) {
                 DB::rollBack();
                 \Log::error('Event pending cancellation escrow refund failed: '.$e->getMessage());
@@ -256,12 +266,16 @@ class ReservationEventController extends Controller
                 }
 
                 DB::commit();
+                $emailActualRefund = $actualRefund;
+                $emailPlatformFee = $platformCancFee;
+                $emailFeeLabel = $feeCalc['tier_label'] ?? null;
             } catch (\Throwable $e) {
                 DB::rollBack();
                 \Log::error('Event cancellation wallet refund failed: '.$e->getMessage());
             }
         }
-        // If status was en_attente_validation, no money was ever taken — nothing to refund
+        // Any other status/payment_method combination (e.g. manual payment never
+        // confirmed) has no wallet funds to refund — $emailActualRefund stays null.
 
         // ── Update reservation status ────────────────────────────────────────────
         $reservation->update([
@@ -278,9 +292,9 @@ class ReservationEventController extends Controller
                 user: $user,
                 event: $event,
                 reservation: $reservation,
-                refundAmount: $refundAmount,
-                cancellationFee: $cancellationFee,
-                processingFee: $processingFee,
+                refundAmount: $emailActualRefund,
+                platformFee: $emailPlatformFee,
+                feeLabel: $emailFeeLabel,
             ));
         } catch (\Exception $e) {
             \Log::error('Failed to send cancellation email to user: '.$e->getMessage());
@@ -1151,6 +1165,11 @@ class ReservationEventController extends Controller
         $servicesTotal = round(EventReservationService::where('event_reservation_id', $reservation->id)->sum('subtotal'), 2);
 
         // ── Wallet refund when group cancels ─────────────────────────────────────
+        // Organizer-initiated cancellation is always a full refund (no policy fee) —
+        // still tracked explicitly so the participant email states the real figure
+        // rather than staying silent about it.
+        $emailRefundAmount = null;
+
         if ($reservation->payment_method === 'wallet') {
             DB::beginTransaction();
             try {
@@ -1203,6 +1222,7 @@ class ReservationEventController extends Controller
                         "Remboursement — annulation par groupe #{$reservation->id}",
                         $reservation->group_id
                     );
+                    $emailRefundAmount = $totalPaid + $materialsRefundTotal;
                 } elseif ($reservation->status === 'en_attente_validation') {
                     // Funds were escrowed — full refund = netBase + materialsTotal + servicesTotal + combined platform fee
                     $materialsTotal = EventReservationMaterial::where('event_reservation_id', $reservation->id)->sum('montant_total');
@@ -1216,6 +1236,7 @@ class ReservationEventController extends Controller
                         "Remboursement — annulation groupe (avant validation) #{$reservation->id}",
                         $event->group_id
                     );
+                    $emailRefundAmount = $totalPaid;
                 }
 
                 $event->increment('remaining_spots', $reservation->nbr_place);
@@ -1228,13 +1249,13 @@ class ReservationEventController extends Controller
             }
         }
 
-        $reservation->status = 'annulé';
+        $reservation->status = 'annulée_par_organisateur';
         $reservation->save();
 
         // Notify the participant that their reservation was cancelled by the group
         try {
             if ($reservation->email) {
-                Mail::to($reservation->email)->send(new EventReservationCanceledByGroup($reservation, $event));
+                Mail::to($reservation->email)->send(new EventReservationCanceledByGroup($reservation, $event, $emailRefundAmount));
             }
         } catch (\Exception $e) {
             \Log::error('Failed to send group cancellation email to participant: '.$e->getMessage());

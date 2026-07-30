@@ -29,6 +29,6 @@ class NewReservationNotification extends Mailable implements ShouldQueue
     public function build()
     {
         return $this->subject('Nouvelle réservation reçue')
-            ->view('emails.new_reservation');
+            ->markdown('emails.new_reservation');
     }
 }

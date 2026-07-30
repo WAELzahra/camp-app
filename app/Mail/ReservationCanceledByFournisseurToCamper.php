@@ -20,7 +20,7 @@ class ReservationCanceledByFournisseurToCamper extends Mailable implements Shoul
 
     public function build()
     {
-        return $this->subject('Your reservation has been canceled by the supplier')
+        return $this->subject('Votre réservation a été annulée par le fournisseur')
             ->markdown('emails.canceled_by_fournisseur_to_camper');
     }
 }

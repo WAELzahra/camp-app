@@ -26,7 +26,7 @@ class ReservationModifiedByCenter extends Mailable implements ShouldQueue
         $this->reservation = $reservation;
         $this->modificationData = $modificationData;
         $this->frontendUrl = config('app.frontend_url', 'http://localhost:5173');
-        $this->supportEmail = config('mail.support_email', 'support@tunisiacamp.com');
+        $this->supportEmail = config('mail.support_email');
     }
 
     public function build()
@@ -45,7 +45,7 @@ class ReservationModifiedByCenter extends Mailable implements ShouldQueue
         $endDate = Carbon::parse($this->reservation->date_fin);
         $duration = $endDate->diffInDays($startDate) + 1;
 
-        return $this->subject('Reservation Modified - TunisiaCamp')
+        return $this->subject('Réservation modifiée — TunisiaCamp')
             ->markdown('emails.reservation-modified')
             ->with([
                 'reservation' => $this->reservation,

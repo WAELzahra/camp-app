@@ -110,16 +110,14 @@ class EmailVerificationService
     }
     
     /**
-     * Send email with both code and link
+     * Send the code-based verification email.
      */
     private function sendCombinedVerificationEmail(User $user, EmailVerification $verification): void
     {
-        $verificationLink = url('/verify-email/' . $verification->token);
         $frontendVerificationUrl = config('app.frontend_url') . '/verify-email';
-        
+
         Mail::to($user->email)->send(new \App\Mail\EmailVerificationMail(
             $verification->code,
-            $verificationLink,
             $frontendVerificationUrl,
             $user,
             $verification->expires_at

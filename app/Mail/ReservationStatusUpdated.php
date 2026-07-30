@@ -37,17 +37,17 @@ class ReservationStatusUpdated extends Mailable implements ShouldQueue
 
         // Resolve a human-readable item/entity name
         $this->itemName = match ($type) {
-            'center' => $reservation->centre->name ?? "Centre #{$reservation->id}",
-            'events' => $reservation->event->title ?? "Event #{$reservation->id}",
-            'materielle' => $reservation->materielle->nom ?? "Equipment #{$reservation->id}",
+            'center' => $reservation->centre->first_name ?? "Centre #{$reservation->id}",
+            'events' => $reservation->event->title ?? "Événement #{$reservation->id}",
+            'materielle' => $reservation->materielle->nom ?? "Matériel #{$reservation->id}",
             'guides' => $reservation->circuit->name ?? "Circuit #{$reservation->id}",
-            default => "Reservation #{$reservation->id}",
+            default => "Réservation #{$reservation->id}",
         };
     }
 
     public function build()
     {
-        return $this->subject('Your reservation status has been updated')
-            ->view('emails.reservation_status_updated');
+        return $this->subject('Le statut de votre réservation a été mis à jour')
+            ->markdown('emails.reservation_status_updated');
     }
 }

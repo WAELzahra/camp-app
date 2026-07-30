@@ -1,85 +1,64 @@
 @component('mail::message')
-# 🏕️ Reservation Canceled by Center
+# Réservation annulée par le centre
 
-Dear {{ $userName }},
+Bonjour {{ $userName }},
 
-We regret to inform you that your reservation has been canceled by the center. Please review the details below.
+Nous sommes désolés de vous informer que votre réservation a été annulée par le centre. Voici les détails.
 
-**Cancellation Reference:** #{{ str_pad($reservationId, 6, '0', STR_PAD_LEFT) }}  
-**Cancellation Date:** {{ $canceledAt }}
-
----
-
-## Cancellation Details
-
-### Center Information
-**Center Name:** {{ $centerName }}  
-**Contact Email:** {{ $centerEmail }}  
-**Phone:** {{ $centerPhone }}
-
-### Reservation Details
-**Dates:** {{ \Carbon\Carbon::parse($startDate)->format('F j, Y') }} - {{ \Carbon\Carbon::parse($endDate)->format('F j, Y') }}  
-**Total Amount:** **{{ number_format($totalPrice, 2) }} TND**
+**Référence d'annulation :** #{{ str_pad($reservationId, 6, '0', STR_PAD_LEFT) }}
+**Date d'annulation :** {{ $canceledAt }}
 
 ---
 
-## ⚠️ Important Refund Information
+## Détails de l'annulation
 
-**According to our platform's refund policy:**
+### Informations sur le centre
+**Nom du centre :** {{ $centerName }}
+**E-mail de contact :** {{ $centerEmail }}
+**Téléphone :** {{ $centerPhone }}
 
-1. **Full Refund:** You will receive a **100% refund** for this cancellation
-2. **Processing Time:** Refunds are typically processed within **5-7 business days**
-3. **Payment Method:** The refund will be issued to your original payment method
-4. **Notification:** You will receive a separate email once the refund is processed
-
-**Estimated Refund Amount:** **{{ number_format($totalPrice, 2) }} TND** (Full Amount)
-
-**⚠️ Please Note:** While you're receiving a full refund for this center-initiated cancellation, if you had initiated the cancellation, the refund policy would have been different with applicable fees.
+### Détails de la réservation
+**Dates :** {{ \Carbon\Carbon::parse($startDate)->locale('fr')->translatedFormat('d F Y') }} au {{ \Carbon\Carbon::parse($endDate)->locale('fr')->translatedFormat('d F Y') }}
+**Montant total :** **{{ number_format($totalPrice, 2) }} TND**
 
 ---
 
-## Alternative Options
+## Remboursement
 
-We understand this is disappointing. Here are some alternative centers you might consider:
+Cette annulation étant à l'initiative du centre, vous bénéficiez d'un **remboursement intégral** de **{{ number_format($totalPrice, 2) }} TND**.
 
-@component('mail::table')
-| Center Name | Location | Price Range |
-|-------------|----------|-------------|
-@foreach($alternativeCenters as $center)
-| **{{ $center['name'] }}** | {{ $center['location'] }} | {{ $center['price_range'] }} |
-@endforeach
-@endcomponent
+- Si vous avez payé via votre **wallet TunisiaCamp**, le montant a déjà été recrédité sur votre solde.
+- Si vous avez payé par **virement bancaire**, notre équipe traite votre remboursement et vous contactera séparément.
 
 @component('mail::button', ['url' => config('app.frontend_url') . '/zones', 'color' => 'success'])
-Explore Other Centers
+Explorer d'autres centres
 @endcomponent
 
 ---
 
-## Need Assistance?
+## Besoin d'aide ?
 
-### Contact the Center
-**Email:** [{{ $centerEmail }}](mailto:{{ $centerEmail }})  
-**Phone:** {{ $centerPhone }}
+### Contacter le centre
+**E-mail :** [{{ $centerEmail }}](mailto:{{ $centerEmail }})
+**Téléphone :** {{ $centerPhone }}
 
-### TunisiaCamp Support
-**Email:** support@tunisiacamp.com  
-**Hours:** 9 AM - 6 PM, Monday to Friday
+### Support TunisiaCamp
+**E-mail :** [{{ $supportEmail }}](mailto:{{ $supportEmail }})
 
 @component('mail::button', ['url' => config('app.frontend_url') . '/help', 'color' => 'info'])
-Get Help
+Obtenir de l'aide
 @endcomponent
 
 ---
 
-We apologize for any inconvenience this may have caused and hope to assist you with finding alternative accommodations.
+Nous nous excusons pour la gêne occasionnée et espérons vous aider à trouver un autre hébergement.
 
-Sincerely,
+Cordialement,
 
-**TunisiaCamp Customer Support**
+**Le support TunisiaCamp**
 
 @component('mail::subcopy')
-This is an automated message. For refund inquiries, contact: support@tunisiacamp.com  
-Cancellation ID: {{ $reservationId }} · Processed: {{ now()->format('Y-m-d H:i') }}
+Ceci est un message automatique. Pour toute question sur votre remboursement, contactez : {{ $supportEmail }}
+Référence d'annulation : {{ $reservationId }} · Traité le {{ now()->locale('fr')->translatedFormat('d/m/Y H:i') }}
 @endcomponent
 @endcomponent

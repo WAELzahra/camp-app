@@ -1,50 +1,50 @@
 @component('mail::message')
-# Participant Canceled Their Reservation
+# Un participant a annulé sa réservation
 
-Dear {{ $ownerName }},
+Bonjour {{ $ownerName }},
 
-A participant has canceled their reservation for your event **{{ $eventTitle }}**. The spots are now available again.
+Un participant a annulé sa réservation pour votre événement **{{ $eventTitle }}**. Les places sont de nouveau disponibles.
 
-**Cancellation Reference:** #{{ str_pad($reservationId, 6, '0', STR_PAD_LEFT) }}
-**Canceled At:** {{ $canceledAt }}
-
----
-
-## Participant Information
-
-**Name:** {{ $userName }}
-**Email:** {{ $userEmail }}
-**Phone:** {{ $userPhone }}
+**Référence d'annulation :** #{{ str_pad($reservationId, 6, '0', STR_PAD_LEFT) }}
+**Annulée le :** {{ $canceledAt }}
 
 ---
 
-## Reservation Details
+## Informations sur le participant
 
-**Event:** {{ $eventTitle }}
-**Event Dates:** {{ \Carbon\Carbon::parse($eventStartDate)->format('F j, Y') }} – {{ \Carbon\Carbon::parse($eventEndDate)->format('F j, Y') }}
-**Spots Released:** {{ $nbrPlace }}
-**Reservation Value:** {{ number_format($totalPrice, 2) }} TND
+**Nom :** {{ $userName }}
+**E-mail :** {{ $userEmail }}
+**Téléphone :** {{ $userPhone }}
 
 ---
 
-## What You Should Do
+## Détails de la réservation
 
-1. **Update your headcount** – {{ $nbrPlace }} spot(s) are now available again
-2. **Check waitlist** – If you have people waiting, reach out to them
-3. **Review event status** – Log in to manage your event participants
+**Événement :** {{ $eventTitle }}
+**Dates de l'événement :** {{ \Carbon\Carbon::parse($eventStartDate)->locale('fr')->translatedFormat('d F Y') }} – {{ \Carbon\Carbon::parse($eventEndDate)->locale('fr')->translatedFormat('d F Y') }}
+**Places libérées :** {{ $nbrPlace }}
+**Valeur de la réservation :** {{ number_format($totalPrice, 2) }} TND
+
+---
+
+## Ce que vous pouvez faire
+
+1. **Mettre à jour vos effectifs** — {{ $nbrPlace }} place(s) sont de nouveau disponibles
+2. **Consulter votre liste d'attente** — si des personnes sont en attente, contactez-les
+3. **Vérifier le statut de l'événement** — connectez-vous pour gérer vos participants
 
 @component('mail::button', ['url' => config('app.frontend_url') . '/settings?tab=events', 'color' => 'info'])
-Manage My Events
+Gérer mes événements
 @endcomponent
 
-If you have questions about this cancellation, you can reach the participant at **{{ $userEmail }}**.
+Pour toute question sur cette annulation, vous pouvez contacter le participant à **{{ $userEmail }}**.
 
-Sincerely,
+Cordialement,
 
-**TunisiaCamp Team**
+**L'équipe TunisiaCamp**
 
 @component('mail::subcopy')
-This is an automated notification. For support: support@tunisiacamp.com
-Cancellation ID: #{{ str_pad($reservationId, 6, '0', STR_PAD_LEFT) }} · {{ now()->format('Y-m-d H:i') }}
+Ceci est une notification automatique. Support : {{ $supportEmail }}
+Référence d'annulation : #{{ str_pad($reservationId, 6, '0', STR_PAD_LEFT) }} · {{ now()->locale('fr')->translatedFormat('d/m/Y H:i') }}
 @endcomponent
 @endcomponent

@@ -1,47 +1,47 @@
 @component('mail::message')
-# You're Invited to TunisiaCamp!
+# Vous êtes invité(e) sur TunisiaCamp !
 
 @php
-$organizerName = trim(($organizer->first_name ?? '') . ' ' . ($organizer->last_name ?? '')) ?: ($organizer->email ?? 'An organizer');
+$organizerName = trim(($organizer->first_name ?? '') . ' ' . ($organizer->last_name ?? '')) ?: ($organizer->email ?? 'Un organisateur');
 $registerUrl   = $frontendUrl . '/register?token=' . $invitation->token . '&email=' . urlencode($invitation->email) . '&role=fournisseur';
 @endphp
 
-Hi there!
+Bonjour,
 
-**{{ $organizerName }}** has invited you to join **TunisiaCamp** as a supplier (fournisseur). Once registered, your equipment and gear will be available for campers booking events organized by {{ $organizerName }}.
+**{{ $organizerName }}** vous invite à rejoindre **TunisiaCamp** en tant que fournisseur. Une fois inscrit, votre matériel sera proposé aux campeurs qui réservent les événements organisés par {{ $organizerName }}.
 
 @if($organizerMessage)
 @component('mail::panel')
-**Message from {{ $organizerName }}:**
+**Message de {{ $organizerName }} :**
 
 {{ $organizerMessage }}
 @endcomponent
 @endif
 
 @component('mail::panel')
-**Invitation details:**
-- **Invited by:** {{ $organizerName }}
-- **Your email:** {{ $invitation->email }}
-- **Expires:** {{ \Carbon\Carbon::parse($invitation->expires_at)->format('d/m/Y') }} (7 days)
+**Détails de l'invitation :**
+- **Invité par :** {{ $organizerName }}
+- **Votre e-mail :** {{ $invitation->email }}
+- **Expire le :** {{ \Carbon\Carbon::parse($invitation->expires_at)->locale('fr')->translatedFormat('d/m/Y') }}
 @endcomponent
 
-Click the button below to create your supplier account. Your invitation code is pre-filled automatically.
+Cliquez sur le bouton ci-dessous pour créer votre compte fournisseur. Votre code d'invitation est pré-rempli automatiquement.
 
 @component('mail::button', ['url' => $registerUrl, 'color' => 'primary'])
-Create My Supplier Account
+Créer mon compte fournisseur
 @endcomponent
 
-**What happens next?**
-1. Register your supplier account
-2. Add your equipment to the catalog
-3. Get revenue when campers book your gear during events!
+**Que se passe-t-il ensuite ?**
+1. Créez votre compte fournisseur
+2. Ajoutez votre matériel au catalogue
+3. Percevez des revenus lorsque des campeurs réservent votre matériel pendant des événements !
 
-This invitation expires on **{{ \Carbon\Carbon::parse($invitation->expires_at)->format('d/m/Y') }}**.
+Cette invitation expire le **{{ \Carbon\Carbon::parse($invitation->expires_at)->locale('fr')->translatedFormat('d/m/Y') }}**.
 
-Best regards,
-**The TunisiaCamp Team**
+Cordialement,
+**L'équipe TunisiaCamp**
 
 @component('mail::subcopy')
-If you were not expecting this invitation, you can safely ignore this email. The link will expire automatically. Invitation token: {{ $invitation->token }}
+Si vous n'attendiez pas cette invitation, vous pouvez ignorer cet e-mail en toute sécurité. Le lien expirera automatiquement. Jeton d'invitation : {{ $invitation->token }}
 @endcomponent
 @endcomponent

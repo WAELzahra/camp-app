@@ -15,14 +15,17 @@ class EventReservationCanceledByUser extends Mailable implements ShouldQueue
         public $user,
         public $event,
         public $reservation,
+        /** Actual amount refunded to the camper's wallet, or null if nothing was refunded. */
         public $refundAmount,
-        public $cancellationFee,
-        public $processingFee,
+        /** Platform cancellation fee actually deducted (0 if none applied). */
+        public $platformFee = 0.0,
+        /** Human-readable description of the cancellation-policy tier applied, or null. */
+        public $feeLabel = null,
     ) {}
 
     public function build()
     {
-        return $this->subject('Your Event Reservation Has Been Canceled - TunisiaCamp')
+        return $this->subject('Votre réservation d\'événement a été annulée — TunisiaCamp')
             ->markdown('emails.event_canceled_by_user')
             ->with([
                 'userName' => $this->user->first_name.' '.$this->user->last_name,
@@ -34,11 +37,11 @@ class EventReservationCanceledByUser extends Mailable implements ShouldQueue
                 'totalPrice' => $this->reservation->nbr_place * $this->event->price,
                 'nbrPlace' => $this->reservation->nbr_place,
                 'refundAmount' => $this->refundAmount,
-                'cancellationFee' => $this->cancellationFee,
-                'processingFee' => $this->processingFee,
-                'canceledAt' => now()->format('F j, Y \a\t g:i A'),
-                'cancellationFeePercent' => config('app.cancellation_fee_percent', 15),
-                'processingFeePercent' => config('app.processing_fee_percent', 2),
+                'platformFee' => $this->platformFee,
+                'feeLabel' => $this->feeLabel,
+                'paymentMethod' => $this->reservation->payment_method,
+                'canceledAt' => now()->locale('fr')->translatedFormat('d F Y \à H:i'),
+                'supportEmail' => config('mail.support_email'),
             ]);
     }
 }

@@ -22,6 +22,6 @@ class EventDeactivated extends Mailable implements ShouldQueue
     public function build()
     {
         return $this->subject('Notification de désactivation d\'événement')
-            ->view('emails.event_deactivated');
+            ->markdown('emails.event_deactivated');
     }
 }

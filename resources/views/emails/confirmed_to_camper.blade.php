@@ -1,51 +1,51 @@
 @component('mail::message')
-# Reservation Confirmed ✅
+# Réservation confirmée
 
-Hi **{{ $reservation->user->first_name ?? 'Customer' }}**,
+Bonjour **{{ $reservation->user->first_name ?? 'cher client' }}**,
 
-Your reservation has been **confirmed** by the supplier.
+Votre réservation a été **confirmée** par le fournisseur.
 
 @component('mail::panel')
-**Item:** {{ $reservation->materielle->nom ?? 'N/A' }}
-**Type:** {{ $reservation->type_reservation === 'location' ? 'Rental' : 'Purchase' }}
-**Quantity:** {{ $reservation->quantite }}
-**Total Amount:** {{ number_format($reservation->montant_total, 2) }} TND
+**Article :** {{ $reservation->materielle->nom ?? 'N/A' }}
+**Type :** {{ $reservation->type_reservation === 'location' ? 'Location' : 'Achat' }}
+**Quantité :** {{ $reservation->quantite }}
+**Montant total :** {{ number_format($reservation->montant_total, 2) }} TND
 @if($reservation->type_reservation === 'location')
-**Period:** {{ \Carbon\Carbon::parse($reservation->date_debut)->format('d/m/Y') }} → {{ \Carbon\Carbon::parse($reservation->date_fin)->format('d/m/Y') }}
+**Période :** {{ \Carbon\Carbon::parse($reservation->date_debut)->locale('fr')->translatedFormat('d/m/Y') }} → {{ \Carbon\Carbon::parse($reservation->date_fin)->locale('fr')->translatedFormat('d/m/Y') }}
 @endif
-**Delivery:** {{ $reservation->mode_livraison === 'delivery' ? 'Home Delivery' : 'Personal Pickup' }}
+**Livraison :** {{ $reservation->mode_livraison === 'delivery' ? 'Livraison à domicile' : 'Retrait sur place' }}
 @endcomponent
 
 ---
 
-## Your PIN Code: `{{ $pin }}`
+## Votre code PIN : `{{ $pin }}`
 
 @component('mail::panel')
-⚠️ **Important:** Present this PIN code to the supplier **when picking up your equipment**. Without this code, the handoff cannot be confirmed.
+⚠️ **Important :** Présentez ce code PIN au fournisseur **lors du retrait de votre matériel**. Sans ce code, la remise ne peut pas être confirmée.
 
-Keep this code confidential and do not share it with anyone other than the supplier.
+Gardez ce code confidentiel et ne le communiquez qu'au fournisseur.
 @endcomponent
 
 @if($reservation->type_reservation === 'location')
-### Rental Policy Reminder
+### Rappel des conditions de location
 
-- The equipment must be returned before **{{ \Carbon\Carbon::parse($reservation->date_fin)->format('d/m/Y') }}**.
-- Your national ID (CIN) has been recorded for this reservation as a legal guarantee.
-- Any equipment not returned on time may be subject to legal action.
-- Payment will only be released to the supplier after the return of the equipment is confirmed.
+- Le matériel doit être restitué avant le **{{ \Carbon\Carbon::parse($reservation->date_fin)->locale('fr')->translatedFormat('d/m/Y') }}**.
+- Votre carte d'identité (CIN) a été enregistrée pour cette réservation à titre de garantie légale.
+- Tout matériel non restitué à temps peut faire l'objet de poursuites.
+- Le paiement ne sera versé au fournisseur qu'après confirmation du retour du matériel.
 @else
-### Purchase Policy Reminder
+### Rappel des conditions de vente
 
-- The sale is final. No returns are accepted.
-- Payment will be released to the supplier after delivery is confirmed via your PIN code.
+- La vente est définitive. Aucun retour n'est accepté.
+- Le paiement sera versé au fournisseur après confirmation de la livraison via votre code PIN.
 @endif
 
-Thank you for trusting **Tunisia Camp**!
+Merci de faire confiance à **TunisiaCamp** !
 
 @component('mail::button', ['url' => config('app.frontend_url', 'http://localhost:5173'), 'color' => 'success'])
-View My Reservation
+Voir ma réservation
 @endcomponent
 
-Best regards,
-**The Tunisia Camp Team**
+Cordialement,
+**L'équipe TunisiaCamp**
 @endcomponent

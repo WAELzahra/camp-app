@@ -1,31 +1,31 @@
 @component('mail::message')
-# Overdue Rental Alert ⚠️
+# Alerte : location en retard
 
-Hi **{{ $reservation->fournisseur->first_name ?? 'Supplier' }}**,
+Bonjour **{{ $reservation->fournisseur->first_name ?? 'cher fournisseur' }}**,
 
-A camper has not returned your equipment past the agreed return date. The reservation has been automatically marked as **disputed**.
+Un campeur n'a pas restitué votre matériel avant la date de retour convenue. La réservation a été automatiquement marquée comme **en litige**.
 
 @component('mail::panel')
-**Reservation ID:** #{{ str_pad($reservation->id, 6, '0', STR_PAD_LEFT) }}
-**Item:** {{ $reservation->materielle->nom ?? 'N/A' }}
-**Camper:** {{ ($reservation->user->first_name ?? '') . ' ' . ($reservation->user->last_name ?? '') }}
-**Camper Email:** {{ $reservation->user->email ?? 'N/A' }}
-**Return Deadline:** {{ \Carbon\Carbon::parse($reservation->date_fin)->format('d/m/Y') }}
-**Status:** Disputed — overdue return
+**N° de réservation :** #{{ str_pad($reservation->id, 6, '0', STR_PAD_LEFT) }}
+**Article :** {{ $reservation->materielle->nom ?? 'N/A' }}
+**Campeur :** {{ ($reservation->user->first_name ?? '') . ' ' . ($reservation->user->last_name ?? '') }}
+**E-mail du campeur :** {{ $reservation->user->email ?? 'N/A' }}
+**Date limite de retour :** {{ \Carbon\Carbon::parse($reservation->date_fin)->locale('fr')->translatedFormat('d/m/Y') }}
+**Statut :** En litige — retour en retard
 @endcomponent
 
-Please contact the camper directly or reach out to TunisiaCamp support to resolve this matter.
+Veuillez contacter directement le campeur ou le support TunisiaCamp pour résoudre ce problème.
 
 @component('mail::button', ['url' => $frontendUrl . '/profile/reservations', 'color' => 'error'])
-View My Reservations
+Voir mes réservations
 @endcomponent
 
-For assistance, contact us at [{{ $supportEmail }}](mailto:{{ $supportEmail }}).
+Pour toute assistance, contactez-nous à [{{ $supportEmail }}](mailto:{{ $supportEmail }}).
 
-Best regards,
-**The TunisiaCamp Team**
+Cordialement,
+**L'équipe TunisiaCamp**
 
 @component('mail::subcopy')
-This is an automated message. Reservation ID: {{ $reservation->id }} · {{ now()->format('Y-m-d H:i') }}
+Ceci est un message automatique. Réservation n° {{ $reservation->id }} · {{ now()->locale('fr')->translatedFormat('d/m/Y H:i') }}
 @endcomponent
 @endcomponent

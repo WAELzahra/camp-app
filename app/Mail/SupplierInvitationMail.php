@@ -36,7 +36,7 @@ class SupplierInvitationMail extends Mailable implements ShouldQueue
             ($this->organizer->last_name ?? '')
         ) ?: ($this->organizer->email ?? 'An organizer');
 
-        return $this->subject("You're invited to join TunisiaCamp as a Supplier — by {$organizerName}")
+        return $this->subject("Invitation à rejoindre TunisiaCamp en tant que fournisseur — par {$organizerName}")
             ->markdown('emails.supplier-invitation');
     }
 }

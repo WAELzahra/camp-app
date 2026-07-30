@@ -39,7 +39,7 @@ class PasswordResetMail extends Mailable implements ShouldQueue
 
     public function build()
     {
-        return $this->subject('Reset Your TunisiaCamp Password')
+        return $this->subject('Réinitialisation de votre mot de passe TunisiaCamp')
             ->markdown('emails.password-reset')
             ->with([
                 'code' => $this->code,

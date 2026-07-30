@@ -1,9 +1,9 @@
 @component('mail::message')
-# Password Reset Request
+# Réinitialisation de mot de passe
 
-Hello {{ $user?->first_name ?? 'there' }},
+Bonjour {{ $user?->first_name ?? 'là' }},
 
-Use this verification code to reset your TunisiaCamp password:
+Utilisez ce code de vérification pour réinitialiser votre mot de passe TunisiaCamp :
 
 @component('mail::panel')
 <div style="
@@ -23,20 +23,22 @@ Use this verification code to reset your TunisiaCamp password:
     color: #6b7280;
     margin-top: 8px;
 ">
-    Code expires in {{ $expiresAt->diffForHumans(null, true) }}
+    Ce code expire dans {{ $expiresAt->locale('fr')->diffForHumans(null, true) }}
 </p>
 @endcomponent
 
-Go to: [{{ $frontendUrl }}]({{ $frontendUrl }})
+@component('mail::button', ['url' => $frontendUrl, 'color' => 'primary'])
+Réinitialiser mon mot de passe
+@endcomponent
 
 ---
 
-If you didn't request this, please ignore this email.
+Si vous n'êtes pas à l'origine de cette demande, vous pouvez ignorer cet e-mail.
 
-Kind regards,  
-**TunisiaCamp Team**
+Cordialement,
+**L'équipe TunisiaCamp**
 
 @component('mail::subcopy')
-Expires: {{ $expiresAt->format('F j, Y \\a\\t g:i A') }}
+Expire le : {{ $expiresAt->locale('fr')->translatedFormat('j F Y \\à H:i') }}
 @endcomponent
 @endcomponent

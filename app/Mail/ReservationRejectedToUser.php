@@ -19,7 +19,7 @@ class ReservationRejectedToUser extends Mailable implements ShouldQueue
 
     public function build()
     {
-        return $this->subject('🚫 Réservation rejetée')
-            ->view('emails.reservation_materielles_rejected');
+        return $this->subject('Réservation rejetée')
+            ->markdown('emails.reservation_materielles_rejected');
     }
 }

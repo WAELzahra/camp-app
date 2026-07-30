@@ -569,6 +569,15 @@ class ReservationsCentreController extends Controller
         $originalStatus = $reservation->status;
 
         $refundCreated = false;
+        // Populated per-branch below with what was ACTUALLY refunded to the camper
+        // (if anything) — UserReservationCancellation must show this real figure,
+        // never a recomputed guess, since the fee logic differs per branch/policy.
+        $emailRefundAmount = null;
+        $emailRefundNote = null;
+        // Platform cancellation fee actually charged to the CENTRE, if any —
+        // CenterReservationCancellation must state this instead of the old
+        // (wrong) claim that cancelling is always penalty-free for the centre.
+        $emailCenterFee = 0.0;
 
         // For centre-cancels-approved: wrap status + wallet in one transaction so
         // the status is never stuck as 'canceled' if the wallet operation fails.
@@ -642,6 +651,7 @@ class ReservationsCentreController extends Controller
 
                 DB::commit();
                 $refundCreated = true;
+                $emailCenterFee = $platformCancFee;
             } catch (\Throwable $e) {
                 DB::rollBack();
                 \Log::error('Centre cancellation wallet refund failed: '.$e->getMessage());
@@ -735,6 +745,8 @@ class ReservationsCentreController extends Controller
 
                 DB::commit();
                 $refundCreated = true;
+                $emailRefundAmount = $actualRefund;
+                $emailRefundNote = $feeDesc;
             } catch (\Throwable $e) {
                 DB::rollBack();
                 \Log::error('Centre camper-cancel wallet refund failed: '.$e->getMessage());
@@ -776,6 +788,8 @@ class ReservationsCentreController extends Controller
                         $reservation->centre_id
                     );
                     $refundCreated = true;
+                    $emailRefundAmount = $escrowAmt;
+                    $emailRefundNote = 'Remboursement intégral (réservation pas encore approuvée)';
                 }
 
                 DB::commit();
@@ -797,13 +811,17 @@ class ReservationsCentreController extends Controller
                 Mail::to($reservation->centre->email)->send(new ReservationCanceledByUser(
                     $reservation->centre,
                     $reservation->user,
-                    $reservation
+                    $reservation,
+                    $emailRefundAmount,
+                    $emailRefundNote
                 ));
 
                 // Also notify user about their own cancellation
                 Mail::to($reservation->user->email)->send(new \App\Mail\UserReservationCancellation(
                     $reservation->user,
-                    $reservation
+                    $reservation,
+                    $emailRefundAmount,
+                    $emailRefundNote
                 ));
             } else {
                 // Center canceled - notify user
@@ -816,7 +834,8 @@ class ReservationsCentreController extends Controller
                 // Also notify center about their own cancellation
                 Mail::to($reservation->centre->email)->send(new \App\Mail\CenterReservationCancellation(
                     $reservation->centre,
-                    $reservation
+                    $reservation,
+                    $emailCenterFee
                 ));
             }
         }

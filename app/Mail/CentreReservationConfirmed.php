@@ -28,7 +28,7 @@ class CentreReservationConfirmed extends Mailable implements ShouldQueue
     {
         $this->reservation = $reservation;
         $this->frontendUrl = config('app.frontend_url', 'http://localhost:5173');
-        $this->supportEmail = config('mail.support_email', 'nejikh57@gmail.com');
+        $this->supportEmail = config('mail.support_email');
         $this->reservationDetailsUrl = $this->frontendUrl.'/reservations/'.$reservation->id;
         $this->checkInTime = '14:00';
         $this->checkOutTime = '11:00';
@@ -36,10 +36,8 @@ class CentreReservationConfirmed extends Mailable implements ShouldQueue
 
     public function build()
     {
-        // CHANGE THIS: Use markdown() instead of view()
-        // JUST LIKE EmailVerificationMail class
-        return $this->subject('Reservation Confirmed - TunisiaCamp')
-            ->markdown('emails.centre-reservation-confirmed')  // ← Changed to markdown
+        return $this->subject('Réservation confirmée — TunisiaCamp')
+            ->markdown('emails.centre-reservation-confirmed')
             ->with([
                 'reservation' => $this->reservation,
                 'frontendUrl' => $this->frontendUrl,

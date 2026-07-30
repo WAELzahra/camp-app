@@ -1,28 +1,28 @@
 @component('mail::message')
-# Modification Declined
+# Modification refusée
 
-Hi **{{ $reservation->centre->name ?? 'Centre' }}**,
+Bonjour **{{ $reservation->centre->name ?? 'cher centre' }}**,
 
-**{{ $camperName }}** has reviewed your proposed changes to their reservation and chose to decline them.
+**{{ $camperName }}** a examiné les modifications que vous proposiez pour sa réservation et a choisi de les refuser.
 
-The reservation has been returned to **Pending** status — you can review it again and either approve it as originally submitted or reach out to discuss alternatives.
+La réservation est repassée au statut **En attente** — vous pouvez la consulter à nouveau et soit l'approuver telle qu'initialement soumise, soit contacter le client pour discuter d'alternatives.
 
 @component('mail::panel')
-**Reservation ID:** #{{ str_pad($reservation->id, 6, '0', STR_PAD_LEFT) }}
-**Check-in:** {{ \Carbon\Carbon::parse($reservation->date_debut)->format('d/m/Y') }}
-**Check-out:** {{ \Carbon\Carbon::parse($reservation->date_fin)->format('d/m/Y') }}
-**Guests:** {{ $reservation->nbr_place }}
-**Current Status:** Pending (awaiting your action)
+**N° de réservation :** #{{ str_pad($reservation->id, 6, '0', STR_PAD_LEFT) }}
+**Arrivée :** {{ \Carbon\Carbon::parse($reservation->date_debut)->locale('fr')->translatedFormat('d/m/Y') }}
+**Départ :** {{ \Carbon\Carbon::parse($reservation->date_fin)->locale('fr')->translatedFormat('d/m/Y') }}
+**Voyageurs :** {{ $reservation->nbr_place }}
+**Statut actuel :** En attente (une action de votre part est nécessaire)
 @endcomponent
 
 @component('mail::button', ['url' => $frontendUrl . '/settings/reservations', 'color' => 'primary'])
-View Reservations
+Voir mes réservations
 @endcomponent
 
-Best regards,
-**The TunisiaCamp Team**
+Cordialement,
+**L'équipe TunisiaCamp**
 
 @component('mail::subcopy')
-This is an automated message. Reservation ID: {{ $reservation->id }} · {{ now()->format('Y-m-d H:i') }}
+Ceci est un message automatique. Réservation n° {{ $reservation->id }} · {{ now()->locale('fr')->translatedFormat('d/m/Y H:i') }}
 @endcomponent
 @endcomponent

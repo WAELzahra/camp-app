@@ -22,6 +22,6 @@ class EventDeleted extends Mailable implements ShouldQueue
     public function build()
     {
         return $this->subject('Votre événement a été supprimé')
-            ->view('emails.event_deleted');
+            ->markdown('emails.event_deleted');
     }
 }

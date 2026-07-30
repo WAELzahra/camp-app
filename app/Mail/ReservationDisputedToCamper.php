@@ -22,12 +22,12 @@ class ReservationDisputedToCamper extends Mailable implements ShouldQueue
     {
         $this->reservation = $reservation;
         $this->frontendUrl = config('app.frontend_url', 'http://localhost:5173');
-        $this->supportEmail = config('mail.support_email', 'nejikh57@gmail.com');
+        $this->supportEmail = config('mail.support_email');
     }
 
     public function build()
     {
-        return $this->subject('Action Required: Overdue Equipment Return - TunisiaCamp')
+        return $this->subject('Action requise : retour de matériel en retard — TunisiaCamp')
             ->markdown('emails.reservation-disputed-to-camper');
     }
 }

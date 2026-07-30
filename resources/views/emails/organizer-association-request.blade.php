@@ -1,41 +1,41 @@
 @component('mail::message')
-# New Association Request
+# Nouvelle demande d'association
 
 @php
-$organizerName = trim(($link->organizer->first_name ?? '') . ' ' . ($link->organizer->last_name ?? '')) ?: ($link->organizer->email ?? 'An organizer');
-$supplierName  = trim(($link->supplier->first_name  ?? '') . ' ' . ($link->supplier->last_name  ?? '')) ?: ($link->supplier->email ?? 'You');
+$organizerName = trim(($link->organizer->first_name ?? '') . ' ' . ($link->organizer->last_name ?? '')) ?: ($link->organizer->email ?? 'Un organisateur');
+$supplierName  = trim(($link->supplier->first_name  ?? '') . ' ' . ($link->supplier->last_name  ?? '')) ?: ($link->supplier->email ?? 'Vous');
 @endphp
 
-Hi **{{ $supplierName }}**,
+Bonjour **{{ $supplierName }}**,
 
-The organizer **{{ $organizerName }}** would like to associate with you on TunisiaCamp to offer your equipment during their events.
+L'organisateur **{{ $organizerName }}** souhaite s'associer avec vous sur TunisiaCamp afin de proposer votre matériel pendant ses événements.
 
 @if($link->message)
 @component('mail::panel')
-**Message from {{ $organizerName }}:**
+**Message de {{ $organizerName }} :**
 
 {{ $link->message }}
 @endcomponent
 @endif
 
 @component('mail::panel')
-**Request ID:** #{{ $link->id }}
-**From:** {{ $organizerName }} ({{ $link->organizer->email ?? '—' }})
-**Sent:** {{ $link->created_at->format('d/m/Y H:i') }}
+**N° de demande :** #{{ $link->id }}
+**De :** {{ $organizerName }} ({{ $link->organizer->email ?? '—' }})
+**Envoyée le :** {{ $link->created_at->locale('fr')->translatedFormat('d/m/Y H:i') }}
 @endcomponent
 
-By accepting this request, your available equipment will be displayable to campers booking events organized by **{{ $organizerName }}**.
+En acceptant cette demande, votre matériel disponible sera proposé aux campeurs réservant les événements organisés par **{{ $organizerName }}**.
 
 @component('mail::button', ['url' => $frontendUrl . '/settings/profile?tab=suppliers', 'color' => 'primary'])
-View & Respond to Request
+Voir et répondre à la demande
 @endcomponent
 
-You can accept or reject this request from your supplier dashboard.
+Vous pouvez accepter ou refuser cette demande depuis votre tableau de bord fournisseur.
 
-Best regards,
-**The TunisiaCamp Team**
+Cordialement,
+**L'équipe TunisiaCamp**
 
 @component('mail::subcopy')
-If you were not expecting this request, you can safely ignore this email. Request ID: {{ $link->id }}
+Si vous n'attendiez pas cette demande, vous pouvez ignorer cet e-mail en toute sécurité. N° de demande : {{ $link->id }}
 @endcomponent
 @endcomponent

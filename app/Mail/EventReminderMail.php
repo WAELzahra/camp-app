@@ -22,7 +22,7 @@ class EventReminderMail extends Mailable implements ShouldQueue
     public function build()
     {
         return $this->subject('Rappel : Événement à venir - '.$this->event->title)
-            ->view('emails.event_reminder')
+            ->markdown('emails.event_reminder')
             ->with(['event' => $this->event]);
     }
 }

@@ -27,12 +27,12 @@ class ReservationRejected extends Mailable implements ShouldQueue
         $this->reason = $reason;
         $this->reservation = $reservation;
         $this->frontendUrl = config('app.frontend_url', 'http://localhost:5173');
-        $this->supportEmail = config('mail.support_email', 'support@tunisiacamp.com');
+        $this->supportEmail = config('mail.support_email');
     }
 
     public function build()
     {
-        return $this->subject('Reservation Rejected - TunisiaCamp')
+        return $this->subject('Réservation refusée — TunisiaCamp')
             ->markdown('emails.reservation-rejected');
     }
 }

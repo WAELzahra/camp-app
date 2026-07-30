@@ -1,60 +1,59 @@
 @component('mail::message')
-# Reservation Rejected
+# Réservation refusée
 
-Hello {{ $user->first_name ?? 'Valued Customer' }},
+Bonjour {{ $user->first_name ?? 'cher client' }},
 
-We regret to inform you that your reservation has been **rejected**.
+Nous sommes désolés de vous informer que votre réservation a été **refusée**.
 
 @if($reservation)
-**Reservation Details:**  
-**ID:** #{{ str_pad($reservation->id, 6, '0', STR_PAD_LEFT) }}  
+**Détails de la réservation :**
+**N° :** #{{ str_pad($reservation->id, 6, '0', STR_PAD_LEFT) }}
 @if($reservation->date_debut)
-**Dates:** {{ \Carbon\Carbon::parse($reservation->date_debut)->format('M j, Y') }} to {{ \Carbon\Carbon::parse($reservation->date_fin)->format('M j, Y') }}  
+**Dates :** {{ \Carbon\Carbon::parse($reservation->date_debut)->locale('fr')->translatedFormat('d/m/Y') }} au {{ \Carbon\Carbon::parse($reservation->date_fin)->locale('fr')->translatedFormat('d/m/Y') }}
 @endif
 @if($reservation->nbr_place)
-**Number of Guests:** {{ $reservation->nbr_place }}  
+**Nombre de voyageurs :** {{ $reservation->nbr_place }}
 @endif
 @if($reservation->total_price)
-**Total:** {{ number_format($reservation->total_price, 2) }} TND  
+**Total :** {{ number_format($reservation->total_price, 2) }} TND
 @endif
 @endif
 
 @if($reason)
-## Reason for Rejection
-<div style="background-color: #fef2f2; border-left: 4px solid #dc2626; padding: 12px 16px; margin: 16px 0; border-radius: 4px;">
+## Motif du refus
+
+@component('mail::panel')
 {{ $reason }}
-</div>
+@endcomponent
 @endif
 
-## What You Can Do Next
+## Que pouvez-vous faire ?
 
-1. **Modify Your Reservation** - You can edit your reservation and submit it again
-2. **Choose Different Dates** - Try booking for alternative dates
-3. **Contact Support** - If you have questions about this decision
-4. **Explore Other Options** - Check availability at other centers
+1. **Modifier votre réservation** — vous pouvez la modifier et la soumettre à nouveau
+2. **Choisir d'autres dates** — essayez de réserver pour des dates différentes
+3. **Contacter le support** — si vous avez des questions sur cette décision
+4. **Explorer d'autres options** — consultez les disponibilités d'autres centres
 
 @component('mail::button', ['url' => $frontendUrl . '/reservations', 'color' => 'primary'])
-View All Reservations
+Voir mes réservations
 @endcomponent
 
 @if($reservation)
 @component('mail::button', ['url' => $frontendUrl . '/search', 'color' => 'success'])
-Search Alternative Dates
+Chercher d'autres dates
 @endcomponent
 @endif
 
-## Need Assistance?
-If you need help understanding why your reservation was rejected or would like to discuss alternatives, please contact our support team.
+## Besoin d'aide ?
 
-📞 **Contact Support:** [{{ $supportEmail }}](mailto:{{ $supportEmail }})
+Si vous souhaitez comprendre pourquoi votre réservation a été refusée ou discuter d'alternatives, contactez notre équipe support.
 
----
+📞 **Contacter le support :** [{{ $supportEmail }}](mailto:{{ $supportEmail }})
 
-**Best Regards,**  
-The TunisiaCamp Team  
+Cordialement,
+**L'équipe TunisiaCamp**
 
-<div style="text-align: center; margin-top: 24px; padding-top: 16px; border-top: 1px solid #e5e7eb; color: #6b7280; font-size: 12px;">
-<p style="margin: 4px 0;">This is an automated notification. Please do not reply to this email.</p>
-<p style="margin: 4px 0;">TunisiaCamp • Making Outdoor Experiences Accessible</p>
-</div>
+@component('mail::subcopy')
+Ceci est une notification automatique, merci de ne pas y répondre directement.
+@endcomponent
 @endcomponent

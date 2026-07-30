@@ -27,6 +27,6 @@ class ActivateAnnonceNotification extends Mailable implements ShouldQueue
     public function build()
     {
         return $this->subject('Votre annonce a été activée')
-            ->view('emails.activate_annonce');
+            ->markdown('emails.activate_annonce');
     }
 }

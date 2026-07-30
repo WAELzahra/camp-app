@@ -1,29 +1,41 @@
 @component('mail::message')
-# Event Reservation Received 🎉
+# Réservation reçue
 
-Hi **{{ $reservation->name ?? 'Participant' }}**,
+Bonjour **{{ $reservation->name ?? 'cher participant' }}**,
 
-Your reservation for the event **{{ $event->title ?? 'Event' }}** has been registered. Complete your payment to confirm your spot.
+@if($reservation->payment_method === 'wallet')
+Votre réservation pour l'événement **{{ $event->title ?? 'l\'événement' }}** est **confirmée** — le paiement a été effectué via votre wallet TunisiaCamp.
+@elseif($reservation->payment_method === 'cash')
+Votre réservation pour l'événement **{{ $event->title ?? 'l\'événement' }}** a bien été enregistrée. Le paiement se fera en espèces à l'arrivée, une fois votre réservation validée par l'organisateur.
+@else
+Votre réservation pour l'événement **{{ $event->title ?? 'l\'événement' }}** a bien été enregistrée. Complétez votre paiement pour confirmer votre place.
+@endif
 
 @component('mail::panel')
-**Reservation ID:** #{{ str_pad($reservation->id, 6, '0', STR_PAD_LEFT) }}
-**Event:** {{ $event->title ?? 'N/A' }}
-**Date:** {{ \Carbon\Carbon::parse($event->start_date ?? $event->date_debut ?? now())->format('d/m/Y') }}
-**Spots Reserved:** {{ $reservation->nbr_place }}
-**Total Price:** {{ number_format(($reservation->nbr_place ?? 1) * ($event->price ?? 0), 2) }} TND
-**Status:** Pending payment
+**N° de réservation :** #{{ str_pad($reservation->id, 6, '0', STR_PAD_LEFT) }}
+**Événement :** {{ $event->title ?? 'N/A' }}
+**Date :** {{ \Carbon\Carbon::parse($event->start_date ?? $event->date_debut ?? now())->locale('fr')->translatedFormat('d/m/Y') }}
+**Places réservées :** {{ $reservation->nbr_place }}
+**Prix total :** {{ number_format(($reservation->nbr_place ?? 1) * ($event->price ?? 0), 2) }} TND
+**Statut :** {{ $reservation->payment_method === 'wallet' ? 'Confirmée' : ($reservation->payment_method === 'cash' ? 'En attente de validation par l\'organisateur' : 'En attente de paiement') }}
 @endcomponent
 
-Please complete your payment to secure your participation. Your spot will be held until payment is confirmed.
+@if($reservation->payment_method === 'manual')
+Merci de compléter votre paiement pour sécuriser votre participation. Votre place est réservée jusqu'à confirmation du paiement.
 
 @component('mail::button', ['url' => $frontendUrl . '/profile/reservations', 'color' => 'primary'])
-Complete Payment
+Compléter le paiement
 @endcomponent
+@else
+@component('mail::button', ['url' => $frontendUrl . '/profile/reservations', 'color' => 'primary'])
+Voir ma réservation
+@endcomponent
+@endif
 
-Best regards,
-**The TunisiaCamp Team**
+Cordialement,
+**L'équipe TunisiaCamp**
 
 @component('mail::subcopy')
-This is an automated message. Reservation ID: {{ $reservation->id }} · {{ now()->format('Y-m-d H:i') }}
+Ceci est un message automatique. Réservation n° {{ $reservation->id }} · {{ now()->locale('fr')->translatedFormat('d/m/Y H:i') }}
 @endcomponent
 @endcomponent

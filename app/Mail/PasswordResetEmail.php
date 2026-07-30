@@ -27,11 +27,11 @@ class PasswordResetEmail extends Mailable implements ShouldQueue
     public function build()
     {
         return $this->subject('Réinitialisation de votre mot de passe')
-            ->view('emails.password-resets')
+            ->markdown('emails.password-resets')
             ->with([
                 'userName' => $this->user->first_name.' '.$this->user->last_name,
                 'newPassword' => $this->newPassword,
-                'loginUrl' => url('/login'),
+                'loginUrl' => config('app.frontend_url', 'http://localhost:5173').'/login',
             ]);
     }
 }

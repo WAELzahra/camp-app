@@ -1,37 +1,20 @@
-<!DOCTYPE html>
-<html lang="fr">
+@component('mail::message')
+# Nouvelle réservation
 
-<head>
-    <meta charset="UTF-8">
-    <title>Nouvelle réservation</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background-color: #f9f9f9;
-            padding: 20px;
-        }
+Bonjour {{ $centre->first_name ?? 'cher centre' }},
 
-        .content {
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-        }
-    </style>
-</head>
+Vous avez reçu une nouvelle réservation de la part de **{{ trim(($user->first_name ?? '').' '.($user->last_name ?? '')) ?: $user->email }}**.
 
-<body>
-    <div class="content">
-        <h2>Bonjour {{ $centre->name }},</h2>
-        <p>Vous avez reçu une nouvelle réservation de la part de <strong>{{ $user->name }}</strong>.</p>
-        <p><strong>Date de début :</strong> {{ $reservation->date_debut }}</p>
-        <p><strong>Date de fin :</strong> {{ $reservation->date_fin }}</p>
-        <p><strong>Type :</strong> {{ $reservation->type }}</p>
-        <p><strong>Nombre de places :</strong> {{ $reservation->nbr_place }}</p>
-        @if ($reservation->note)
-            <p><strong>Note :</strong> {{ $reservation->note }}</p>
-        @endif
-        <p>Merci,<br>L'équipe</p>
-    </div>
-</body>
+@component('mail::panel')
+**Date de début :** {{ \Carbon\Carbon::parse($reservation->date_debut)->locale('fr')->translatedFormat('d/m/Y') }}
+**Date de fin :** {{ \Carbon\Carbon::parse($reservation->date_fin)->locale('fr')->translatedFormat('d/m/Y') }}
+**Type :** {{ $reservation->type }}
+**Nombre de places :** {{ $reservation->nbr_place }}
+@if($reservation->note)
+**Note :** {{ $reservation->note }}
+@endif
+@endcomponent
 
-</html>
+Cordialement,
+**L'équipe TunisiaCamp**
+@endcomponent

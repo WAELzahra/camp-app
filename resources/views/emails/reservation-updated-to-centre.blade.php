@@ -1,27 +1,27 @@
 @component('mail::message')
-# Reservation Modified ✏️
+# Réservation modifiée
 
-Hi **{{ $reservation->centre->first_name ?? 'Centre Manager' }}**,
+Bonjour **{{ $reservation->centre->first_name ?? 'cher gestionnaire' }}**,
 
-A camper has modified their reservation. Please review the updated details and re-confirm or reject.
+Un campeur a modifié sa réservation. Veuillez consulter les nouveaux détails et la confirmer ou la refuser.
 
 @component('mail::panel')
-**Reservation ID:** #{{ str_pad($reservation->id, 6, '0', STR_PAD_LEFT) }}
-**Camper:** {{ ($reservation->user->first_name ?? '') . ' ' . ($reservation->user->last_name ?? '') }}
-**Check-in:** {{ \Carbon\Carbon::parse($reservation->date_debut)->format('d/m/Y') }}
-**Check-out:** {{ \Carbon\Carbon::parse($reservation->date_fin)->format('d/m/Y') }}
-**Duration:** {{ \Carbon\Carbon::parse($reservation->date_debut)->diffInDays($reservation->date_fin) + 1 }} night(s)
-**Guests:** {{ $reservation->nbr_place }}
-**New Total:** {{ number_format($reservation->total_price, 2) }} TND
-**Status:** Awaiting re-confirmation
+**N° de réservation :** #{{ str_pad($reservation->id, 6, '0', STR_PAD_LEFT) }}
+**Campeur :** {{ ($reservation->user->first_name ?? '') . ' ' . ($reservation->user->last_name ?? '') }}
+**Arrivée :** {{ \Carbon\Carbon::parse($reservation->date_debut)->locale('fr')->translatedFormat('d/m/Y') }}
+**Départ :** {{ \Carbon\Carbon::parse($reservation->date_fin)->locale('fr')->translatedFormat('d/m/Y') }}
+**Durée :** {{ \Carbon\Carbon::parse($reservation->date_debut)->diffInDays($reservation->date_fin) + 1 }} nuit(s)
+**Voyageurs :** {{ $reservation->nbr_place }}
+**Nouveau total :** {{ number_format($reservation->total_price, 2) }} TND
+**Statut :** En attente de reconfirmation
 @endcomponent
 
 @if($reservation->serviceItems && $reservation->serviceItems->count() > 0)
-### Updated Services
+### Services mis à jour
 
 @component('mail::table')
-| Service | Qty | Unit Price | Subtotal |
-|---------|-----|------------|----------|
+| Service | Qté | Prix unitaire | Sous-total |
+|---------|-----|----------------|------------|
 @foreach($reservation->serviceItems as $item)
 | {{ $item->service_name }} | {{ $item->quantity }} {{ $item->unit }} | {{ number_format($item->unit_price, 2) }} TND | {{ number_format($item->subtotal, 2) }} TND |
 @endforeach
@@ -29,13 +29,13 @@ A camper has modified their reservation. Please review the updated details and r
 @endif
 
 @component('mail::button', ['url' => $frontendUrl . '/profile/reservations', 'color' => 'primary'])
-Review Reservation
+Consulter la réservation
 @endcomponent
 
-Best regards,
-**The TunisiaCamp Team**
+Cordialement,
+**L'équipe TunisiaCamp**
 
 @component('mail::subcopy')
-This is an automated message. Reservation ID: {{ $reservation->id }} · {{ now()->format('Y-m-d H:i') }}
+Ceci est un message automatique. Réservation n° {{ $reservation->id }} · {{ now()->locale('fr')->translatedFormat('d/m/Y H:i') }}
 @endcomponent
 @endcomponent

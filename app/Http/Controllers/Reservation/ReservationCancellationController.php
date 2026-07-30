@@ -60,16 +60,11 @@ class ReservationCancellationController extends Controller
             $event = Events::find($reservation->event_id);
             $user  = User::find($reservation->user_id);
             if ($event && $user) {
-                $totalPrice      = $reservation->nbr_place * ($event->price ?? 0);
-                $cancellationFee = $totalPrice - $montantRembourse;
-
                 Mail::to($user->email)->send(new EventReservationCanceledByUser(
-                    user:            $user,
-                    event:           $event,
-                    reservation:     $reservation,
-                    refundAmount:    $montantRembourse,
-                    cancellationFee: $cancellationFee,
-                    processingFee:   0,
+                    user:         $user,
+                    event:        $event,
+                    reservation:  $reservation,
+                    refundAmount: $montantRembourse,
                 ));
 
                 $owner = User::find($event->group_id);

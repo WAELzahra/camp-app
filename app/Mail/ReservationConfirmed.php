@@ -21,6 +21,6 @@ class ReservationConfirmed extends Mailable implements ShouldQueue
     public function build()
     {
         return $this->subject('Confirmation de votre réservation')
-            ->view('emails.reservation-confirmed');
+            ->markdown('emails.reservation-confirmed');
     }
 }

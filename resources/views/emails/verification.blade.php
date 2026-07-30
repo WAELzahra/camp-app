@@ -1,19 +1,17 @@
 @component('mail::message')
-# Welcome to TunisiaCamp
+# Bienvenue sur TunisiaCamp
 
-Hello {{ $user?->first_name ?? 'there' }},
+Bonjour {{ $user?->first_name ?? 'là' }},
 
-Thank you for joining **TunisiaCamp**, a platform dedicated to discovering camping destinations, outdoor guides, and nature experiences across Tunisia.
+Merci de rejoindre **TunisiaCamp**, la plateforme dédiée à la découverte de destinations de camping, de guides et d'expériences en pleine nature partout en Tunisie.
 
-To activate your account, please verify your email address using one of the methods below.
+Pour activer votre compte, veuillez vérifier votre adresse e-mail à l'aide du code ci-dessous.
 
 ---
 
-## Verify your email
+## Votre code de vérification
 
-### Option 1 — Verification code (recommended)
-
-Enter the following **6-digit verification code** on the TunisiaCamp website:
+Saisissez le **code à 6 chiffres** suivant sur le site TunisiaCamp :
 
 @component('mail::panel')
 <div style="
@@ -33,47 +31,38 @@ Enter the following **6-digit verification code** on the TunisiaCamp website:
     color: #6b7280;
     margin-top: 8px;
 ">
-    Code expires in {{ $expiresAt->diffForHumans(null, true) }}
+    Ce code expire dans {{ $expiresAt->locale('fr')->diffForHumans(null, true) }}
 </p>
 @endcomponent
 
-Go to the verification page:  
-[{{ $frontendUrl }}]({{ $frontendUrl }})
-
----
-
-### Option 2 — Secure verification link
-
-@component('mail::button', ['url' => $link, 'color' => 'primary'])
-Verify Email Address
+@component('mail::button', ['url' => $frontendUrl, 'color' => 'primary'])
+Saisir mon code
 @endcomponent
 
-This link will expire in **{{ $expiresAt->diffForHumans(null, true) }}**.
+---
+
+## Ce que vous pouvez faire sur TunisiaCamp
+
+- Découvrir des lieux de camping partout en Tunisie
+- Entrer en contact avec des guides et des groupes de camping expérimentés
+- Organiser et gérer vos sorties en plein air
+- Réserver des services et du matériel de camping
 
 ---
 
-## What you can do on TunisiaCamp
+## Besoin d'aide ?
 
-- Discover camping locations across Tunisia  
-- Connect with experienced guides and camping groups  
-- Plan and manage your outdoor trips  
-- Reserve camping services and equipment  
+Si vous n'êtes pas à l'origine de cette création de compte, aucune action n'est requise de votre part.
 
----
-
-## Need help?
-
-If you did not create an account, no action is required.
-
-For assistance, contact us at  
+Pour toute assistance, contactez-nous à
 [{{ $supportEmail }}](mailto:{{ $supportEmail }})
 
 ---
 
-Kind regards,  
-**The TunisiaCamp Team**
+Cordialement,
+**L'équipe TunisiaCamp**
 
 @component('mail::subcopy')
-This verification will expire on {{ $expiresAt->format('F j, Y \\a\\t g:i A') }}.
+Cette vérification expirera le {{ $expiresAt->locale('fr')->translatedFormat('j F Y \\à H:i') }}.
 @endcomponent
 @endcomponent

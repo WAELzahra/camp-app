@@ -15,8 +15,6 @@ class EmailVerificationMail extends Mailable implements ShouldQueue
 
     public $verificationCode;
 
-    public $verificationLink;
-
     public $frontendUrl;
 
     public $user;
@@ -25,13 +23,11 @@ class EmailVerificationMail extends Mailable implements ShouldQueue
 
     public function __construct(
         string $verificationCode,
-        string $verificationLink,
         string $frontendUrl,
         ?User $user = null,
         ?Carbon $expiresAt = null
     ) {
         $this->verificationCode = $verificationCode;
-        $this->verificationLink = $verificationLink;
         $this->frontendUrl = $frontendUrl;
         $this->user = $user;
         $this->expiresAt = $expiresAt ?? now()->addMinutes(15);
@@ -39,16 +35,15 @@ class EmailVerificationMail extends Mailable implements ShouldQueue
 
     public function build()
     {
-        return $this->subject('Welcome to CampConnect! Verify Your Email Address')
+        return $this->subject('Bienvenue sur TunisiaCamp ! Vérifiez votre adresse e-mail')
             ->markdown('emails.verification')
             ->with([
                 'code' => $this->verificationCode,
-                'link' => $this->verificationLink,
                 'frontendUrl' => $this->frontendUrl,
                 'user' => $this->user,
                 'expiresAt' => $this->expiresAt,
                 'appName' => config('app.name'),
-                'supportEmail' => config('mail.support_email', 'support@campconnect.tn'),
+                'supportEmail' => config('mail.support_email'),
             ]);
     }
 }

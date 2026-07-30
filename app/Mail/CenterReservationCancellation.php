@@ -15,15 +15,19 @@ class CenterReservationCancellation extends Mailable implements ShouldQueue
 
     public $reservation;
 
-    public function __construct($center, $reservation)
+    /** Platform cancellation fee actually debited from the centre's wallet, if any. */
+    public $platformFee;
+
+    public function __construct($center, $reservation, $platformFee = 0.0)
     {
         $this->center = $center;
         $this->reservation = $reservation;
+        $this->platformFee = $platformFee;
     }
 
     public function build()
     {
-        return $this->subject('Reservation Cancellation Record - TunisiaCamp')
+        return $this->subject('Confirmation d\'annulation de réservation — TunisiaCamp')
             ->markdown('emails.center_cancellation_confirmation')
             ->with([
                 'centerName' => $this->center->name ?? $this->center->first_name.' '.$this->center->last_name,
@@ -33,9 +37,10 @@ class CenterReservationCancellation extends Mailable implements ShouldQueue
                 'startDate' => $this->reservation->date_debut,
                 'endDate' => $this->reservation->date_fin,
                 'totalPrice' => $this->reservation->total_price,
-                'canceledAt' => $this->reservation->canceled_at->format('F j, Y \a\t g:i A'),
+                'canceledAt' => $this->reservation->canceled_at->locale('fr')->translatedFormat('d F Y \à H:i'),
                 'vacantSpots' => $this->reservation->nbr_place,
-                'cancellationReason' => 'Center initiated cancellation',
+                'platformFee' => $this->platformFee,
+                'supportEmail' => config('mail.support_email'),
             ]);
     }
 }

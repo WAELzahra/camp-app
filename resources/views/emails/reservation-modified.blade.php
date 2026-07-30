@@ -1,78 +1,78 @@
 @component('mail::message')
-# Reservation Modified
+# Réservation modifiée
 
-Hello {{ $reservation->user->first_name ?? 'there' }},
+Bonjour {{ $reservation->user->first_name ?? 'cher client' }},
 
-Your reservation has been reviewed by the center. Some services could not be confirmed due to availability constraints.
+Votre réservation a été examinée par le centre. Certains services n'ont pas pu être confirmés en raison de contraintes de disponibilité.
 
-**Reservation ID:** #{{ str_pad($reservation->id, 6, '0', STR_PAD_LEFT) }}  
-**Booking Dates:** {{ $startDate->format('F j, Y') }} to {{ $endDate->format('F j, Y') }}  
-**Duration:** {{ $duration }} night{{ $duration > 1 ? 's' : '' }}  
-**Number of Guests:** {{ $reservation->nbr_place }}  
-**Modified On:** {{ $modificationDate->format('F j, Y \a\t g:i A') }}
+**N° de réservation :** #{{ str_pad($reservation->id, 6, '0', STR_PAD_LEFT) }}
+**Dates du séjour :** {{ $startDate->locale('fr')->translatedFormat('d F Y') }} au {{ $endDate->locale('fr')->translatedFormat('d F Y') }}
+**Durée :** {{ $duration }} nuit{{ $duration > 1 ? 's' : '' }}
+**Nombre de voyageurs :** {{ $reservation->nbr_place }}
+**Modifiée le :** {{ $modificationDate->locale('fr')->translatedFormat('d F Y \à H:i') }}
 
 @if($generalReason)
-**Center's Note:** {{ $generalReason }}
+**Note du centre :** {{ $generalReason }}
 @endif
 
 ---
 
-## Services Confirmed
+## Services confirmés
 
 @if($acceptedServices->count() > 0)
 @component('mail::table')
-| Service | Quantity | Unit Price | Subtotal |
-|---------|----------|------------|----------|
+| Service | Quantité | Prix unitaire | Sous-total |
+|---------|----------|----------------|------------|
 @foreach($acceptedServices as $service)
 | {{ $service->service_name }} | {{ $service->quantity }} {{ $service->unit }} | {{ number_format($service->unit_price, 2) }} TND | {{ number_format($service->subtotal, 2) }} TND |
 @endforeach
 @endcomponent
 @else
-No services were confirmed.
+Aucun service n'a été confirmé.
 @endif
 
 ---
 
-## Services Unavailable
+## Services indisponibles
 
 @if($rejectedServices->count() > 0)
 @foreach($rejectedServices as $service)
 ### {{ $service->service_name }}
-- **Quantity:** {{ $service->quantity }} {{ $service->unit }}
-- **Reason:** {{ $service->rejection_reason ?? 'Not available' }}
-- **Original Price:** {{ number_format($service->subtotal, 2) }} TND
+- **Quantité :** {{ $service->quantity }} {{ $service->unit }}
+- **Motif :** {{ $service->rejection_reason ?? 'Non disponible' }}
+- **Prix initial :** {{ number_format($service->subtotal, 2) }} TND
 
 @endforeach
 @else
-All requested services have been confirmed.
+Tous les services demandés ont été confirmés.
 @endif
 
 ---
 
-## Updated Pricing
+## Tarif mis à jour
 
-**Total for Confirmed Services:** **{{ number_format($acceptedServices->sum('subtotal'), 2) }} TND**
+**Total des services confirmés :** **{{ number_format($acceptedServices->sum('subtotal'), 2) }} TND**
 
 @if($rejectedServices->count() > 0)
-**Services Removed:** {{ number_format($rejectedServices->sum('subtotal'), 2) }} TND
+**Services retirés :** {{ number_format($rejectedServices->sum('subtotal'), 2) }} TND
 @endif
 
 ---
 
-## Next Steps
+## Prochaines étapes
 
-1. Review the modified reservation details
-2. Contact the center if you have questions about unavailable services
-3. Proceed with the confirmed services or cancel if needed
+1. Consultez le détail de la réservation modifiée
+2. Contactez le centre si vous avez des questions sur les services indisponibles
+3. Poursuivez avec les services confirmés, ou annulez si nécessaire
 
 @component('mail::button', ['url' => $frontendUrl . '/reservations/' . $reservation->id, 'color' => 'primary'])
-View Complete Reservation
+Voir la réservation complète
 @endcomponent
 
 ---
 
-## Need Help?
+## Besoin d'aide ?
 
-Contact TunisiaCamp support at [{{ $supportEmail }}](mailto:{{ $supportEmail }})
+Contactez le support TunisiaCamp à [{{ $supportEmail }}](mailto:{{ $supportEmail }})
 
 @endcomponent

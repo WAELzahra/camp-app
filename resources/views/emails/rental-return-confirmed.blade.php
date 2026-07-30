@@ -1,30 +1,30 @@
 @component('mail::message')
-# Equipment Return Confirmed ✅
+# Retour de matériel confirmé
 
-Hi **{{ $reservation->user->first_name ?? 'Customer' }}**,
+Bonjour **{{ $reservation->user->first_name ?? 'cher client' }}**,
 
-The supplier has confirmed the return of your rented equipment. Your rental is now complete.
+Le fournisseur a confirmé la restitution de votre matériel loué. Votre location est maintenant terminée.
 
 @component('mail::panel')
-**Reservation ID:** #{{ str_pad($reservation->id, 6, '0', STR_PAD_LEFT) }}
-**Item:** {{ $reservation->materielle->nom ?? 'N/A' }}
-**Supplier:** {{ ($reservation->fournisseur->first_name ?? '') . ' ' . ($reservation->fournisseur->last_name ?? '') }}
-**Rental Period:** {{ \Carbon\Carbon::parse($reservation->date_debut)->format('d/m/Y') }} → {{ \Carbon\Carbon::parse($reservation->date_fin)->format('d/m/Y') }}
-**Quantity:** {{ $reservation->quantite }}
-**Total Paid:** {{ number_format($reservation->montant_total, 2) }} TND
-**Returned On:** {{ \Carbon\Carbon::parse($reservation->returned_at)->format('d/m/Y H:i') }}
+**N° de réservation :** #{{ str_pad($reservation->id, 6, '0', STR_PAD_LEFT) }}
+**Article :** {{ $reservation->materielle->nom ?? 'N/A' }}
+**Fournisseur :** {{ ($reservation->fournisseur->first_name ?? '') . ' ' . ($reservation->fournisseur->last_name ?? '') }}
+**Période de location :** {{ \Carbon\Carbon::parse($reservation->date_debut)->locale('fr')->translatedFormat('d/m/Y') }} → {{ \Carbon\Carbon::parse($reservation->date_fin)->locale('fr')->translatedFormat('d/m/Y') }}
+**Quantité :** {{ $reservation->quantite }}
+**Total payé :** {{ number_format($reservation->montant_total, 2) }} TND
+**Restitué le :** {{ \Carbon\Carbon::parse($reservation->returned_at)->locale('fr')->translatedFormat('d/m/Y H:i') }}
 @endcomponent
 
-Thank you for using TunisiaCamp. We hope you enjoyed the equipment!
+Merci d'avoir utilisé TunisiaCamp. Nous espérons que le matériel vous a donné satisfaction !
 
 @component('mail::button', ['url' => $frontendUrl . '/profile/reservations', 'color' => 'success'])
-View My Reservations
+Voir mes réservations
 @endcomponent
 
-Best regards,
-**The TunisiaCamp Team**
+Cordialement,
+**L'équipe TunisiaCamp**
 
 @component('mail::subcopy')
-This is an automated message. Reservation ID: {{ $reservation->id }} · {{ now()->format('Y-m-d H:i') }}
+Ceci est un message automatique. Réservation n° {{ $reservation->id }} · {{ now()->locale('fr')->translatedFormat('d/m/Y H:i') }}
 @endcomponent
 @endcomponent

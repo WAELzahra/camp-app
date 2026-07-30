@@ -23,7 +23,7 @@ class ReservationConfirmedToCamper extends Mailable implements ShouldQueue
 
     public function build()
     {
-        return $this->subject('Your Reservation is Confirmed! Here is Your PIN')
+        return $this->subject('Votre réservation est confirmée ! Voici votre code PIN')
             ->markdown('emails.confirmed_to_camper');
     }
 }

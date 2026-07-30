@@ -1,19 +1,23 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>Nouveau événement</title>
-</head>
-<body>
-    <h1>Bonjour {{ $userName }},</h1>
-    <p>Un nouveau événement a été créé par un groupe que vous suivez !</p>
-    <p><strong>Catégorie :</strong> {{ $event->category }}</p>
-    <p><strong>Date de sortie :</strong> {{ $event->date_sortie }}</p>
-    <p><strong>Date de retour :</strong> {{ $event->date_retoure }}</p>
-    <p><strong>Prix par place :</strong> {{ $event->prix_place }} TND</p>
+@component('mail::message')
+# Nouvel événement
 
-    <p>Connectez-vous sur notre plateforme pour en savoir plus et réserver votre place !</p>
+Bonjour {{ $userName }},
 
-    <p>À bientôt,<br>L’équipe TunisiaCamp </p>
-</body>
-</html>
+Un nouvel événement a été créé par un groupe que vous suivez !
+
+@component('mail::panel')
+**Titre :** {{ $event->title }}
+**Date de départ :** {{ \Carbon\Carbon::parse($event->start_date)->locale('fr')->translatedFormat('d F Y') }}
+**Date de retour :** {{ \Carbon\Carbon::parse($event->end_date)->locale('fr')->translatedFormat('d F Y') }}
+**Prix par place :** {{ number_format($event->price, 2) }} TND
+@endcomponent
+
+Connectez-vous sur la plateforme pour en savoir plus et réserver votre place !
+
+@component('mail::button', ['url' => config('app.frontend_url', 'http://localhost:5173') . '/events/' . $event->slug, 'color' => 'primary'])
+Voir l'événement
+@endcomponent
+
+À bientôt,
+**L'équipe TunisiaCamp**
+@endcomponent

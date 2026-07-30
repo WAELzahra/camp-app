@@ -24,9 +24,9 @@ class CamperRejectedModification extends Mailable implements ShouldQueue
 
     public function build()
     {
-        $camperName = trim(($this->reservation->user->first_name ?? '').' '.($this->reservation->user->last_name ?? '')) ?: 'The camper';
+        $camperName = trim(($this->reservation->user->first_name ?? '').' '.($this->reservation->user->last_name ?? '')) ?: 'Le campeur';
 
-        return $this->subject('Reservation Modification Declined — TunisiaCamp')
+        return $this->subject('Modification de réservation refusée — TunisiaCamp')
             ->markdown('emails.camper-rejected-modification')
             ->with([
                 'reservation' => $this->reservation,

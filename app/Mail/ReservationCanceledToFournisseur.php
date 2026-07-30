@@ -20,7 +20,7 @@ class ReservationCanceledToFournisseur extends Mailable implements ShouldQueue
 
     public function build()
     {
-        return $this->subject('A Reservation Has Been Canceled')
+        return $this->subject('Une réservation a été annulée')
             ->markdown('emails.canceled_to_fournisseur');
     }
 }

@@ -28,7 +28,7 @@ class EventReservationStatusChanged extends Mailable implements ShouldQueue
 
     public function build()
     {
-        return $this->subject('Your Event Reservation Status Updated - TunisiaCamp')
+        return $this->subject('Statut de votre réservation mis à jour — TunisiaCamp')
             ->markdown('emails.event-reservation-status-changed');
     }
 }

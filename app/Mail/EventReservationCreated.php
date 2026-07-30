@@ -28,7 +28,16 @@ class EventReservationCreated extends Mailable implements ShouldQueue
 
     public function build()
     {
-        return $this->subject('Event Reservation Pending Payment - TunisiaCamp')
+        // This is sent for every payment method, not just manual/pending ones —
+        // the subject and body must reflect what actually happened, not assume
+        // a payment step is still outstanding (wallet payments are already paid).
+        $subject = match ($this->reservation->payment_method) {
+            'wallet' => 'Réservation confirmée — TunisiaCamp',
+            'cash' => 'Réservation reçue — paiement à l\'arrivée — TunisiaCamp',
+            default => 'Réservation reçue — paiement en attente — TunisiaCamp',
+        };
+
+        return $this->subject($subject)
             ->markdown('emails.event-reservation-created');
     }
 }

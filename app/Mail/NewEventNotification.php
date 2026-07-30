@@ -25,6 +25,6 @@ class NewEventNotification extends Mailable implements ShouldQueue
     public function build()
     {
         return $this->subject('Nouveau événement d’un groupe que vous suivez')
-            ->view('emails.new_event_notification');
+            ->markdown('emails.new_event_notification');
     }
 }

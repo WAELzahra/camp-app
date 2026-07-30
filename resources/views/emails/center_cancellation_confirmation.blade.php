@@ -1,89 +1,56 @@
 @component('mail::message')
-# 📝 Cancellation Record Confirmation
+# Confirmation d'annulation
 
-Dear {{ $centerName }},
+Bonjour {{ $centerName }},
 
-You have successfully canceled a user's reservation. This email confirms the action for your records.
+Vous avez annulé la réservation d'un client. Cet e-mail confirme cette action pour vos archives.
 
-**Cancellation Reference:** #{{ str_pad($reservationId, 6, '0', STR_PAD_LEFT) }}  
-**Cancellation Date:** {{ $canceledAt }}
-
----
-
-## Cancellation Record
-
-### User Information
-**Name:** {{ $userName }}  
-**Email:** {{ $userEmail }}
-
-### Reservation Details
-**Dates:** {{ \Carbon\Carbon::parse($startDate)->format('F j, Y') }} - {{ \Carbon\Carbon::parse($endDate)->format('F j, Y') }}  
-**Total Value:** **{{ number_format($totalPrice, 2) }} TND**  
-**Vacant Spots Created:** {{ $vacantSpots }}
-
-### Cancellation Reason
-{{ $cancellationReason }}
+**Référence d'annulation :** #{{ str_pad($reservationId, 6, '0', STR_PAD_LEFT) }}
+**Date d'annulation :** {{ $canceledAt }}
 
 ---
 
-## ⚠️ Important Financial Implications
+## Détails de l'annulation
 
-**Because this cancellation was initiated by you (the center):**
+### Informations sur le client
+**Nom :** {{ $userName }}
+**E-mail :** {{ $userEmail }}
 
-### Financial Responsibility:
-1. **Full Refund Required:** You must provide a **100% refund** to the user
-2. **Refund Timeline:** Refund must be processed within **48 hours**
-3. **Platform Fee:** Your platform commission fee for this booking is **waived**
-4. **Penalty Protection:** No penalties apply for this cancellation
-
-### Key Difference:
-- **User cancels:** User pays cancellation fees (partial refund)
-- **Center cancels:** Center provides full refund (no fees to user)
-
-**⚠️ Action Required:** Please initiate the refund of **{{ number_format($totalPrice, 2) }} TND** to the user immediately.
+### Détails de la réservation
+**Dates :** {{ \Carbon\Carbon::parse($startDate)->locale('fr')->translatedFormat('d F Y') }} au {{ \Carbon\Carbon::parse($endDate)->locale('fr')->translatedFormat('d F Y') }}
+**Valeur totale :** **{{ number_format($totalPrice, 2) }} TND**
+**Places libérées :** {{ $vacantSpots }}
 
 ---
 
-## Next Steps for Your Center
+## Remboursement déjà traité
 
-1. **Process Refund** – Issue full refund to the user
-2. **Update Availability** – Mark {{ $vacantSpots }} spot(s) as available
-3. **Notify Staff** – Inform your team about the cancellation
-4. **Review Policy** – Consider why this cancellation occurred
+Cette annulation étant à votre initiative, le client a été **automatiquement remboursé intégralement** ({{ number_format($totalPrice, 2) }} TND) sur son wallet TunisiaCamp — aucune action de votre part n'est nécessaire pour ce remboursement.
 
-View Financial Dashboard
-
----
-
-## User Communication
-
-The user has been notified and expects:
-- Full refund of {{ number_format($totalPrice, 2) }} TND
-- Refund within 48 hours
-- Clear communication from your center
-
-**User Contact:** {{ $userName }} ({{ $userEmail }})
+@if($platformFee > 0)
+@component('mail::panel')
+**Frais d'annulation plateforme prélevés sur votre solde :** {{ number_format($platformFee, 2) }} TND
+@endcomponent
+@endif
 
 ---
 
-## Platform Support
+## Prochaines étapes
 
-If you need assistance with the refund process:
-
-**TunisiaCamp Support:** support@tunisiacamp.com  
-**Financial Department:** finance@tunisiacamp.com  
-**Emergency Line:** +216 70 123 456
+1. **Mettre à jour vos disponibilités** — {{ $vacantSpots }} place(s) redevenue(s) disponible(s)
+2. **Informer votre équipe** si nécessaire
 
 ---
 
-Please ensure all financial obligations are met to maintain your center's reputation and rating.
+## Support
 
-Sincerely,
+Pour toute question concernant cette annulation, contactez-nous à [{{ $supportEmail }}](mailto:{{ $supportEmail }}).
 
-**TunisiaCamp Center Relations**
+Cordialement,
+
+**L'équipe TunisiaCamp**
 
 @component('mail::subcopy')
-This is an automated record. For financial inquiries: finance@tunisiacamp.com  
-Record ID: {{ $reservationId }} · Created: {{ now()->format('Y-m-d H:i') }}
+Ceci est une confirmation automatique. Référence : {{ $reservationId }} · {{ now()->locale('fr')->translatedFormat('d/m/Y H:i') }}
 @endcomponent
 @endcomponent

@@ -1,15 +1,14 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Rappel Événement</title>
-</head>
-<body>
-    <p>Bonjour,</p>
+@component('mail::message')
+# Rappel d'événement
 
-    <p>Ceci est un rappel pour l'événement <strong>{{ $event->title }}</strong> organisé par {{ $event->group->name ?? 'le groupe' }}.</p>
+Bonjour,
 
-    <p>Date de début : {{ \Carbon\Carbon::parse($event->date_sortie)->format('d/m/Y H:i') }}</p>
+Ceci est un rappel pour l'événement **{{ $event->title }}** organisé par {{ trim(($event->group->first_name ?? '').' '.($event->group->last_name ?? '')) ?: 'le groupe' }}.
 
-    <p>Merci de votre participation !</p>
-</body>
-</html>
+**Date de début :** {{ \Carbon\Carbon::parse($event->start_date)->locale('fr')->translatedFormat('d F Y à H:i') }}
+
+Merci de votre participation !
+
+Cordialement,
+**L'équipe TunisiaCamp**
+@endcomponent

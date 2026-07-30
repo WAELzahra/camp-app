@@ -17,16 +17,24 @@ class ReservationCanceledByUser extends Mailable implements ShouldQueue
 
     public $reservation;
 
-    public function __construct($center, $user, $reservation)
+    /** Actual amount refunded to the camper's wallet, or null if none was due. */
+    public $refundAmount;
+
+    /** Human-readable reason for the refund figure (cancellation policy tier, or null). */
+    public $refundNote;
+
+    public function __construct($center, $user, $reservation, $refundAmount = null, $refundNote = null)
     {
         $this->center = $center;
         $this->user = $user;
         $this->reservation = $reservation;
+        $this->refundAmount = $refundAmount;
+        $this->refundNote = $refundNote;
     }
 
     public function build()
     {
-        return $this->subject('Reservation Canceled by User - TunisiaCamp')
+        return $this->subject('Réservation annulée par le client — TunisiaCamp')
             ->markdown('emails.canceled_by_user')
             ->with([
                 'centerName' => $this->center->name ?? $this->center->first_name.' '.$this->center->last_name,
@@ -37,8 +45,11 @@ class ReservationCanceledByUser extends Mailable implements ShouldQueue
                 'endDate' => $this->reservation->date_fin,
                 'totalPrice' => $this->reservation->total_price,
                 'note' => $this->reservation->note,
-                'canceledAt' => $this->reservation->canceled_at->format('F j, Y \a\t g:i A'),
+                'canceledAt' => $this->reservation->canceled_at->locale('fr')->translatedFormat('d F Y \à H:i'),
                 'serviceCount' => $this->reservation->service_count ?? 0,
+                'refundAmount' => $this->refundAmount,
+                'refundNote' => $this->refundNote,
+                'supportEmail' => config('mail.support_email'),
             ]);
     }
 }

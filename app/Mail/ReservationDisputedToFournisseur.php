@@ -22,12 +22,12 @@ class ReservationDisputedToFournisseur extends Mailable implements ShouldQueue
     {
         $this->reservation = $reservation;
         $this->frontendUrl = config('app.frontend_url', 'http://localhost:5173');
-        $this->supportEmail = config('mail.support_email', 'nejikh57@gmail.com');
+        $this->supportEmail = config('mail.support_email');
     }
 
     public function build()
     {
-        return $this->subject('Overdue Rental Alert - TunisiaCamp')
+        return $this->subject('Alerte : location en retard — TunisiaCamp')
             ->markdown('emails.reservation-disputed-to-fournisseur');
     }
 }

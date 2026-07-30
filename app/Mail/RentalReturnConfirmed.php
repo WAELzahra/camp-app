@@ -24,7 +24,7 @@ class RentalReturnConfirmed extends Mailable implements ShouldQueue
 
     public function build()
     {
-        return $this->subject('Equipment Return Confirmed - TunisiaCamp')
+        return $this->subject('Retour de matériel confirmé — TunisiaCamp')
             ->markdown('emails.rental-return-confirmed');
     }
 }

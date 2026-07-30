@@ -1,71 +1,68 @@
 @component('mail::message')
-# Reservation Canceled by User
+# Réservation annulée par le client
 
-Dear {{ $centerName }},
+Bonjour {{ $centerName }},
 
-A user has canceled their reservation with your center. Please review the details below.
+Un client a annulé sa réservation auprès de votre centre. Voici les détails.
 
-**Cancellation Reference:** #{{ str_pad($reservationId, 6, '0', STR_PAD_LEFT) }}  
-**Cancellation Date:** {{ $canceledAt }}
-
----
-
-## Cancellation Details
-
-### User Information
-**Name:** {{ $userName }}  
-**Email:** {{ $userEmail }}
-
-### Reservation Details
-**Dates:** {{ \Carbon\Carbon::parse($startDate)->format('F j, Y') }} - {{ \Carbon\Carbon::parse($endDate)->format('F j, Y') }}  
-**Total Value:** **{{ number_format($totalPrice, 2) }} TND**  
-**Number of Services:** {{ $serviceCount }}  
-**Note from User:** {{ $note ?? 'No additional notes provided' }}
+**Référence d'annulation :** #{{ str_pad($reservationId, 6, '0', STR_PAD_LEFT) }}
+**Date d'annulation :** {{ $canceledAt }}
 
 ---
 
-## ⚠️ Important Refund Policy Note
+## Détails de l'annulation
 
-According to our platform policies, when a user cancels a reservation:
+### Informations sur le client
+**Nom :** {{ $userName }}
+**E-mail :** {{ $userEmail }}
 
-1. **Administrative Fee:** A {{ config('app.cancellation_fee_percent', 15) }}% administrative fee is non-refundable
-2. **Refund Timeline:** Refunds (if applicable) are processed within 7-14 business days
-3. **Partial Refund:** Users may receive a partial refund depending on the cancellation timing
-4. **Late Cancellations:** Cancellations within 48 hours of check-in may not be eligible for refund
-
-**Estimated Refundable Amount:** **{{ number_format($totalPrice * 0.85, 2) }} TND**  
-*(This is an estimate - actual amount may vary based on your specific center policy)*
+### Détails de la réservation
+**Dates :** {{ \Carbon\Carbon::parse($startDate)->locale('fr')->translatedFormat('d F Y') }} au {{ \Carbon\Carbon::parse($endDate)->locale('fr')->translatedFormat('d F Y') }}
+**Valeur totale :** **{{ number_format($totalPrice, 2) }} TND**
+**Nombre de services :** {{ $serviceCount }}
+**Note du client :** {{ $note ?? 'Aucune note fournie' }}
 
 ---
 
-## Next Steps Required
+## Remboursement
 
-1. **Review Cancellation** – Verify the cancellation details
-2. **Update Availability** – Mark the dates as available in your calendar
-3. **Process Refund** – If applicable, initiate refund within 48 hours
-4. **Update Records** – Mark the reservation as canceled in your system
+@if($refundAmount !== null)
+Le remboursement a déjà été traité automatiquement : **{{ number_format($refundAmount, 2) }} TND** ont été crédités sur le wallet du client.
+@if($refundNote)
+**Motif :** {{ $refundNote }}
+@endif
+
+Aucune action n'est requise de votre part concernant ce remboursement.
+@else
+Aucun remboursement n'était applicable pour cette réservation.
+@endif
+
+---
+
+## Prochaines étapes
+
+1. **Mettre à jour vos disponibilités** — libérez les dates dans votre calendrier
+2. **Mettre à jour vos registres** — la réservation est déjà marquée comme annulée
+
 @component('mail::button', ['url' => config('app.frontend_url') . '/center/reservations', 'color' => 'info'])
-Manage Reservations
+Gérer mes réservations
 @endcomponent
 
 ---
 
-## Contact Information
+## Contact
 
-**User:** {{ $userName }} ({{ $userEmail }})  
-**Platform Support:** support@tunisiacamp.com
+**Client :** {{ $userName }} ({{ $userEmail }})
+**Support TunisiaCamp :** [{{ $supportEmail }}](mailto:{{ $supportEmail }})
 
 ---
 
-Please ensure you communicate clearly with the user regarding any refunds or policy questions.
+Cordialement,
 
-Sincerely,
-
-**TunisiaCamp Cancellation Team**
+**L'équipe TunisiaCamp**
 
 @component('mail::subcopy')
-This is an automated notification. Please do not reply directly to this email.  
-For support, contact: support@tunisiacamp.com  
-Cancellation ID: {{ $reservationId }} · Processed: {{ now()->format('Y-m-d H:i') }}
+Ceci est une notification automatique, merci de ne pas y répondre directement.
+Support : {{ $supportEmail }} · Référence : {{ $reservationId }} · Traité le {{ now()->locale('fr')->translatedFormat('d/m/Y H:i') }}
 @endcomponent
 @endcomponent

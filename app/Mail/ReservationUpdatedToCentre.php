@@ -24,7 +24,7 @@ class ReservationUpdatedToCentre extends Mailable implements ShouldQueue
 
     public function build()
     {
-        return $this->subject('Reservation Modified by Camper - TunisiaCamp')
+        return $this->subject('Réservation modifiée par le campeur — TunisiaCamp')
             ->markdown('emails.reservation-updated-to-centre');
     }
 }

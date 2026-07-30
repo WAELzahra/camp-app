@@ -1,43 +1,43 @@
 @component('mail::message')
-# Reservation Request Received ✅
+# Demande de réservation reçue
 
-Hi **{{ $reservation->user->first_name ?? 'Valued Customer' }}**,
+Bonjour **{{ $reservation->user->first_name ?? 'cher client' }}**,
 
-Your reservation request has been submitted successfully. The camping centre will review it and confirm shortly.
+Votre demande de réservation a bien été soumise. Le centre de camping va l'examiner et vous confirmer sous peu.
 
 @component('mail::panel')
-**Reservation ID:** #{{ str_pad($reservation->id, 6, '0', STR_PAD_LEFT) }}
-**Centre:** {{ $reservation->centre->first_name ?? 'Camping Centre' }}
-**Check-in:** {{ \Carbon\Carbon::parse($reservation->date_debut)->format('d/m/Y') }}
-**Check-out:** {{ \Carbon\Carbon::parse($reservation->date_fin)->format('d/m/Y') }}
-**Duration:** {{ \Carbon\Carbon::parse($reservation->date_debut)->diffInDays($reservation->date_fin) + 1 }} night(s)
-**Guests:** {{ $reservation->nbr_place }}
-**Total:** {{ number_format($reservation->total_price, 2) }} TND
-**Status:** Pending confirmation
+**N° de réservation :** #{{ str_pad($reservation->id, 6, '0', STR_PAD_LEFT) }}
+**Centre :** {{ $reservation->centre->first_name ?? 'Centre de camping' }}
+**Arrivée :** {{ \Carbon\Carbon::parse($reservation->date_debut)->locale('fr')->translatedFormat('d/m/Y') }}
+**Départ :** {{ \Carbon\Carbon::parse($reservation->date_fin)->locale('fr')->translatedFormat('d/m/Y') }}
+**Durée :** {{ \Carbon\Carbon::parse($reservation->date_debut)->diffInDays($reservation->date_fin) + 1 }} nuit(s)
+**Voyageurs :** {{ $reservation->nbr_place }}
+**Total :** {{ number_format($reservation->total_price, 2) }} TND
+**Statut :** En attente de confirmation
 @endcomponent
 
 @if($reservation->serviceItems && $reservation->serviceItems->count() > 0)
-### Services Requested
+### Services demandés
 
 @component('mail::table')
-| Service | Qty | Unit Price | Subtotal |
-|---------|-----|------------|----------|
+| Service | Qté | Prix unitaire | Sous-total |
+|---------|-----|----------------|------------|
 @foreach($reservation->serviceItems as $item)
 | {{ $item->service_name }} | {{ $item->quantity }} {{ $item->unit }} | {{ number_format($item->unit_price, 2) }} TND | {{ number_format($item->subtotal, 2) }} TND |
 @endforeach
 @endcomponent
 @endif
 
-You will receive another email once the centre confirms or rejects your request.
+Vous recevrez un autre e-mail dès que le centre confirmera ou refusera votre demande.
 
 @component('mail::button', ['url' => $frontendUrl . '/profile/reservations', 'color' => 'primary'])
-View My Reservations
+Voir mes réservations
 @endcomponent
 
-Best regards,
-**The TunisiaCamp Team**
+Cordialement,
+**L'équipe TunisiaCamp**
 
 @component('mail::subcopy')
-This is an automated message. Reservation ID: {{ $reservation->id }} · {{ now()->format('Y-m-d H:i') }}
+Ceci est un message automatique. Réservation n° {{ $reservation->id }} · {{ now()->locale('fr')->translatedFormat('d/m/Y H:i') }}
 @endcomponent
 @endcomponent

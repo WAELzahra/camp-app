@@ -1,14 +1,12 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Événement supprimé</title>
-</head>
-<body>
-    <h1>Bonjour,</h1>
-    <p>Nous vous informons que votre événement intitulé <strong>{{ $event->category }}</strong>, prévu pour le {{ $event->date_sortie }} a été supprimé.</p>
+@component('mail::message')
+# Événement supprimé
 
-    <p>Si vous pensez qu’il s’agit d’une erreur ou si vous avez des questions, merci de contacter notre support.</p>
+Bonjour,
 
-    <p>Cordialement,<br>L’équipe</p>
-</body>
-</html>
+Nous vous informons que votre événement **{{ $event->title }}**, prévu pour le {{ \Carbon\Carbon::parse($event->start_date)->locale('fr')->translatedFormat('d F Y') }}, a été supprimé.
+
+Si vous pensez qu'il s'agit d'une erreur ou si vous avez des questions, merci de contacter notre support.
+
+Cordialement,
+**L'équipe TunisiaCamp**
+@endcomponent

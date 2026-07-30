@@ -24,7 +24,7 @@ class ReservationCreatedToCamper extends Mailable implements ShouldQueue
 
     public function build()
     {
-        return $this->subject('Reservation Request Received - TunisiaCamp')
+        return $this->subject('Demande de réservation reçue — TunisiaCamp')
             ->markdown('emails.reservation-created-to-camper');
     }
 }

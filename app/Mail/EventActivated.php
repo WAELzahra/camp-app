@@ -22,6 +22,6 @@ class EventActivated extends Mailable implements ShouldQueue
     public function build()
     {
         return $this->subject('Votre événement a été validé !')
-            ->view('emails.event_activated');
+            ->markdown('emails.event_activated');
     }
 }

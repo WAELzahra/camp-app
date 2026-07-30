@@ -23,7 +23,7 @@ class NewReservationToFournisseur extends Mailable implements ShouldQueue
 
     public function build()
     {
-        return $this->subject('New Reservation Request Received')
+        return $this->subject('Nouvelle demande de réservation reçue')
             ->markdown('emails.new_to_fournisseur');
     }
 }

@@ -1,26 +1,26 @@
 @component('mail::message')
-# Your Reservation Was Canceled ❌
+# Votre réservation a été annulée
 
-Hi **{{ $reservation->user->first_name ?? 'Customer' }}**,
+Bonjour **{{ $reservation->user->first_name ?? 'cher client' }}**,
 
-Unfortunately, the supplier has **canceled your reservation**.
+Malheureusement, le fournisseur a **annulé votre réservation**.
 
 @component('mail::panel')
-**Item:** {{ $reservation->materielle->nom ?? 'N/A' }}
-**Type:** {{ $reservation->type_reservation === 'location' ? 'Rental' : 'Purchase' }}
-**Quantity:** {{ $reservation->quantite }}
-**Amount:** {{ number_format($reservation->montant_total, 2) }} TND
+**Article :** {{ $reservation->materielle->nom ?? 'N/A' }}
+**Type :** {{ $reservation->type_reservation === 'location' ? 'Location' : 'Achat' }}
+**Quantité :** {{ $reservation->quantite }}
+**Montant :** {{ number_format($reservation->montant_total, 2) }} TND
 @if($reservation->type_reservation === 'location')
-**Period:** {{ \Carbon\Carbon::parse($reservation->date_debut)->format('d/m/Y') }} → {{ \Carbon\Carbon::parse($reservation->date_fin)->format('d/m/Y') }}
+**Période :** {{ \Carbon\Carbon::parse($reservation->date_debut)->locale('fr')->translatedFormat('d/m/Y') }} → {{ \Carbon\Carbon::parse($reservation->date_fin)->locale('fr')->translatedFormat('d/m/Y') }}
 @endif
 @endcomponent
 
-We apologize for the inconvenience. You can browse other available equipment on Tunisia Camp and submit a new request.
+Nous nous excusons pour la gêne occasionnée. Vous pouvez parcourir le reste du matériel disponible sur TunisiaCamp et soumettre une nouvelle demande.
 
 @component('mail::button', ['url' => config('app.frontend_url', 'http://localhost:5173'), 'color' => 'primary'])
-Browse Equipment
+Parcourir le matériel
 @endcomponent
 
-Best regards,
-**The Tunisia Camp Team**
+Cordialement,
+**L'équipe TunisiaCamp**
 @endcomponent

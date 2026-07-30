@@ -56,19 +56,14 @@ Voir mes annonces
 Si vous avez des questions concernant votre annonce, n'hésitez pas à nous contacter :
 
 @component('mail::panel')
-**Email:** [{{ $supportEmail }}](mailto:{{ $supportEmail }})  
-**Site web:** [TunisiaCamp]({{ config('app.url') }})  
-**Délai de traitement:** 24-48 heures ouvrées
+**Email:** [{{ $supportEmail }}](mailto:{{ $supportEmail }})
+**Site web:** [TunisiaCamp]({{ config('app.url') }})
 @endcomponent
 
 ---
 
 Nous vous tiendrons informé dès que votre annonce sera validée.
 
-Cordialement,  
+Cordialement,
 **L'équipe TunisiaCamp**
-
-@component('mail::subcopy')
-Cette demande de validation expire le {{ $expiresAt->format('d/m/Y à H:i') }}. Passé ce délai, vous devrez soumettre à nouveau votre annonce.
-@endcomponent
 @endcomponent
