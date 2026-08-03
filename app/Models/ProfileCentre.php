@@ -30,6 +30,11 @@ class ProfileCentre extends Model
         'contact_phone',
         'manager_name',
         'established_date',
+        'road_condition',
+        'road_access_notes',
+        'public_transport_accessible',
+        'public_transport_notes',
+        'public_transport_final_leg',
     ];
 
     /**
@@ -63,6 +68,7 @@ class ProfileCentre extends Model
         'established_date' => 'date',
         'capacite' => 'integer',
         'document_legal_expiration' => 'date',
+        'public_transport_accessible' => 'boolean',
     ];
 
     /**

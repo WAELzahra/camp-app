@@ -188,6 +188,11 @@ class CenterServiceApiController extends Controller
             'contact_phone' => $center->contact_phone,
             'manager_name' => $center->manager_name,
             'established_date' => $center->established_date?->format('Y-m-d'),
+            'road_condition' => $center->road_condition,
+            'road_access_notes' => $center->road_access_notes,
+            'public_transport_accessible' => $center->public_transport_accessible,
+            'public_transport_notes' => $center->public_transport_notes,
+            'public_transport_final_leg' => $center->public_transport_final_leg,
             'average_rating' => $avgRating ? round((float) $avgRating, 2) : null,
             'review_count' => $reviewCount,
             'profile' => [

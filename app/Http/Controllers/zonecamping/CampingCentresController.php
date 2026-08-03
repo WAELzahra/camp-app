@@ -143,6 +143,15 @@ class CampingCentresController extends Controller
                 'contact_email' => $pc?->contact_email,
                 'contact_phone' => $pc?->contact_phone,
                 'manager_name' => $pc?->manager_name,
+                // Once a centre is claimed (pc exists), the owner's ProfileCentre value is
+                // authoritative — including an explicit null (they cleared it) — so we must
+                // not fall back to the possibly-stale CampingCentre value in that case. The
+                // CampingCentre value is only used for centres with no linked profile at all.
+                'road_condition' => $pc ? $pc->road_condition : $centre->road_condition,
+                'road_access_notes' => $pc ? $pc->road_access_notes : $centre->road_access_notes,
+                'public_transport_accessible' => $pc ? $pc->public_transport_accessible : $centre->public_transport_accessible,
+                'public_transport_notes' => $pc ? $pc->public_transport_notes : $centre->public_transport_notes,
+                'public_transport_final_leg' => $pc ? $pc->public_transport_final_leg : $centre->public_transport_final_leg,
                 'average_rating' => null,
                 'review_count' => 0,
                 'is_partner' => $isPartner,

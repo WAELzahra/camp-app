@@ -117,11 +117,28 @@ class ProfileController extends Controller
                 'contact_phone',
                 'manager_name',
                 'established_date',
+                'road_access_notes',
+                'public_transport_notes',
             ]);
 
             // Convert disponibilite if present
             if ($request->has('disponibilite')) {
                 $data['disponibilite'] = $request->boolean('disponibilite');
+            }
+
+            if ($request->has('public_transport_accessible')) {
+                $data['public_transport_accessible'] = $request->boolean('public_transport_accessible');
+            }
+
+            // road_condition / public_transport_final_leg: whitelist values;
+            // anything else (including '') clears back to null.
+            if ($request->exists('road_condition')) {
+                $rc = $request->input('road_condition');
+                $data['road_condition'] = in_array($rc, ['paved', 'unpaved_2wd_ok', '4x4_required', 'hiking_only'], true) ? $rc : null;
+            }
+            if ($request->exists('public_transport_final_leg')) {
+                $ptl = $request->input('public_transport_final_leg');
+                $data['public_transport_final_leg'] = in_array($ptl, ['at_entrance', 'short_walk', 'additional_transport_needed'], true) ? $ptl : null;
             }
 
             // host_type: whitelist values; anything else (including '') clears
@@ -429,6 +446,8 @@ class ProfileController extends Controller
                         'latitude',
                         'longitude',
                         'established_date',
+                        'road_access_notes',
+                        'public_transport_notes',
                     ]);
 
                     // host_type: whitelist values; anything else (including '')
@@ -436,6 +455,20 @@ class ProfileController extends Controller
                     if ($request->exists('host_type')) {
                         $ht = $request->input('host_type');
                         $centreData['host_type'] = in_array($ht, ['camping', 'gite', 'maison', 'auberge', 'ecolodge'], true) ? $ht : null;
+                    }
+
+                    // road_condition / public_transport_final_leg: whitelist values;
+                    // anything else (including '') clears back to null.
+                    if ($request->exists('road_condition')) {
+                        $rc = $request->input('road_condition');
+                        $centreData['road_condition'] = in_array($rc, ['paved', 'unpaved_2wd_ok', '4x4_required', 'hiking_only'], true) ? $rc : null;
+                    }
+                    if ($request->exists('public_transport_accessible')) {
+                        $centreData['public_transport_accessible'] = $request->boolean('public_transport_accessible');
+                    }
+                    if ($request->exists('public_transport_final_leg')) {
+                        $ptl = $request->input('public_transport_final_leg');
+                        $centreData['public_transport_final_leg'] = in_array($ptl, ['at_entrance', 'short_walk', 'additional_transport_needed'], true) ? $ptl : null;
                     }
 
                     // Handle numeric conversions

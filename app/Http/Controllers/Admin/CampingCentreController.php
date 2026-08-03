@@ -109,6 +109,11 @@ class CampingCentreController extends Controller
             'telephone' => $request->telephone ?? null,
             'lat' => $request->lat,
             'lng' => $request->lng,
+            'road_condition' => $request->road_condition,
+            'road_access_notes' => $request->road_access_notes,
+            'public_transport_accessible' => $request->has('public_transport_accessible') ? $request->boolean('public_transport_accessible') : null,
+            'public_transport_notes' => $request->public_transport_notes,
+            'public_transport_final_leg' => $request->public_transport_final_leg,
             'type' => $request->type ?? 'centre',
             'description' => $request->description,
             'status' => $request->boolean('status', false),
@@ -192,6 +197,21 @@ class CampingCentreController extends Controller
                 }
                 if ($request->has('telephone')) {
                     $pc->contact_phone = $request->telephone;   // telephone → contact_phone
+                }
+                if ($request->has('road_condition')) {
+                    $pc->road_condition = $request->road_condition;
+                }
+                if ($request->has('road_access_notes')) {
+                    $pc->road_access_notes = $request->road_access_notes;
+                }
+                if ($request->has('public_transport_accessible')) {
+                    $pc->public_transport_accessible = $request->boolean('public_transport_accessible');
+                }
+                if ($request->has('public_transport_notes')) {
+                    $pc->public_transport_notes = $request->public_transport_notes;
+                }
+                if ($request->has('public_transport_final_leg')) {
+                    $pc->public_transport_final_leg = $request->public_transport_final_leg;
                 }
 
                 $pc->save();
@@ -293,6 +313,11 @@ class CampingCentreController extends Controller
                 'established_date' => $pc->established_date?->format('Y-m-d'),
                 'latitude' => $pc->latitude !== null ? (float) $pc->latitude : null,
                 'longitude' => $pc->longitude !== null ? (float) $pc->longitude : null,
+                'road_condition' => $pc->road_condition,
+                'road_access_notes' => $pc->road_access_notes,
+                'public_transport_accessible' => $pc->public_transport_accessible,
+                'public_transport_notes' => $pc->public_transport_notes,
+                'public_transport_final_leg' => $pc->public_transport_final_leg,
                 'services' => $services,
                 'equipment' => $equipment,
             ];
@@ -309,6 +334,11 @@ class CampingCentreController extends Controller
                 'telephone' => $centre->telephone,
                 'lat' => $centre->lat,
                 'lng' => $centre->lng,
+                'road_condition' => $centre->road_condition,
+                'road_access_notes' => $centre->road_access_notes,
+                'public_transport_accessible' => $centre->public_transport_accessible,
+                'public_transport_notes' => $centre->public_transport_notes,
+                'public_transport_final_leg' => $centre->public_transport_final_leg,
                 'image' => $centre->image,
                 'status' => (bool) $centre->status,
                 'is_partner' => (bool) $centre->is_partner,
@@ -352,6 +382,8 @@ class CampingCentreController extends Controller
         $pcFields = collect($validated)->only([
             'price_per_night', 'category', 'capacite',
             'contact_email', 'contact_phone', 'manager_name', 'disponibilite',
+            'road_condition', 'road_access_notes',
+            'public_transport_accessible', 'public_transport_notes', 'public_transport_final_leg',
         ])->filter(fn ($v) => !is_null($v))->toArray();
 
         // host_type is nullable on purpose: null means "auto" (inferred from the

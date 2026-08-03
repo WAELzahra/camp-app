@@ -23,6 +23,11 @@ class CampingCentre extends Model
         'telephone',
         'lat',
         'lng',
+        'road_condition',
+        'road_access_notes',
+        'public_transport_accessible',
+        'public_transport_notes',
+        'public_transport_final_leg',
         'image',
         'status',
         'validation_status',
@@ -32,10 +37,11 @@ class CampingCentre extends Model
     ];
 
     protected $casts = [
-        'status'     => 'boolean',
-        'is_partner' => 'boolean',
-        'lat'        => 'float',
-        'lng'        => 'float',
+        'status'                       => 'boolean',
+        'is_partner'                    => 'boolean',
+        'lat'                           => 'float',
+        'lng'                           => 'float',
+        'public_transport_accessible'   => 'boolean',
     ];
 
     // ─── Relations ────────────────────────────────────────────────────────────
@@ -87,6 +93,11 @@ class CampingCentre extends Model
             'adresse'     => $this->adresse,
             'lat'         => $this->lat,
             'lng'         => $this->lng,
+            'road_condition'                => $this->road_condition,
+            'road_access_notes'             => $this->road_access_notes,
+            'public_transport_accessible'   => $this->public_transport_accessible,
+            'public_transport_notes'        => $this->public_transport_notes,
+            'public_transport_final_leg'    => $this->public_transport_final_leg,
             'image'       => $this->image,
             'status'      => $this->isPublic(),
             'user'        => $this->user ? [
