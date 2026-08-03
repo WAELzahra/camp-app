@@ -237,6 +237,18 @@ class ReservationsCentreController extends Controller
                 $balanceDueAt = $due->isPast() ? now()->addDays(2)->toDateString() : $due->toDateString();
             }
 
+            // Snapshot the centre's house rules exactly as they stand right now — the
+            // camper is agreeing to this specific set, not whatever the centre might
+            // edit them to later.
+            $rulesSnapshot = null;
+            $centreProfile = $centreUser->profile;
+            $centreProfileCentre = $centreProfile
+                ? ProfileCentre::where('profile_id', $centreProfile->id)->first()
+                : null;
+            if ($centreProfileCentre) {
+                $rulesSnapshot = $centreProfileCentre->buildRulesSnapshot();
+            }
+
             // Create the main reservation (total_price includes camper platform fee)
             $reservationCentre = Reservations_centre::create([
                 'user_id' => $userId,
@@ -249,6 +261,10 @@ class ReservationsCentreController extends Controller
                 'type' => $type,
                 'nbr_place' => $request->nbr_place,
                 'nights' => $nights,
+                'rules_accepted_at' => now(),
+                'rules_accepted_ip' => $request->ip(),
+                'rules_accepted_user_agent' => substr((string) $request->userAgent(), 0, 500),
+                'rules_snapshot' => $rulesSnapshot,
                 // Manual payments stay hidden from the centre until the admin confirms
                 // the transfer; only then does the reservation enter the review queue.
                 'status' => $paymentMethod === 'manual' ? 'pending_payment' : 'pending',

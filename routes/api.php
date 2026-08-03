@@ -695,6 +695,11 @@ Route::middleware('auth:sanctum')->group(function () {
                     Route::get('/', [ProfileController::class, 'getCenterEquipment']);
                     Route::put('/', [ProfileController::class, 'updateCenterEquipment']);
                 });
+
+                Route::prefix('rules')->group(function () {
+                    Route::get('/', [ProfileController::class, 'getCenterRules']);
+                    Route::put('/', [ProfileController::class, 'updateCenterRules']);
+                });
             });
         
         Route::get('/{type}/{userId}', [ProfileController::class, 'getProfileDetails'])

@@ -297,6 +297,21 @@ class CampingCentreController extends Controller
                     'notes' => $e->notes,
                 ])->values()->toArray();
 
+            // Always return all known rule types (not just rows that already exist) so the
+            // admin UI has a complete checklist to work with, even for a centre that has
+            // never had any rule set yet. `is_allowed: null` means "not configured yet".
+            $existingRules = $pc->rules()->get()->keyBy('type');
+            $rules = collect(\App\Models\ProfileCenterRule::TYPE_TRANSLATIONS)->keys()
+                ->map(function ($type) use ($existingRules) {
+                    $r = $existingRules->get($type);
+                    return [
+                        'id' => $r?->id,
+                        'type' => $type,
+                        'is_allowed' => $r ? (bool) $r->is_allowed : null,
+                        'notes' => $r?->notes,
+                    ];
+                })->values()->toArray();
+
             $profileCentrePayload = [
                 'id' => $pc->id,
                 'name' => $pc->name,
@@ -318,8 +333,10 @@ class CampingCentreController extends Controller
                 'public_transport_accessible' => $pc->public_transport_accessible,
                 'public_transport_notes' => $pc->public_transport_notes,
                 'public_transport_final_leg' => $pc->public_transport_final_leg,
+                'house_rules_notes' => $pc->house_rules_notes,
                 'services' => $services,
                 'equipment' => $equipment,
+                'rules' => $rules,
             ];
         }
 
@@ -384,6 +401,7 @@ class CampingCentreController extends Controller
             'contact_email', 'contact_phone', 'manager_name', 'disponibilite',
             'road_condition', 'road_access_notes',
             'public_transport_accessible', 'public_transport_notes', 'public_transport_final_leg',
+            'house_rules_notes',
         ])->filter(fn ($v) => !is_null($v))->toArray();
 
         // host_type is nullable on purpose: null means "auto" (inferred from the
@@ -434,6 +452,24 @@ class CampingCentreController extends Controller
                 \App\Models\ProfileCenterEquipment::where('profile_center_id', $pc->id)
                     ->where('id', $eq['id'])
                     ->update(['is_available' => $eq['is_available']]);
+            }
+        }
+
+        // Bulk-update house rules (allowed/not-allowed per type). Keyed by `type` (not a
+        // row id) and using updateOrCreate — unlike equipment/services, a fresh centre has
+        // no rule rows at all until someone (owner or admin) sets one for the first time,
+        // so admin must be able to create the very first row too, not just edit existing ones.
+        if (!empty($validated['rules'])) {
+            foreach ($validated['rules'] as $rule) {
+                $ruleUpdate = ['is_allowed' => $rule['is_allowed']];
+                if (array_key_exists('notes', $rule)) {
+                    $ruleUpdate['notes'] = $rule['notes'];
+                }
+
+                \App\Models\ProfileCenterRule::updateOrCreate(
+                    ['profile_center_id' => $pc->id, 'type' => $rule['type']],
+                    $ruleUpdate
+                );
             }
         }
 

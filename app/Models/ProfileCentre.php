@@ -35,6 +35,7 @@ class ProfileCentre extends Model
         'public_transport_accessible',
         'public_transport_notes',
         'public_transport_final_leg',
+        'house_rules_notes',
     ];
 
     /**
@@ -170,6 +171,31 @@ class ProfileCentre extends Model
     public function equipment(): HasMany
     {
         return $this->hasMany(ProfileCenterEquipment::class, 'profile_center_id');
+    }
+
+    /**
+     * Get house rules for this center
+     */
+    public function rules(): HasMany
+    {
+        return $this->hasMany(ProfileCenterRule::class, 'profile_center_id');
+    }
+
+    /**
+     * Build a snapshot of the centre's current house rules + free-text notes, to be
+     * stored on a reservation at the moment the camper agrees to them — protects both
+     * sides if the centre edits its rules after the booking is made.
+     */
+    public function buildRulesSnapshot(): array
+    {
+        return [
+            'rules' => $this->rules()->get(['type', 'is_allowed', 'notes'])->map(fn ($r) => [
+                'type' => $r->type,
+                'is_allowed' => (bool) $r->is_allowed,
+                'notes' => $r->notes,
+            ])->values()->toArray(),
+            'house_rules_notes' => $this->house_rules_notes,
+        ];
     }
 
     /**

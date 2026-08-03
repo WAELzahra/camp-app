@@ -19,6 +19,7 @@ use App\Models\Photo;
 use App\Models\Profile;
 use App\Models\ProfileCampeur;
 use App\Models\ProfileCenterEquipment;
+use App\Models\ProfileCenterRule;
 use App\Models\ProfileCenterService;
 use App\Models\ProfileCentre;
 use App\Models\ProfileFournisseur;
@@ -2001,6 +2002,111 @@ class ProfileController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to update equipment',
+                'error' => 'server_error',
+            ], 500);
+        }
+    }
+
+    public function getCenterRules($centerId)
+    {
+        try {
+            $user = Auth::user();
+            $center = ProfileCentre::findOrFail($centerId);
+
+            if ($center->profile->user_id !== $user->id) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized access',
+                ], 403);
+            }
+
+            // Always return all known rule types (not just rows that already exist) so the
+            // owner has a complete checklist even before ever setting a single rule.
+            // `is_allowed: null` means "not configured yet".
+            $existingRules = ProfileCenterRule::where('profile_center_id', $centerId)->get()->keyBy('type');
+            $rules = collect(ProfileCenterRule::TYPE_TRANSLATIONS)->keys()
+                ->map(function ($type) use ($existingRules) {
+                    $r = $existingRules->get($type);
+                    return [
+                        'id' => $r?->id,
+                        'type' => $type,
+                        'is_allowed' => $r ? (bool) $r->is_allowed : null,
+                        'notes' => $r?->notes,
+                    ];
+                })->values();
+
+            return response()->json([
+                'success' => true,
+                'data' => $rules,
+                'house_rules_notes' => $center->house_rules_notes,
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch rules',
+                'error' => 'server_error',
+            ], 500);
+        }
+    }
+
+    public function updateCenterRules(Request $request, $centerId)
+    {
+        try {
+            $user = Auth::user();
+            $center = ProfileCentre::findOrFail($centerId);
+
+            if ($center->profile->user_id !== $user->id) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized access',
+                ], 403);
+            }
+
+            // house_rules_notes-only update: no `type` sent, just the free-text field.
+            if (!$request->has('type') && $request->has('house_rules_notes')) {
+                $center->update(['house_rules_notes' => $request->input('house_rules_notes')]);
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'House rules notes updated successfully',
+                    'house_rules_notes' => $center->house_rules_notes,
+                ]);
+            }
+
+            $validator = Validator::make($request->all(), [
+                'type' => 'required|in:pets,alcohol,smoking,loud_music,unmarried_couples,campfires,generators,outside_visitors',
+                'is_allowed' => 'required|boolean',
+                'notes' => 'nullable|string',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors(),
+                ], 422);
+            }
+
+            $rule = ProfileCenterRule::updateOrCreate(
+                [
+                    'profile_center_id' => $centerId,
+                    'type' => $request->type,
+                ],
+                [
+                    'is_allowed' => $request->is_allowed,
+                    'notes' => $request->notes,
+                ]
+            );
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Rule updated successfully',
+                'data' => $rule,
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update rule',
                 'error' => 'server_error',
             ], 500);
         }

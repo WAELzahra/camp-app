@@ -39,6 +39,11 @@ class UpdateProfileCentreFromAdminRequest extends FormRequest
             'equipment' => 'nullable|array',
             'equipment.*.id' => 'required|integer',
             'equipment.*.is_available' => 'required|boolean',
+            'house_rules_notes' => 'nullable|string|max:2000',
+            'rules' => 'nullable|array',
+            'rules.*.type' => 'required|in:pets,alcohol,smoking,loud_music,unmarried_couples,campfires,generators,outside_visitors',
+            'rules.*.is_allowed' => 'required|boolean',
+            'rules.*.notes' => 'sometimes|nullable|string|max:1000',
         ];
     }
 }

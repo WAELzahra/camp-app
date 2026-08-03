@@ -173,6 +173,13 @@ class CenterServiceApiController extends Controller
             'notes' => $eq->notes ?? null,
         ])->values()->toArray();
 
+        /* ── House rules — only rules the centre has actually configured ── */
+        $rules = $center->rules->map(fn ($r) => [
+            'type' => $r->type,
+            'is_allowed' => (bool) $r->is_allowed,
+            'notes' => $r->notes ?? null,
+        ])->values()->toArray();
+
         /* ── Assemble ─────────────────────────────────────────────────── */
         $data = [
             'id' => $center->id,
@@ -193,6 +200,7 @@ class CenterServiceApiController extends Controller
             'public_transport_accessible' => $center->public_transport_accessible,
             'public_transport_notes' => $center->public_transport_notes,
             'public_transport_final_leg' => $center->public_transport_final_leg,
+            'house_rules_notes' => $center->house_rules_notes,
             'average_rating' => $avgRating ? round((float) $avgRating, 2) : null,
             'review_count' => $reviewCount,
             'profile' => [
@@ -210,6 +218,7 @@ class CenterServiceApiController extends Controller
             ],
             'available_services' => $services,
             'available_equipment' => $equipment,
+            'rules' => $rules,
         ];
 
         if ($withPhotos) {

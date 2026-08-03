@@ -152,6 +152,12 @@ class CampingCentresController extends Controller
                 'public_transport_accessible' => $pc ? $pc->public_transport_accessible : $centre->public_transport_accessible,
                 'public_transport_notes' => $pc ? $pc->public_transport_notes : $centre->public_transport_notes,
                 'public_transport_final_leg' => $pc ? $pc->public_transport_final_leg : $centre->public_transport_final_leg,
+                'house_rules_notes' => $pc?->house_rules_notes,
+                'rules' => $pc ? $pc->rules->map(fn ($r) => [
+                    'type' => $r->type,
+                    'is_allowed' => (bool) $r->is_allowed,
+                    'notes' => $r->notes ?? null,
+                ])->values() : [],
                 'average_rating' => null,
                 'review_count' => 0,
                 'is_partner' => $isPartner,

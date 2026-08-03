@@ -42,6 +42,10 @@ class Reservations_centre extends Model
         'payment_submitted_at',
         'payment_confirmed_at',
         'confirmed_by',
+        'rules_accepted_at',
+        'rules_accepted_ip',
+        'rules_accepted_user_agent',
+        'rules_snapshot',
     ];
 
     protected $casts = [
@@ -50,7 +54,9 @@ class Reservations_centre extends Model
         'total_price' => 'decimal:2',
         'platform_fee_amount' => 'float',
         'platform_fee_rate' => 'float',
-        'last_modified_at' => 'datetime'
+        'last_modified_at' => 'datetime',
+        'rules_accepted_at' => 'datetime',
+        'rules_snapshot' => 'array',
     ];
     
     // Status constants

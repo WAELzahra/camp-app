@@ -33,6 +33,7 @@ class ProfileCentreResource extends BaseApiResource
             'public_transport_accessible' => $this->public_transport_accessible,
             'public_transport_notes'     => $this->public_transport_notes,
             'public_transport_final_leg' => $this->public_transport_final_leg,
+            'house_rules_notes'          => $this->house_rules_notes,
             'has_legal_document'         => (bool) $this->legal_document,
             'document_legal_type'        => $this->document_legal_type,
             'document_legal_expiration'  => $this->document_legal_expiration,
