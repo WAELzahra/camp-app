@@ -349,7 +349,7 @@ class ReservationsCentreController extends Controller
                     'amount_now' => $reservationCentre->amount_now,
                     'amount_later' => $reservationCentre->amount_later,
                     'balance_due_at' => $reservationCentre->balance_due_at,
-                    'clictopay_link' => ManualPaymentService::clicToPayLink(),
+                    'clictopay_available' => ManualPaymentService::isEnabled(),
                     'transfer_reference_submitted' => (bool) $reservationCentre->transfer_reference,
                 ];
             } elseif ($paymentMethod === 'cash') {

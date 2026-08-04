@@ -16,6 +16,7 @@ class Kernel extends ConsoleKernel
         $schedule->command('users:clean-status')->everyFiveMinutes();
         $schedule->command('payments:cancel-overdue-balances')->dailyAt('02:00');
         $schedule->command('payments:cancel-unsubmitted-manual')->hourly();
+        $schedule->command('payments:reconcile-clictopay')->hourly();
         // Personal-data retention policy (rejected KYC docs, expired CIN snapshots)
         $schedule->command('personal-data:purge')->dailyAt('03:00');
     }

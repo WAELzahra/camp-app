@@ -805,7 +805,7 @@ class ReservationEventController extends Controller
                 'option' => $reservation->payment_option,
                 'amount_now' => $reservation->amount_now,
                 'amount_later' => $reservation->amount_later,
-                'clictopay_link' => ManualPaymentService::clicToPayLink(),
+                'clictopay_available' => ManualPaymentService::isEnabled(),
                 'transfer_reference_submitted' => (bool) $reservation->transfer_reference,
             ];
         } elseif ($eventPaymentMethod === 'cash') {

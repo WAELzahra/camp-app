@@ -115,7 +115,12 @@ class ManualPaymentController extends Controller
             'amount_now' => $isBalanceStep ? $reservation->amount_later : $reservation->amount_now,
             'amount_later' => $isBalanceStep ? 0 : $reservation->amount_later,
             'balance_due_at' => $reservation->balance_due_at,
-            'clictopay_link' => ManualPaymentService::clicToPayLink(),
+            // Real ClicToPay integration (register.do/getOrderStatusExtended.do) —
+            // the frontend calls POST .../clictopay/init and redirects to the
+            // returned formUrl instead of an admin-configured static link. Wallet
+            // recharge and programme reservations still use the static
+            // ManualPaymentService::clicToPayLink() — out of scope here.
+            'clictopay_available' => ManualPaymentService::isEnabled(),
             'status' => $reservation->status,
             'is_balance_step' => $isBalanceStep,
         ]);

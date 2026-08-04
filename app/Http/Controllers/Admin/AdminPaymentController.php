@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\AdjustBalanceRequest;
 use App\Http\Requests\Admin\AdminPasswordRequest;
+use App\Http\Requests\Admin\ApproveCashRefundRequest;
 use App\Http\Requests\Admin\RejectRefundRequest;
 use App\Http\Requests\Admin\SettleDebtRequest;
 use App\Http\Requests\Admin\UpdatePaymentStatusRequest;
@@ -328,6 +329,101 @@ class AdminPaymentController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Remboursement approuvé. Balance camper créditée.',
+            'data' => $refund->fresh(['payment.user:id,first_name,last_name,email', 'payment.event:id,title,price']),
+        ]);
+    }
+
+    /**
+     * POST /admin/refunds/{id}/approve-cash
+     * Legal/compliance: refunds default to platform credit (approveRefund() above) —
+     * this is the distinct, explicit path for the narrow legally-mandated cash-refund
+     * exception. Mirrors approveRefund()'s provider-debit logic exactly (the provider
+     * still owes back what they received) but never credits the camper's Balance —
+     * the actual money movement happens manually, outside the app, same as a
+     * WithdrawalRequest payout. Requires a reason for audit (see
+     * ApproveCashRefundRequest) since this bypasses the credit-first default.
+     */
+    public function approveCashRefund(ApproveCashRefundRequest $request, $id)
+    {
+        if (!$this->checkPassword($request)) {
+            return response()->json(['success' => false, 'message' => 'Mot de passe incorrect.'], 403);
+        }
+
+        $refund = RefundRequest::findOrFail($id);
+
+        if ($refund->status !== 'en_attente') {
+            return response()->json(['success' => false, 'message' => 'Cette demande a déjà été traitée.'], 400);
+        }
+
+        DB::transaction(function () use ($refund, $request) {
+            $refund->update([
+                'status' => 'accepté',
+                'refund_method' => 'cash_direct',
+                'cash_refund_reason' => $request->reason,
+            ]);
+
+            // ── Wallet refund for centre reservation — provider still gives back what
+            //    they received; the camper's Balance is NOT credited here (unlike
+            //    approveRefund()) since they're getting an actual cash refund instead ──
+            if ($refund->payment_channel === 'wallet' && $refund->reservation_centre_id) {
+                $reservation = Reservations_centre::find($refund->reservation_centre_id);
+                if ($reservation) {
+                    $netToDebit = $refund->net_amount ?? $refund->montant_rembourse;
+                    $centreBalance = Balance::forUser($reservation->centre_id);
+                    if ($centreBalance->solde_disponible >= $netToDebit) {
+                        $centreBalance->debiter($netToDebit);
+                    }
+                    WalletTransaction::logDebit(
+                        $reservation->centre_id, 'refund_out', $netToDebit,
+                        'centre_reservation', $reservation->id,
+                        "Remboursement déduit (cash direct) — réservation #{$reservation->id}",
+                        $reservation->user_id
+                    );
+                }
+
+                return; // nothing more to do for wallet-centre refunds
+            }
+
+            // ── Standard payment refund — same provider-debit logic as approveRefund(),
+            //    just no camper Balance credit ──────────────────────────────────────
+            if ($refund->payment_id) {
+                $payment = Payments::find($refund->payment_id);
+                if ($payment) {
+                    $isTotal = $refund->montant_rembourse >= $payment->montant;
+                    $payment->update([
+                        'status' => $isTotal ? 'refunded_total' : 'refunded_partial',
+                    ]);
+
+                    $reservation = Reservations_events::where('payment_id', $payment->id)->first();
+                    if ($reservation && $reservation->group_id) {
+                        $orgBalance = Balance::forUser($reservation->group_id);
+                        if ($orgBalance->solde_disponible >= $refund->montant_rembourse) {
+                            $orgBalance->debiter($refund->montant_rembourse);
+                        }
+                    }
+                }
+            }
+
+            if ($refund->reservation_event_id) {
+                $reservation = Reservations_events::find($refund->reservation_event_id);
+                if ($reservation) {
+                    $statusMap = [
+                        'refunded_total' => 'remboursée_totale',
+                        'refunded_partial' => 'remboursée_partielle',
+                    ];
+                    $payment = $refund->payment;
+                    if ($payment) {
+                        $reservation->update([
+                            'status' => $statusMap[$payment->status] ?? 'remboursée_totale',
+                        ]);
+                    }
+                }
+            }
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => "Remboursement en espèces enregistré. Aucun crédit de plateforme n'a été ajouté — le virement doit être effectué manuellement.",
             'data' => $refund->fresh(['payment.user:id,first_name,last_name,email', 'payment.event:id,title,price']),
         ]);
     }

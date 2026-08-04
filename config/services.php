@@ -48,4 +48,10 @@ return [
         'secret' => env('TURNSTILE_SECRET_KEY'),
     ],
 
+    'clictopay' => [
+        'username' => env('CLICTOPAY_USERNAME'),
+        'password' => env('CLICTOPAY_PASSWORD'),
+        'base_url' => env('CLICTOPAY_BASE_URL', 'https://test.clictopay.com/payment/rest/'),
+    ],
+
 ];

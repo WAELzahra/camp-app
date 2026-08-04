@@ -17,6 +17,8 @@ class RefundRequest extends Model
         'payment_channel',
         'reason',
         'status',
+        'refund_method',
+        'cash_refund_reason',
     ];
 
     public function payment()

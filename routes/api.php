@@ -287,7 +287,11 @@ Route::middleware('auth:sanctum')->get('/user/{id}/verification-status', functio
 });
 
 // -------------------- PAYMENT CALLBACKS (Public) --------------------
-Route::get('/clictopay/callback', [PaymentController::class, 'callback']);
+// ClicToPay redirects the camper's browser here after the hosted payment page —
+// both routes verify the real outcome via getOrderStatusExtended.do before
+// trusting anything (manual §3 "règle critique").
+Route::get('/clictopay/return', [\App\Http\Controllers\Payment\ClicToPayController::class, 'returnFromGateway']);
+Route::get('/clictopay/fail', [\App\Http\Controllers\Payment\ClicToPayController::class, 'failFromGateway']);
 
 // -------------------- ROLES (Public) --------------------
 Route::get('/roles', function () {
@@ -333,7 +337,12 @@ Route::middleware('auth:sanctum')->group(function () {
     // ---- Balance (per-user read) ----
     Route::get('/my/balance', function () {
         $balance = \App\Models\Balance::forUser(auth()->id());
-        return response()->json(['success' => true, 'data' => $balance]);
+        $data = $balance->toArray();
+        // Legal/compliance: how much of solde_disponible can actually be cashed out —
+        // see Balance::withdrawableCashFor() for the campeur-vs-provider distinction.
+        $data['withdrawable_cash'] = \App\Models\Balance::withdrawableCashFor(auth()->id(), (int) auth()->user()->role_id);
+
+        return response()->json(['success' => true, 'data' => $data]);
     });
 
     // ---- Escrow breakdown (camper: per-reservation held-funds detail) ----
@@ -467,6 +476,27 @@ Route::middleware('auth:sanctum')->group(function () {
         }
 
         $balance = \App\Models\Balance::forUser(auth()->id());
+
+        // Legal/compliance: a campeur's Crédit de Réservation (top-ups, refunds, promo
+        // credits) is a restricted service credit, not a stored-value account —
+        // TermsContent.tsx already commits to "non remboursable en espèces" except 3 narrow
+        // cases. BUT a campeur can also earn real money by renting out their own equipment
+        // (materiel_reservation 'reservation_income' — see ReservationMaterielleController),
+        // and that income is genuinely theirs to withdraw, same as any other provider's
+        // earnings. So the cap only applies to campeur-role users, and only caps them to
+        // what they've actually EARNED (net of anything already spent/withdrawn) — never to
+        // their Crédit de Réservation. Provider roles (organizer/centre/fournisseur/guide)
+        // are unaffected: every TND in their balance is earned revenue already.
+        if ((int) auth()->user()->role_id === 1) {
+            $withdrawable = \App\Models\Balance::withdrawableCashFor(auth()->id(), 1);
+
+            if ($data['montant'] > $withdrawable) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Vous ne pouvez retirer en espèces que vos gains de location de matériel ({$withdrawable} TND disponibles). Votre Crédit de Réservation n'est pas retirable en espèces — il est utilisable uniquement pour vos réservations.",
+                ], 422);
+            }
+        }
 
         if (($balance->solde_disponible ?? 0) < $data['montant']) {
             return response()->json(['success' => false, 'message' => 'Solde insuffisant.'], 422);
@@ -1016,6 +1046,9 @@ Route::middleware(['auth:sanctum'])->prefix('my')->group(function () {
         ->where('type', 'events|centres|materielles');
     Route::get('/reservations/{type}/{id}/payment-info', [\App\Http\Controllers\Reservation\ManualPaymentController::class, 'paymentInfo'])
         ->where('type', 'events|centres|materielles');
+    Route::post('/reservations/{type}/{id}/clictopay/init', [\App\Http\Controllers\Payment\ClicToPayController::class, 'initiate'])
+        ->middleware('throttle:30,1')
+        ->where('type', 'events|centres|materielles');
     Route::get('/payment-preferences',  [\App\Http\Controllers\Reservation\ManualPaymentController::class, 'getPreferences']);
     Route::put('/payment-preferences',  [\App\Http\Controllers\Reservation\ManualPaymentController::class, 'updatePreferences']);
 
@@ -1315,6 +1348,8 @@ Route::prefix('annonces')->group(function () {
     Route::prefix('refunds')->group(function () {
         Route::get('/',              [AdminPaymentController::class, 'refunds']);
         Route::post('/{id}/approve', [AdminPaymentController::class, 'approveRefund']);
+        // Legally-mandated cash-refund exception — bypasses the credit-first default (see approveCashRefund())
+        Route::post('/{id}/approve-cash', [AdminPaymentController::class, 'approveCashRefund']);
         Route::post('/{id}/reject',  [AdminPaymentController::class, 'rejectRefund']);
     });
 

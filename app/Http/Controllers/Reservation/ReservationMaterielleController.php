@@ -371,7 +371,7 @@ class ReservationMaterielleController extends Controller
                     'amount_now' => $reservation->amount_now,
                     'amount_later' => $reservation->amount_later,
                     'balance_due_at' => $reservation->balance_due_at,
-                    'clictopay_link' => ManualPaymentService::clicToPayLink(),
+                    'clictopay_available' => ManualPaymentService::isEnabled(),
                     'transfer_reference_submitted' => (bool) $reservation->transfer_reference,
                 ];
             } elseif ($paymentMethod === 'cash') {

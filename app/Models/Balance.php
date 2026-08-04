@@ -119,4 +119,33 @@ class Balance extends Model
     {
         return self::firstOrCreate(['user_id' => $userId]);
     }
+
+    /**
+     * Legal/compliance: how much of this user's balance can actually be withdrawn as
+     * cash. Provider roles (organizer/centre/fournisseur/guide) can withdraw their
+     * full balance — it's all earned revenue. Campeurs (role_id 1) can ALSO earn real
+     * money (e.g. renting out their own equipment — see ReservationMaterielleController
+     * crediting 'reservation_income' even when the recipient is a plain campeur), but
+     * their Crédit de Réservation (top-ups/refunds/promo credits) is a restricted
+     * service credit and must never be cashable — see /my/withdrawal-request in
+     * routes/api.php, which enforces this same cap server-side.
+     */
+    public static function withdrawableCashFor(int $userId, int $roleId): float
+    {
+        $balance = self::forUser($userId);
+        $available = (float) ($balance->solde_disponible ?? 0);
+
+        if ($roleId !== 1) {
+            return $available;
+        }
+
+        $earned = (float) WalletTransaction::where('user_id', $userId)
+            ->where('type', 'credit')->where('category', 'reservation_income')
+            ->sum('net_amount');
+        $spent = (float) WalletTransaction::where('user_id', $userId)
+            ->where('type', 'debit')
+            ->sum('amount_gross');
+
+        return min(max(0, $earned - $spent), $available);
+    }
 }

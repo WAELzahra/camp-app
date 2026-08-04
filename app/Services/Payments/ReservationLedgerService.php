@@ -5,8 +5,13 @@ namespace App\Services\Payments;
 use App\Models\AdminWalletTransaction;
 use App\Models\Balance;
 use App\Models\PaymentTransaction;
+use App\Models\Reservations_centre;
+use App\Models\Reservations_events;
+use App\Models\Reservations_materielles;
+use App\Models\User;
 use App\Models\WalletTransaction;
 use App\Services\CommissionService;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Money movement for MANUAL (gateway) payments + unified payment tracing.
@@ -148,6 +153,178 @@ class ReservationLedgerService
                 $providerId
             );
         }
+    }
+
+    /**
+     * Confirm a submitted payment (bank transfer OR ClicToPay) for events /
+     * centres / materielles. Extracted from AdminPaymentReviewController::confirm()
+     * so the admin-review path (manual bank-transfer verification, $confirmedBy =
+     * the admin's user id) and the ClicToPayController automatic
+     * getOrderStatusExtended.do confirmation ($confirmedBy = null, system-confirmed)
+     * share the exact same money/status logic — no separate code path to drift.
+     *
+     * Locked so a concurrent duplicate call (double admin click, or a camper
+     * hitting a ClicToPay returnUrl twice) can't double-credit.
+     */
+    public static function confirmSubmittedPayment(string $type, int $id, ?int $confirmedBy): array
+    {
+        return DB::transaction(function () use ($type, $id, $confirmedBy) {
+            $reservation = self::findReservation($type, $id, lock: true);
+            if (!$reservation) {
+                return ['error' => 404, 'message' => 'Réservation introuvable.'];
+            }
+
+            if (!in_array($reservation->status, ['paiement_soumis', 'solde_soumis'])) {
+                return ['error' => 422, 'message' => 'Aucun paiement en attente de validation pour cette réservation.'];
+            }
+
+            $wasBalance = ($reservation->status === 'solde_soumis');
+            $isCash = ($reservation->payment_method === 'cash');
+            $newStatus = self::resolveConfirmedStatus($reservation, $type);
+
+            // Amount actually received with THIS confirmation (before mutating fields)
+            $grossTotal = (float) ($reservation->total_price ?? $reservation->montant_total ?? (($reservation->amount_now ?? 0) + ($reservation->amount_later ?? 0)));
+            $tranche = $wasBalance
+                ? (float) ($reservation->amount_later ?? 0)
+                : ($reservation->payment_option === 'deposit' ? (float) ($reservation->amount_now ?? $grossTotal) : $grossTotal);
+
+            $reservation->status = $newStatus;
+            $reservation->payment_confirmed_at = now();
+            $reservation->confirmed_by = $confirmedBy;
+            if ($wasBalance) {
+                $reservation->amount_later = 0; // balance settled in full
+            }
+            $reservation->save();
+
+            // ── Money traceability (Task A-04) ──────────────────────────────────
+            $reservationTypeKey = match ($type) { 'events' => 'event', 'centres' => 'centre', default => 'materielle' };
+            $gatewayLabel = $isCash ? 'cash' : ($reservation->clictopay_order_id ? 'clictopay' : 'bank_transfer');
+            self::recordGatewayPayment(
+                (int) $reservation->user_id, (int) $reservation->id, $reservationTypeKey,
+                $tranche, $gatewayLabel,
+                ($reservation->payment_reference ?? 'RES-' . $reservation->id) . ($wasBalance ? '-SOLDE' : '')
+            );
+
+            if (($isCash || $wasBalance) && $tranche > 0) {
+                [$providerId, $commissionKey, $refType] = match ($type) {
+                    'events'  => [(int) $reservation->group_id, 'group', 'event_reservation'],
+                    'centres' => [(int) $reservation->centre_id, 'center', 'centre_reservation'],
+                    default   => [(int) $reservation->fournisseur_id,
+                                  (User::find($reservation->fournisseur_id)?->role_id === 4 ? 'supplier' : 'camper'),
+                                  'materiel_reservation'],
+                };
+
+                if ($isCash) {
+                    // Cash never touched the platform — book what the provider now owes
+                    // us (their commission + the camper's fee) instead of crediting them.
+                    self::recordCashCollection(
+                        $providerId, $commissionKey, $grossTotal, (float) ($reservation->platform_fee_amount ?? 0)
+                    );
+                } else {
+                    // Balance settlement: the provider already accepted the reservation, so
+                    // the remaining tranche is earned NOW — credit it (fee was charged on tranche 1).
+                    self::creditManualTranche(
+                        $refType, (int) $reservation->id, $providerId, $commissionKey, (int) $reservation->user_id,
+                        $grossTotal, (float) ($reservation->platform_fee_amount ?? 0), $tranche, false,
+                        "Solde réservation #{$reservation->id} (paiement manuel)"
+                    );
+                }
+            }
+
+            $notifTitle = $isCash ? 'Paiement en espèces confirmé ✓' : ($wasBalance ? 'Solde confirmé ✓' : 'Paiement confirmé ✓');
+            $notifBody = $isCash
+                ? "Votre paiement en espèces ({$reservation->payment_reference}) a été confirmé. Votre réservation est entièrement payée."
+                : ($wasBalance
+                    ? "Votre solde restant ({$reservation->payment_reference}) a été validé. Votre réservation est entièrement payée."
+                    : "Votre paiement ({$reservation->payment_reference}) a été validé. Votre réservation est en attente de confirmation par le prestataire.");
+
+            return [
+                'success' => true,
+                'newStatus' => $newStatus,
+                'userId' => (int) $reservation->user_id,
+                'notifTitle' => $notifTitle,
+                'notifBody' => $notifBody,
+            ];
+        });
+    }
+
+    /**
+     * Reject a submitted payment. Extracted from AdminPaymentReviewController::reject()
+     * for the same reason as confirmSubmittedPayment() — shared by the admin-review
+     * path and ClicToPayController's automatic orderStatus != 2 handling.
+     */
+    public static function rejectSubmittedPayment(string $type, int $id): array
+    {
+        return DB::transaction(function () use ($type, $id) {
+            $reservation = self::findReservation($type, $id, lock: true);
+            if (!$reservation) {
+                return ['error' => 404, 'message' => 'Réservation introuvable.'];
+            }
+
+            if (!in_array($reservation->status, ['paiement_soumis', 'solde_soumis'])) {
+                return ['error' => 422, 'message' => 'Aucun paiement en attente de validation pour cette réservation.'];
+            }
+
+            // A rejected balance reverts to the host-accepted state (balance still owed) so
+            // the camper can resubmit; a rejected initial payment becomes paiement_invalide
+            // (the provider/admin can call markCashReceived() again from that status for cash).
+            $wasBalance = ($reservation->status === 'solde_soumis');
+            $isCash = ($reservation->payment_method === 'cash');
+            $reservation->status = $wasBalance
+                ? match ($type) {
+                    'events' => 'confirmée', 'centres' => 'approved', default => 'confirmed'
+                }
+            : 'paiement_invalide';
+            $reservation->save();
+
+            $notifTitle = $isCash ? 'Paiement en espèces non confirmé' : ($wasBalance ? 'Solde non validé' : 'Virement non trouvé');
+            $notifBody = $isCash
+                ? "Nous n'avons pas pu confirmer votre paiement en espèces ({$reservation->payment_reference}). Merci de vérifier avec le prestataire et de le signaler à nouveau."
+                : ($wasBalance
+                    ? "Nous n'avons pas pu vérifier votre virement de solde ({$reservation->payment_reference}). Veuillez vérifier et soumettre à nouveau."
+                    : "Nous n'avons pas pu vérifier votre virement ({$reservation->payment_reference}). Veuillez vérifier la référence et soumettre à nouveau.");
+
+            return [
+                'success' => true,
+                'newStatus' => $reservation->status,
+                'userId' => (int) $reservation->user_id,
+                'notifTitle' => $notifTitle,
+                'notifBody' => $notifBody,
+            ];
+        });
+    }
+
+    /**
+     * Determine the next status after a submitted payment is confirmed (admin or
+     * automatic gateway). See AdminPaymentReviewController::resolveConfirmedStatus()
+     * original docblock for the full reasoning — mirrored verbatim here.
+     */
+    private static function resolveConfirmedStatus(mixed $r, string $type): string
+    {
+        if ($r->status === 'solde_soumis' || $r->payment_method === 'cash') {
+            return match ($type) {
+                'events' => 'confirmée',
+                'centres' => 'approved',
+                default => 'confirmed', // materielles
+            };
+        }
+
+        // Initial payment confirmed → host review queue.
+        return match ($type) {
+            'events' => 'en_attente_validation',
+            'centres' => 'pending',
+            default => 'pending', // materielles
+        };
+    }
+
+    private static function findReservation(string $type, int $id, bool $lock = false): mixed
+    {
+        return match ($type) {
+            'events' => $lock ? Reservations_events::whereKey($id)->lockForUpdate()->first() : Reservations_events::find($id),
+            'centres' => $lock ? Reservations_centre::whereKey($id)->lockForUpdate()->first() : Reservations_centre::find($id),
+            'materielles' => $lock ? Reservations_materielles::whereKey($id)->lockForUpdate()->first() : Reservations_materielles::find($id),
+            default => null,
+        };
     }
 
     /**
