@@ -87,12 +87,17 @@ class RichDataSeeder extends Seeder
 
     private function seedPlatformCancellationFees(Carbon $now): void
     {
-        DB::table('platform_cancellation_fees')->insert([
+        // The create_platform_cancellation_fees_table migration already inserts
+        // default 0% rows for camper/centre/group right after creating the table
+        // — upsert so re-running this seeder on top of that (or re-running the
+        // seeder itself) updates the rates instead of violating the actor_type
+        // unique constraint.
+        DB::table('platform_cancellation_fees')->upsert([
             ['actor_type' => 'camper',   'fee_percentage' => 5.00,  'is_active' => 1, 'created_at' => $now, 'updated_at' => $now],
             ['actor_type' => 'centre',   'fee_percentage' => 10.00, 'is_active' => 1, 'created_at' => $now, 'updated_at' => $now],
             ['actor_type' => 'group',    'fee_percentage' => 8.00,  'is_active' => 1, 'created_at' => $now, 'updated_at' => $now],
             ['actor_type' => 'supplier', 'fee_percentage' => 7.50,  'is_active' => 0, 'created_at' => $now, 'updated_at' => $now],
-        ]);
+        ], ['actor_type'], ['fee_percentage', 'is_active', 'updated_at']);
         $this->command->info('  platform_cancellation_fees: 4');
     }
 
