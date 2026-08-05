@@ -71,7 +71,9 @@ class ClicToPayController extends Controller
         try {
             $result = $this->gateway->register(
                 $orderNumber, $amount, $returnUrl, $failUrl,
-                "Réservation {$reservation->payment_reference}"
+                "Réservation {$reservation->payment_reference}",
+                in_array($request->header('X-Locale'), ['fr', 'en', 'ar'], true) ? $request->header('X-Locale') : 'fr',
+                $this->isMobile($request) ? 'MOBILE' : 'DESKTOP',
             );
         } catch (\Throwable $e) {
             Log::error('ClicToPay initiate failed', ['type' => $type, 'id' => $id, 'error' => $e->getMessage()]);
@@ -112,9 +114,27 @@ class ClicToPayController extends Controller
         $id = (int) $request->query('id');
         $frontend = rtrim((string) config('app.frontend_url'), '/');
 
+        $redirect = fn (string $status) => redirect()->away(
+            "{$frontend}/payment/result?status={$status}&type={$type}&id={$id}"
+        );
+
         $reservation = $this->findAny($type, $id);
         if (!$reservation || !$reservation->clictopay_order_id) {
-            return redirect()->away("{$frontend}/payment/result?status=error&type={$type}&id={$id}");
+            return $redirect('error');
+        }
+
+        // These routes are necessarily public (ClicToPay drives the browser here),
+        // so type/id alone are guessable. ClicToPay appends its own orderId to the
+        // return/fail URL — when present it must match the order we registered for
+        // this reservation, otherwise anyone could drive someone else's payment.
+        $callbackOrderId = (string) $request->query('orderId', '');
+        if ($callbackOrderId !== '' && !hash_equals((string) $reservation->clictopay_order_id, $callbackOrderId)) {
+            Log::warning('ClicToPay callback orderId mismatch', [
+                'type' => $type, 'id' => $id,
+                'expected' => $reservation->clictopay_order_id, 'received' => $callbackOrderId,
+            ]);
+
+            return $redirect('error');
         }
 
         try {
@@ -122,10 +142,38 @@ class ClicToPayController extends Controller
         } catch (\Throwable $e) {
             Log::error('ClicToPay status check failed', ['type' => $type, 'id' => $id, 'error' => $e->getMessage()]);
 
-            return redirect()->away("{$frontend}/payment/result?status=error&type={$type}&id={$id}");
+            return $redirect('error');
         }
 
         $orderStatus = (int) ($statusResponse['orderStatus'] ?? -1);
+
+        // orderStatus 0 = order registered, not yet paid; 5 = 3DS authentication
+        // still in flight (manual §6.1). Neither is a decline — landing on returnUrl
+        // without having actually paid produces exactly this — so the reservation
+        // must stay awaiting payment instead of being marked invalid. The hourly
+        // payments:reconcile-clictopay command settles it once it reaches a
+        // terminal status.
+        if (in_array($orderStatus, [0, 5], true)) {
+            Log::info('ClicToPay callback: order not settled yet, left pending', [
+                'type' => $type, 'id' => $id, 'orderStatus' => $orderStatus,
+            ]);
+
+            return $redirect('pending');
+        }
+
+        // Never confirm on orderStatus alone: the debited amount and currency must
+        // match what we registered, so a stale or tampered order can't settle a
+        // reservation for the wrong sum.
+        if ($orderStatus === 2 && !$this->amountMatches($reservation, $statusResponse)) {
+            Log::error('ClicToPay amount/currency mismatch — payment NOT confirmed', [
+                'type' => $type, 'id' => $id,
+                'orderId' => $reservation->clictopay_order_id,
+                'reported' => ['amount' => $statusResponse['amount'] ?? null, 'currency' => $statusResponse['currency'] ?? null],
+                'expected_millimes' => $this->expectedMillimes($reservation),
+            ]);
+
+            return $redirect('error');
+        }
 
         $outcome = $orderStatus === 2
             ? ReservationLedgerService::confirmSubmittedPayment($type, $id, null)
@@ -139,9 +187,34 @@ class ClicToPayController extends Controller
             $this->notifyUser($outcome['userId'], $outcome['notifTitle'], $outcome['notifBody']);
         }
 
-        $resultStatus = $orderStatus === 2 ? 'success' : 'failed';
+        return $redirect($orderStatus === 2 ? 'success' : 'failed');
+    }
 
-        return redirect()->away("{$frontend}/payment/result?status={$resultStatus}&type={$type}&id={$id}");
+    /** Millimes we registered for the tranche currently awaiting settlement. */
+    private function expectedMillimes(mixed $reservation): int
+    {
+        $tnd = (float) ($reservation->status === 'solde_soumis'
+            ? ($reservation->amount_later ?? 0)
+            : ($reservation->amount_now ?? 0));
+
+        return (int) round($tnd * 1000);
+    }
+
+    private function amountMatches(mixed $reservation, array $statusResponse): bool
+    {
+        $expected = $this->expectedMillimes($reservation);
+        if ($expected <= 0) {
+            return false;
+        }
+
+        $currency = (string) ($statusResponse['currency'] ?? '788');
+
+        return (int) ($statusResponse['amount'] ?? 0) === $expected && $currency === '788';
+    }
+
+    private function isMobile(Request $request): bool
+    {
+        return (bool) preg_match('/Mobile|Android|iPhone|iPad|iPod/i', (string) $request->userAgent());
     }
 
     private function findOwn(string $type, int $id): mixed

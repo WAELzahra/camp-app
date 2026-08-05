@@ -27,6 +27,15 @@ class ReconcileClicToPayPayments extends Command
     /** Minutes to wait before assuming the callback is never coming. */
     private const GRACE_MINUTES = 15;
 
+    /**
+     * Minutes before an order ClicToPay still reports as unpaid (orderStatus 0/5)
+     * is treated as abandoned. Until it is released the reservation sits in
+     * paiement_soumis/solde_soumis, which ClicToPayController::initiate() refuses
+     * to restart — so without this the camper could never retry a payment they
+     * simply walked away from.
+     */
+    private const ABANDON_MINUTES = 60;
+
     private array $models = [
         'events' => Reservations_events::class,
         'centres' => Reservations_centre::class,
@@ -56,9 +65,20 @@ class ReconcileClicToPayPayments extends Command
 
                 $orderStatus = (int) ($statusResponse['orderStatus'] ?? -1);
 
-                // Still awaiting payment on ClicToPay's side (orderStatus 0/5) — leave
-                // it for the next run rather than prematurely rejecting it.
+                // Still awaiting payment on ClicToPay's side (orderStatus 0/5): give
+                // the camper time to finish, then release the hold so they can retry.
+                // rejectSubmittedPayment() restores exactly the statuses initiate()
+                // accepts, and this command sends no notification — so a camper who
+                // merely abandoned the page is not told their payment was refused.
                 if (in_array($orderStatus, [0, 5], true)) {
+                    if ($reservation->payment_submitted_at > now()->subMinutes(self::ABANDON_MINUTES)) {
+                        continue;
+                    }
+
+                    $released = ReservationLedgerService::rejectSubmittedPayment($type, $reservation->id);
+                    if (!isset($released['error'])) {
+                        $this->line("  [{$type}] #{$reservation->id} released — payment abandoned (orderStatus={$orderStatus})");
+                    }
                     continue;
                 }
 

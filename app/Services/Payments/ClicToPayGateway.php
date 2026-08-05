@@ -37,11 +37,13 @@ class ClicToPayGateway
         string $returnUrl,
         string $failUrl,
         ?string $description = null,
+        string $language = 'fr',
+        string $pageView = 'DESKTOP',
     ): array {
         // amount is in millimes (minimal units), no decimal separator — 10 TND = 10000.
         $amountMillimes = (int) round($amountTnd * 1000);
 
-        $response = Http::asForm()->post($this->baseUrl . 'register.do', [
+        $payload = [
             'userName'    => $this->username,
             'password'    => $this->password,
             'orderNumber' => $orderNumber,
@@ -49,11 +51,25 @@ class ClicToPayGateway
             'currency'    => '788', // TND
             'returnUrl'   => $returnUrl,
             'failUrl'     => $failUrl,
-            'description' => $description,
-            'language'    => 'fr',
-        ]);
+            'language'    => in_array($language, ['fr', 'en', 'ar'], true) ? $language : 'fr',
+            'pageView'    => $pageView === 'MOBILE' ? 'MOBILE' : 'DESKTOP',
+        ];
+        if ($description !== null && $description !== '') {
+            $payload['description'] = $description;
+        }
+
+        $response = Http::asForm()->post($this->baseUrl . 'register.do', $payload);
 
         $data = $response->json() ?? [];
+
+        // Full raw response logged on every call — the cahier de recettes requires
+        // pasting the untouched JSON straight out of the merchant's own logs.
+        Log::info('ClicToPay register.do', [
+            'orderNumber' => $orderNumber,
+            'amount'      => $amountMillimes,
+            'http'        => $response->status(),
+            'response'    => $data,
+        ]);
 
         if (!empty($data['errorCode']) && (int) $data['errorCode'] !== 0) {
             Log::error('ClicToPay register.do failed', ['orderNumber' => $orderNumber, 'response' => $data]);
@@ -83,6 +99,12 @@ class ClicToPayGateway
         ]);
 
         $data = $response->json() ?? [];
+
+        Log::info('ClicToPay getOrderStatusExtended.do', [
+            'orderId'  => $orderId,
+            'http'     => $response->status(),
+            'response' => $data,
+        ]);
 
         if (!empty($data['errorCode']) && (int) $data['errorCode'] !== 0) {
             Log::error('ClicToPay getOrderStatusExtended.do failed', ['orderId' => $orderId, 'response' => $data]);
