@@ -3,3 +3,11 @@ builder = "railpack"
 
 [build.config]
 phpVersion = "8.2"
+
+# Railpack auto-detects database/schema/mysql-schema.sql and generates a
+# pre-deploy migrate command assuming Laravel 11+'s schema-loading migrate
+# flags (e.g. --no-schema-load). This app is on Laravel 10.48, whose migrate
+# command has no such flag — that mismatch crashes the container on boot.
+# Overriding preDeployCommand replaces that broken auto-generated call.
+[deploy]
+preDeployCommand = ["php artisan migrate --force"]
