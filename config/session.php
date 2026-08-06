@@ -200,6 +200,22 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Same-Site Override (real value, untouched by Sanctum)
+    |--------------------------------------------------------------------------
+    |
+    | Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful hardcodes
+    | 'session.same_site' to "lax" on every stateful API request, regardless of
+    | the setting above. App\Http\Middleware\RestoreSessionSameSite reads this
+    | untouched copy to restore the real configured value afterward — needed
+    | when the frontend and backend are on genuinely separate domains (see
+    | that middleware's docblock for why Sanctum's default doesn't work there).
+    |
+    */
+
+    'same_site_override' => env('SESSION_SAME_SITE', 'lax'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Partitioned Cookies
     |--------------------------------------------------------------------------
     |
