@@ -4,7 +4,7 @@ namespace App\Http\Controllers\zonecamping;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Zone\PublicNearbyZonesRequest;
-use App\Models\Camping_Zones;
+use App\Models\CampingZone;
 use Illuminate\Http\Request;
 
 class PublicCampingController extends Controller
@@ -12,7 +12,7 @@ class PublicCampingController extends Controller
     public function zonesWithCentres()
     {
         // Récupérer toutes les zones actives avec leur centre
-        $zones = Camping_Zones::with(['centre.user.profile', 'centre.user.profileCentre'])
+        $zones = CampingZone::with(['centre.user.profile', 'centre.user.profileCentre'])
             ->where('status', '1')
             ->get();
 
@@ -44,7 +44,7 @@ class PublicCampingController extends Controller
     // Lister les zones avec centre et filtrage intelligent
     public function zonesWithFilters(Request $request)
     {
-        $query = \App\Models\Camping_Zones::with(['centre.user.profile', 'centre.user.profileCentre'])
+        $query = \App\Models\CampingZone::with(['centre.user.profile', 'centre.user.profileCentre'])
             ->where('status', '1');
 
         if ($request->filled('type_activitee')) {
@@ -80,7 +80,7 @@ class PublicCampingController extends Controller
 
         $radius = $request->radius ?? 10;
 
-        $zones = \App\Models\Camping_Zones::select('*')
+        $zones = \App\Models\CampingZone::select('*')
             ->selectRaw(
                 '(6371 * acos(cos(radians(?)) * cos(radians(lat)) * cos(radians(lng) - radians(?)) + sin(radians(?)) * sin(radians(lat)))) AS distance',
                 [$request->lat, $request->lng, $request->lat]

@@ -4,7 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use App\Models\Camping_Zones;
+use App\Models\CampingZone;
 
 class Favoris extends Model
 {
@@ -29,7 +29,7 @@ class Favoris extends Model
         {
             switch ($this->type) {
                 case 'zone':
-                    return Camping_Zones::find($this->target_id);
+                    return CampingZone::find($this->target_id);
                 case 'centre':
                     return CampingCentre::find($this->target_id);
                 case 'event':
@@ -45,7 +45,7 @@ class Favoris extends Model
             case 'centre':
                 return $this->belongsTo(\App\Models\CampingCentre::class, 'target_id');
             case 'zone':
-                return $this->belongsTo(\App\Models\Camping_Zones::class, 'target_id');
+                return $this->belongsTo(\App\Models\CampingZone::class, 'target_id');
             default:
                 return null;
         }
