@@ -8,6 +8,7 @@ use Illuminate\Validation\ValidationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\QueryException;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Session\TokenMismatchException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException;
@@ -85,6 +86,18 @@ class Handler extends ExceptionHandler
                 'message' => 'Unauthenticated. Please log in.',
                 'error'   => 'unauthenticated',
             ], 401);
+        }
+
+        if ($e instanceof TokenMismatchException) {
+            // Frontend retries once on 419 after refreshing the CSRF cookie
+            // (see api.ts response interceptor) — must stay a real 419, not
+            // fall through to the generic 500 branch below, or that recovery
+            // path never triggers.
+            return response()->json([
+                'success' => false,
+                'message' => 'CSRF token mismatch. Please try again.',
+                'error'   => 'csrf_mismatch',
+            ], 419);
         }
 
         if ($e instanceof AuthorizationException) {
