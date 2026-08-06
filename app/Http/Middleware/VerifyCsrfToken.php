@@ -16,5 +16,10 @@ class VerifyCsrfToken extends Middleware
         // Only web routes that are genuinely stateless need exemption here.
         'sanctum/csrf-cookie',
         'broadcasting/auth',
+        // Credential-based Bearer token issuance (Postman/API clients, and
+        // cross-domain deployments where third-party cookies are blocked).
+        // No session cookie is relied on here, so there is nothing for CSRF
+        // to protect — the endpoint already requires the actual password.
+        'api/token-login',
     ];
 }
