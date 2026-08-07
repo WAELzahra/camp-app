@@ -28,7 +28,12 @@ use Illuminate\Support\Facades\DB;
  */
 class ReservationLedgerService
 {
-    /** Trace a confirmed payment. Idempotent per (reservation, type, amount). */
+    /**
+     * Trace a payment attempt (success or failure). Idempotent per
+     * (reservation, type, amount, reference, status) — a failed attempt never
+     * blocks the later successful retry from also being recorded, since that
+     * lookup includes status.
+     */
     public static function recordGatewayPayment(
         int $userId,
         int $reservationId,
@@ -36,6 +41,7 @@ class ReservationLedgerService
         float $amount,
         string $gateway,           // clictopay | bank_transfer | reservation_credit | cash
         ?string $reference = null,
+        string $status = 'completed', // completed | failed
     ): void {
         if ($amount <= 0) {
             return;
@@ -49,6 +55,7 @@ class ReservationLedgerService
             ->where('payment_type', 'reservation')
             ->where('amount', round($amount, 2))
             ->where('gateway_reference', $reference)
+            ->where('status', $status)
             ->exists();
         if ($exists) {
             return;
@@ -60,7 +67,7 @@ class ReservationLedgerService
             'user_id'           => $userId,
             'gateway'           => $gateway,
             'amount'            => round($amount, 2),
-            'status'            => 'completed',
+            'status'            => $status,
             'gateway_reference' => $reference,
             'payment_type'      => 'reservation',
             'processed_at'      => now(),
@@ -276,6 +283,22 @@ class ReservationLedgerService
                 }
             : 'paiement_invalide';
             $reservation->save();
+
+            // ── Money traceability (Task A-04) — mirrors confirmSubmittedPayment so a
+            // declined/rejected payment is just as visible to the camper as a
+            // successful one, not silently dropped.
+            $grossTotal = (float) ($reservation->total_price ?? $reservation->montant_total ?? (($reservation->amount_now ?? 0) + ($reservation->amount_later ?? 0)));
+            $tranche = $wasBalance
+                ? (float) ($reservation->amount_later ?? 0)
+                : ($reservation->payment_option === 'deposit' ? (float) ($reservation->amount_now ?? $grossTotal) : $grossTotal);
+            $reservationTypeKey = match ($type) { 'events' => 'event', 'centres' => 'centre', default => 'materielle' };
+            $gatewayLabel = $isCash ? 'cash' : ($reservation->clictopay_order_id ? 'clictopay' : 'bank_transfer');
+            self::recordGatewayPayment(
+                (int) $reservation->user_id, (int) $reservation->id, $reservationTypeKey,
+                $tranche, $gatewayLabel,
+                ($reservation->payment_reference ?? 'RES-' . $reservation->id) . ($wasBalance ? '-SOLDE' : ''),
+                'failed',
+            );
 
             $notifTitle = $isCash ? 'Paiement en espèces non confirmé' : ($wasBalance ? 'Solde non validé' : 'Virement non trouvé');
             $notifBody = $isCash
