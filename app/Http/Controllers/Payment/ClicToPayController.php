@@ -73,7 +73,13 @@ class ClicToPayController extends Controller
                 $orderNumber, $amount, $returnUrl, $failUrl,
                 "Réservation {$reservation->payment_reference}",
                 in_array($request->header('X-Locale'), ['fr', 'en', 'ar'], true) ? $request->header('X-Locale') : 'fr',
-                $this->isMobile($request) ? 'MOBILE' : 'DESKTOP',
+                // Always DESKTOP for now: this test merchant account's MOBILE
+                // template 404s on ClicToPay's side (their sandbox, not ours —
+                // confirmed by isMobile() correctly firing and the manual
+                // documenting MOBILE as a valid pageView value). Revert to
+                // $this->isMobile($request) ? 'MOBILE' : 'DESKTOP' once
+                // ClicToPay confirms the mobile template is provisioned.
+                'DESKTOP',
             );
         } catch (\Throwable $e) {
             Log::error('ClicToPay initiate failed', ['type' => $type, 'id' => $id, 'error' => $e->getMessage()]);
