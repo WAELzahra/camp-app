@@ -24,6 +24,7 @@ use App\Services\ManualPaymentService;
 use App\Services\PaymentReferenceService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 
 class ReservationMaterielleController extends Controller
@@ -345,7 +346,19 @@ class ReservationMaterielleController extends Controller
 
             DB::commit();
 
-            Mail::to($fournisseur->email)->send(new NewReservationToFournisseur($reservation, $user));
+            // Best-effort notification — the reservation is already committed at this
+            // point, so a mail failure (bad SMTP/API config, unverified sending domain,
+            // an unreachable recipient) must never surface as a false "reservation
+            // failed" to a camper whose booking and escrowed funds actually went through.
+            try {
+                Mail::to($fournisseur->email)->send(new NewReservationToFournisseur($reservation, $user));
+            } catch (\Throwable $mailError) {
+                Log::error('Failed to send NewReservationToFournisseur notification', [
+                    'reservation_id' => $reservation->id,
+                    'fournisseur_email' => $fournisseur->email,
+                    'error' => $mailError->getMessage(),
+                ]);
+            }
 
             $policies = $isRental ? [
                 'Your CIN has been recorded for this reservation.',
@@ -607,7 +620,15 @@ class ReservationMaterielleController extends Controller
 
         $camper = User::find($reservation->user_id);
         if ($camper) {
-            Mail::to($camper->email)->send(new ReservationRejectedToUser($camper, 'The supplier has rejected your reservation.'));
+            try {
+                Mail::to($camper->email)->send(new ReservationRejectedToUser($camper, 'The supplier has rejected your reservation.'));
+            } catch (\Throwable $mailError) {
+                Log::error('Rejection email failed — reservation rejected but camper not notified', [
+                    'reservation_id' => $reservation->id,
+                    'camper_email' => $camper->email,
+                    'error' => $mailError->getMessage(),
+                ]);
+            }
         }
 
         return response()->json(['message' => 'Reservation rejected.', 'reservation' => $reservation]);
@@ -763,17 +784,27 @@ class ReservationMaterielleController extends Controller
             }
 
             DB::commit();
-            if ($reservation->user) {
-                Mail::to($reservation->user->email)
-                    ->send(new ReservationCanceledByFournisseurToCamper($reservation));
-            }
-
-            return response()->json(['message' => 'Reservation canceled.', 'reservation' => $reservation]);
         } catch (\Exception $e) {
             DB::rollBack();
 
             return response()->json(['message' => 'An unexpected error occurred. Please try again.'], 500);
         }
+
+        // Mail is sent outside the transaction — a mail failure must not roll back a committed cancellation.
+        if ($reservation->user) {
+            try {
+                Mail::to($reservation->user->email)
+                    ->send(new ReservationCanceledByFournisseurToCamper($reservation));
+            } catch (\Throwable $mailError) {
+                Log::error('Cancellation email failed — reservation canceled but camper not notified', [
+                    'reservation_id' => $reservation->id,
+                    'camper_email' => $reservation->user->email,
+                    'error' => $mailError->getMessage(),
+                ]);
+            }
+        }
+
+        return response()->json(['message' => 'Reservation canceled.', 'reservation' => $reservation]);
     }
 
     // -------------------------------------------------------------------------
@@ -890,18 +921,27 @@ class ReservationMaterielleController extends Controller
             }
 
             DB::commit();
-
-            $fournisseur = User::find($reservation->fournisseur_id);
-            if ($fournisseur) {
-                Mail::to($fournisseur->email)->send(new ReservationCanceledToFournisseur($reservation));
-            }
-
-            return response()->json(['message' => 'Reservation canceled successfully.', 'reservation' => $reservation]);
         } catch (\Exception $e) {
             DB::rollBack();
 
             return response()->json(['message' => 'An unexpected error occurred. Please try again.'], 500);
         }
+
+        // Mail is sent outside the transaction — a mail failure must not roll back a committed cancellation.
+        $fournisseur = User::find($reservation->fournisseur_id);
+        if ($fournisseur) {
+            try {
+                Mail::to($fournisseur->email)->send(new ReservationCanceledToFournisseur($reservation));
+            } catch (\Throwable $mailError) {
+                Log::error('Cancellation email failed — reservation canceled but fournisseur not notified', [
+                    'reservation_id' => $reservation->id,
+                    'fournisseur_email' => $fournisseur->email,
+                    'error' => $mailError->getMessage(),
+                ]);
+            }
+        }
+
+        return response()->json(['message' => 'Reservation canceled successfully.', 'reservation' => $reservation]);
     }
 
     // -------------------------------------------------------------------------
