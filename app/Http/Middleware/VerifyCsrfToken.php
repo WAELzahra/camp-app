@@ -12,14 +12,17 @@ class VerifyCsrfToken extends Middleware
      * @var array<int, string>
      */
     protected $except = [
-        // API routes use Sanctum Bearer token auth and do not need CSRF cookies.
-        // Only web routes that are genuinely stateless need exemption here.
         'sanctum/csrf-cookie',
         'broadcasting/auth',
-        // Credential-based Bearer token issuance (Postman/API clients, and
-        // cross-domain deployments where third-party cookies are blocked).
-        // No session cookie is relied on here, so there is nothing for CSRF
-        // to protect — the endpoint already requires the actual password.
-        'api/token-login',
+        // Every api/* route is authenticated via a Sanctum Bearer token in the
+        // Authorization header (see AuthProvider's token-login flow), not a
+        // session cookie. CSRF exists to stop a forged request from riding on
+        // a victim's ambient cookies — it has nothing to protect here, since a
+        // cross-site page can neither read sessionStorage nor set a custom
+        // Authorization header on the requests it forges. Sanctum's
+        // EnsureFrontendRequestsAreStateful still classifies this origin as
+        // "frontend" (it's in SANCTUM_STATEFUL_DOMAINS) and would otherwise
+        // demand a CSRF token no cookie-less client can ever produce.
+        'api/*',
     ];
 }
