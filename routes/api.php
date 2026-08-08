@@ -1136,6 +1136,12 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     // Security log viewer (read-only) — storage/logs/security-*.log
     Route::get('/security-logs', [\App\Http\Controllers\Admin\AdminSecurityLogController::class, 'index']);
 
+    // ClicToPay cahier de recettes — generates the CTP-06/07/08 error cases the
+    // booking flow can never produce and returns ClicToPay's raw JSON. Temporary:
+    // delete once the cahier is validated (see ClicToPayRecetteController).
+    Route::get('/clictopay/recette', [\App\Http\Controllers\Payment\ClicToPayRecetteController::class, 'run'])
+        ->middleware('throttle:10,1');
+
     // Dashboard
     Route::post('/restock-expired', [ReservationMaterielleController::class, 'restockExpiredReservations']);
 
